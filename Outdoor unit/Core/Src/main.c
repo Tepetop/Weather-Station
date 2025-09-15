@@ -18,11 +18,20 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "i2c.h"
+#include "spi.h"
+#include "usart.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <stdio.h>
+#include <string.h>
+#include <stdbool.h>
+#include "si7021.h"
+#include "TSL2561.h"
+#include "bh1750.h"
+#include "bmp280.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -32,7 +41,11 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define BHT 0
+#define TSL 0
+#define SI7021 0
+#define BMP 0
+#define CHECK 0
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -43,12 +56,22 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
+char Message[64]; // Message to transfer by UART
+uint8_t Length; // Message length
+
+Si7021_t sio;
+TSL2561_t tsl;
+BMP280_t bmp;
+float BH1750_lux;
 
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
+
+void UartLog(char *msg);
+HAL_StatusTypeDef I2C_CheckAddress(I2C_HandleTypeDef *i2c);
 
 /* USER CODE END PFP */
 
@@ -86,7 +109,32 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_I2C1_Init();
+  MX_SPI1_Init();
+  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
+#if BHT
+  BH1750_Init(&hi2c1);
+  BH1750_SetMode(CONTINUOUS_HIGH_RES_MODE_2);
+#endif
+
+#if TSL
+  TSL2561_Init(&tsl,&hi2c1, (uint8_t)0x39, TSL2561_INTEG_402MS, TSL2561_GAIN_1X);
+#endif
+
+#if SI7021
+  Si7021_Init(&sio, &hi2c1, 0x40, SI7021_RESOLUTION_RH11_TEMP11);
+#endif
+
+#if BMP
+  BMP280_Init(&bmp, &hi2c1, 0x76);
+  BMP280_SetCtrlMeas(&bmp, BMP280_OVERSAMPLING_X16, BMP280_MODE_NORMAL);
+  BMP280_SetConfig(&bmp, BMP280_STANDBY_500_MS, BMP280_FILTER_16);
+#endif
+
+#if CHECK
+	I2C_CheckAddress(&hi2c1);
+#endif
 
   /* USER CODE END 2 */
 
@@ -97,6 +145,33 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+#if SI7021
+	 Si7021_ReadHumidityAndTemperature(&sio);
+	 sprintf(Message,"Si7021 Temp = %.2f, Si7021 Hum = %.2f\n\r",sio.data.temperature, sio.data.humidity);
+	 UartLog(Message);
+#endif
+
+#if BHT
+	 BH1750_ReadLight(&BH1750_lux);
+	 sprintf(Message,"Lux from BHT = %.2f\n\r", BH1750_lux);
+	 UartLog(Message);
+#endif
+
+#if TSL
+	 TSL2561_CalculateLux(&tsl);
+	 sprintf(Message,"Lux from TSL = %.2f\n\r", tsl.data.lux);
+	 UartLog(Message);
+#endif
+
+#if BMP
+	 BMP280_GetTemperature(&bmp);
+	 BMP280_GetPressure(&bmp);
+	 sprintf(Message," BMP Temp = %.2f, BMP Presure = %.2f\n\r", bmp.data.temperature, bmp.data.pressure);
+	 UartLog(Message);
+#endif
+
+	 HAL_GPIO_TogglePin(GPIOB,GPIO_PIN_3);
+	 HAL_Delay(500);
   }
   /* USER CODE END 3 */
 }
