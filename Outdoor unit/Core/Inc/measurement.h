@@ -12,6 +12,7 @@
 typedef enum {
     MEAS_STATE_IDLE,
     MEAS_STATE_INIT,
+    MEAS_STATE_RUN,
     MEAS_STATE_SI7021,
     MEAS_STATE_BMP280,
     MEAS_STATE_TSL2561,
@@ -35,6 +36,11 @@ typedef struct {
  * @param hi2c Pointer to I2C handle to be used for sensors
  */
 void Measurement_Init(I2C_HandleTypeDef *hi2c);
+
+/**
+ * @brief Starts a new measurement cycle by setting state to MEAS_STATE_RUN
+ */
+void Measurement_Start(void);
 
 /**
  * @brief Process the measurement state machine

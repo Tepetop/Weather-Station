@@ -18,6 +18,15 @@ void Measurement_Init(I2C_HandleTypeDef *hi2c) {
 }
 
 /**
+ * @brief Starts a new measurement cycle
+ */
+void Measurement_Start(void) {
+    if (current_state == MEAS_STATE_IDLE || current_state == MEAS_STATE_DONE || current_state == MEAS_STATE_ERROR) {
+        current_state = MEAS_STATE_RUN;
+    }
+}
+
+/**
  * @brief Process the measurement state machine
  */
 void Measurement_Process(void) {
@@ -51,7 +60,11 @@ void Measurement_Process(void) {
             break;
 
         case MEAS_STATE_IDLE:
-            // Ready to start a new measurement cycle
+            // Do nothing, wait for external change (e.g., call to Measurement_Start)
+            break;
+
+        case MEAS_STATE_RUN:
+            // Start the measurement cycle
             current_state = MEAS_STATE_SI7021;
             break;
 
@@ -85,7 +98,8 @@ void Measurement_Process(void) {
             break;
 
         case MEAS_STATE_DONE:
-            // Stay in DONE state until reset or manually moved back to IDLE
+            // Measurement cycle finished, go back to IDLE
+            current_state = MEAS_STATE_IDLE;
             break;
 
         case MEAS_STATE_ERROR:
