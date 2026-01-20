@@ -60,14 +60,14 @@
 				{
 					"directoryIndex" : 1,
 					"id" : "STM32_Drivers::@768a070a0fe75716b479",
-					"jsonFile" : "target-STM32_Drivers-Debug-ec387a16ea12433600b3.json",
+					"jsonFile" : "target-STM32_Drivers-Debug-f71f60d5ca056892db46.json",
 					"name" : "STM32_Drivers",
 					"projectIndex" : 0
 				},
 				{
 					"directoryIndex" : 0,
 					"id" : "outdoor_unit_vscode::@6890427a1f51a3e7e1df",
-					"jsonFile" : "target-outdoor_unit_vscode-Debug-c0921cbb5335ca7e5b05.json",
+					"jsonFile" : "target-outdoor_unit_vscode-Debug-f39daee5fd38dcee5d33.json",
 					"name" : "outdoor_unit_vscode",
 					"projectIndex" : 0
 				}
