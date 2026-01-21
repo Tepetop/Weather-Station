@@ -5,8 +5,8 @@
 static Si7021_t hsi7021;
 static BMP280_t hbmp280;
 static TSL2561_t htsl2561;
-static I2C_HandleTypeDef *measurement_hi2c = NULL;
-static Groupe_State_t *devices;
+static I2C_HandleTypeDef *measurement_hi2c;
+static Groupe_State_t devices;
 
 /**
  * @brief Initializes the measurement module
@@ -17,21 +17,19 @@ void Measurement_Init(I2C_HandleTypeDef *hi2c) {
         devices.state = MEAS_ERROR;
         return;
     }
+    measurement_hi2c = hi2c;
     devices.state = MEAS_INIT;
-    devices.sensorErrorCode = ERROR_NONE
-    device.data = {0};
-    //devices = MEAS_STATE_INIT;
+    devices.sensorErrorCode = ERROR_NONE;
+    memset(&devices.data, 0, sizeof(Measurement_Data_t));
 }
 
 /**
  * @brief Starts a new measurement cycle
  */
 void Measurement_Start(void) {
-    if (devices.state == MEAS_STATE_IDLE || devices.state == MEAS_STATE_DONE || devices.state == MEAS_STATE_ERROR) {
-        devices.state = MEAS_STATE_RUN;
+    if (devices.state == MEAS_IDLE) {
+        devices.state = MEAS_MEASURE;
     }
-
-    //TODO idk purpouse of this function tbh
 }
 
 /**
@@ -39,10 +37,6 @@ void Measurement_Start(void) {
  */
 void Measurement_Process(void) 
 {
-    if (measurement_hi2c == NULL) {
-        return;
-    }
-
     switch (devices.state) {
         case MEAS_INIT:
             // Initialize Si7021
@@ -62,14 +56,13 @@ void Measurement_Process(void)
                 devices.sensorErrorCode |= ERROR_TSL2561;
             }
             
-            if((devices.sensorErrorCode & (ERROR_SI7021 | ERROR_BMP280 | ERROR_TSL2561)))
-            {
-                devices.state = MEAS_ERROR; // TODO: handle somehow this state
+            if (devices.sensorErrorCode != ERROR_NONE) {
+                devices.state = MEAS_INIT_ERROR; // Specjalny stan dla błędów initu
+            } else {
+                devices.state = MEAS_IDLE;
             }
-
-            devices.state = MEAS_MEASURE;
             break;
-
+        
         case MEAS_IDLE:
             // Do nothing, wait for external change (e.g., call to Measurement_Start)
             break;
@@ -120,7 +113,7 @@ void Measurement_Process(void)
             }
             break;
 
-        case MEAS_DONE
+        case MEAS_DONE:
             // Measurement cycle finished, go back to IDLE
             devices.state = MEAS_IDLE;
             break;
