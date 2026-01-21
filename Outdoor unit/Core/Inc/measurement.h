@@ -7,17 +7,28 @@
 #include "TSL2561.h"
 
 /**
+ * @brief Each sensor error code
+ */
+typedef enum {
+    ERROR_NONE         = 0,      // 0000 0000
+    ERROR_SI7021   = (1 << 0), // 0000 0001
+    ERROR_BMP280  = (1 << 1), // 0000 0010
+    ERROR_TSL2561  = (1 << 2), // 0000 0100
+} Sensor_Error_t;
+
+/**
  * @brief State machine states for measurement process
  */
 typedef enum {
-    MEAS_STATE_IDLE,
-    MEAS_STATE_INIT,
-    MEAS_STATE_RUN,
-    MEAS_STATE_SI7021,
-    MEAS_STATE_BMP280,
-    MEAS_STATE_TSL2561,
-    MEAS_STATE_DONE,
-    MEAS_STATE_ERROR
+    MEAS_DONE,
+    MEAS_INIT,
+    MEAS_IDLE,
+    MEAS_MEASURE,
+    MEAS_SI7021,
+    MEAS_BMP280,
+    MEAS_TSL2561,
+    MEAS_ERROR,
+    MEAS_INIT_ERROR
 } Measurement_State_t;
 
 /**
@@ -30,6 +41,15 @@ typedef struct {
     float bmp280_press;
     float tsl2561_lux;
 } Measurement_Data_t;
+
+/**
+ * @brief Structure to hold all states, data and errors from sensors
+ */
+typedef struct {
+    Measurement_State_t state;
+    uint8_t sensorErrorCode;
+    Measurement_Data_t data;
+} Groupe_State_t;
 
 /**
  * @brief Initializes the measurement module
