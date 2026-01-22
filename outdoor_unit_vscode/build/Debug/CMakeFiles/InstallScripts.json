@@ -1,8 +1,0 @@
-{
-	"InstallScripts" : 
-	[
-		"D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/build/Debug/cmake_install.cmake",
-		"D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/build/Debug/cmake/stm32cubemx/cmake_install.cmake"
-	],
-	"Parallel" : false
-}
