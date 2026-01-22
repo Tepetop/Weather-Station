@@ -5,109 +5,127 @@
 static Si7021_t hsi7021;
 static BMP280_t hbmp280;
 static TSL2561_t htsl2561;
-static Measurement_Data_t meas_data = {0};
-static Measurement_State_t current_state = MEAS_STATE_IDLE;
-static I2C_HandleTypeDef *measurement_hi2c = NULL;
+static I2C_HandleTypeDef *measurement_hi2c;
+static Groupe_State_t devices;
 
 /**
  * @brief Initializes the measurement module
  */
 void Measurement_Init(I2C_HandleTypeDef *hi2c) {
+    if (measurement_hi2c == NULL) 
+    {
+        devices.state = MEAS_ERROR;
+        return;
+    }
     measurement_hi2c = hi2c;
-    current_state = MEAS_STATE_INIT;
+    devices.state = MEAS_INIT;
+    devices.sensorErrorCode = ERROR_NONE;
+    memset(&devices.data, 0, sizeof(Measurement_Data_t));
 }
 
 /**
  * @brief Starts a new measurement cycle
  */
 void Measurement_Start(void) {
-    if (current_state == MEAS_STATE_IDLE || current_state == MEAS_STATE_DONE || current_state == MEAS_STATE_ERROR) {
-        current_state = MEAS_STATE_RUN;
+    if (devices.state == MEAS_IDLE) {
+        devices.state = MEAS_MEASURE;
     }
 }
 
 /**
  * @brief Process the measurement state machine
  */
-void Measurement_Process(void) {
-    if (measurement_hi2c == NULL) {
-        return;
-    }
-
-    switch (current_state) {
-        case MEAS_STATE_INIT:
+void Measurement_Process(void) 
+{
+    switch (devices.state) {
+        case MEAS_INIT:
             // Initialize Si7021
             if (Si7021_Init(&hsi7021, measurement_hi2c, 0x40, SI7021_RESOLUTION_RH11_TEMP11) != HAL_OK) {
-                current_state = MEAS_STATE_ERROR;
-                break;
+                devices.sensorErrorCode |= ERROR_SI7021;
             }
 
             // Initialize BMP280
             if (BMP280_Init(&hbmp280, measurement_hi2c, 0x76) != HAL_OK) {
-                current_state = MEAS_STATE_ERROR;
-                break;
+               devices.sensorErrorCode |= ERROR_BMP280;
             }
             BMP280_SetCtrlMeas(&hbmp280, BMP280_OVERSAMPLING_X16, BMP280_MODE_NORMAL);
             BMP280_SetConfig(&hbmp280, BMP280_STANDBY_500_MS, BMP280_FILTER_16);
 
             // Initialize TSL2561
             if (TSL2561_Init(&htsl2561, measurement_hi2c, 0x39, TSL2561_INTEG_402MS, TSL2561_GAIN_1X) != HAL_OK) {
-                current_state = MEAS_STATE_ERROR;
-                break;
+                devices.sensorErrorCode |= ERROR_TSL2561;
             }
-
-            current_state = MEAS_STATE_IDLE;
+            
+            if (devices.sensorErrorCode != ERROR_NONE) {
+                devices.state = MEAS_INIT_ERROR; // Specjalny stan dla błędów initu
+            } else {
+                devices.state = MEAS_IDLE;
+            }
             break;
-
-        case MEAS_STATE_IDLE:
+        
+        case MEAS_IDLE:
             // Do nothing, wait for external change (e.g., call to Measurement_Start)
             break;
 
-        case MEAS_STATE_RUN:
+        case MEAS_MEASURE:
             // Start the measurement cycle
-            current_state = MEAS_STATE_SI7021;
+            devices.state = MEAS_STATE_SI7021;
             break;
 
-        case MEAS_STATE_SI7021:
-            if (Si7021_ReadHumidityAndTemperature(&hsi7021) == HAL_OK) {
-                meas_data.si7021_temp = hsi7021.data.temperature;
-                meas_data.si7021_hum = hsi7021.data.humidity;
-                current_state = MEAS_STATE_BMP280;
-            } else {
-                current_state = MEAS_STATE_ERROR;
+        case MEAS_SI7021:
+            if (Si7021_ReadHumidityAndTemperature(&hsi7021) == HAL_OK)
+            {
+                devices.data.si7021_temp = hsi7021.data.temperature;
+                devices.data.si7021_hum = hsi7021.data.humidity;
+                devices.state = MEAS_BMP280;
+            } 
+            else
+            {
+                devices.sensorErrorCode |= ERROR_SI7021;
+                devices.state = MEAS_ERROR;
             }
             break;
 
-        case MEAS_STATE_BMP280:
-            if (BMP280_TemperatureAndPressure(&hbmp280) == HAL_OK) {
-                meas_data.bmp280_temp = hbmp280.data.temperature;
-                meas_data.bmp280_press = hbmp280.data.pressure;
-                current_state = MEAS_STATE_TSL2561;
-            } else {
-                current_state = MEAS_STATE_ERROR;
+        case MEAS_BMP280:
+            if (BMP280_TemperatureAndPressure(&hbmp280) == HAL_OK) 
+            {
+                devices.data.bmp280_temp = hbmp280.data.temperature;
+                devices.data.bmp280_press = hbmp280.data.pressure;
+                devices.state = MEAS_TSL2561;
+            } 
+            else 
+            {
+                devices.sensorErrorCode |= ERROR_BMP280;
+                devices.state = MEAS_ERROR;
             }
             break;
 
-        case MEAS_STATE_TSL2561:
-            if (TSL2561_CalculateLux(&htsl2561) == HAL_OK) {
-                meas_data.tsl2561_lux = htsl2561.data.lux;
-                current_state = MEAS_STATE_DONE;
-            } else {
-                current_state = MEAS_STATE_ERROR;
+        case MEAS_TSL2561:
+            if (TSL2561_CalculateLux(&htsl2561) == HAL_OK) 
+            {
+                devices.data.tsl2561_lux = htsl2561.data.lux;
+                devices.state = MEAS_DONE;
+            } 
+            else 
+            {
+                devices.sensorErrorCode |= ERROR_TSL2561;
+                devices.state = MEAS_ERROR;
             }
             break;
 
-        case MEAS_STATE_DONE:
+        case MEAS_DONE:
             // Measurement cycle finished, go back to IDLE
-            current_state = MEAS_STATE_IDLE;
+            devices.state = MEAS_IDLE;
             break;
 
-        case MEAS_STATE_ERROR:
+        case MEAS_ERROR:
             // Could implement retry logic here
+            //TODO: impement init handler
             break;
 
         default:
-            current_state = MEAS_STATE_IDLE;
+            devices.state = MEAS_IDLE;
+            devices.sensorErrorCode = ERROR_NONE;
             break;
     }
 }
@@ -116,7 +134,7 @@ void Measurement_Process(void) {
  * @brief Returns the current state of the measurement state machine
  */
 Measurement_State_t Measurement_GetState(void) {
-    return current_state;
+    return devices.state;
 }
 
 /**
@@ -127,7 +145,7 @@ void Measurement_GetCSV(char *buffer, uint16_t len) {
         return;
     }
     snprintf(buffer, len, "%.2f,%.2f,%.2f,%.2f,%.2f",
-             meas_data.si7021_temp, meas_data.si7021_hum,
-             meas_data.bmp280_temp, meas_data.bmp280_press,
-             meas_data.tsl2561_lux);
+             devices.data.si7021_temp, devices.data.si7021_hum,
+             devices.data.bmp280_temp, devices.data.bmp280_press,
+             devices.data.tsl2561_lux);
 }

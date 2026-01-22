@@ -49,6 +49,10 @@ HAL_StatusTypeDef BMP280_Init(BMP280_t *dev, I2C_HandleTypeDef *i2c_handle, uint
     status = BMP280_ReadCalibration(dev);						// Read calibration data
     status = BMP280_OperationMode(dev, BMP280_OPERATION_1);		// Set sensor in operation mode 1. Lets call it default mode
 
+	// Default settings
+	status = BMP280_SetCtrlMeas(dev, BMP280_OVERSAMPLING_X16, BMP280_MODE_NORMAL);
+    status = BMP280_SetConfig(dev, BMP280_STANDBY_500_MS, BMP280_FILTER_16);
+
 
     return status;
 }
