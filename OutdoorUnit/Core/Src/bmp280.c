@@ -366,7 +366,7 @@ HAL_StatusTypeDef BMP280_GetPressure(BMP280_t *dev)
     	{
         	p = (p << 1) / ((uint32_t)var1);
     	}
-    	else
+    else
     	{
     		p = (p / (uint32_t)var1) * 2;
     	}
@@ -384,15 +384,19 @@ HAL_StatusTypeDef BMP280_GetPressure(BMP280_t *dev)
  * @brief Reads both temperature and pressure in one call.
  *
  * Calls BMP280_GetTemperature and BMP280_GetPressure to get compensated values.
+ * Temperature must be read first as it calculates t_fine needed for pressure compensation.
  *
  * @param dev Pointer to the BMP280 handle structure.
- * @param temperature Pointer to store the temperature.
- * @param pressure Pointer to store the pressure.
  * @return HAL status.
  */
 HAL_StatusTypeDef BMP280_TemperatureAndPressure(BMP280_t *dev)
 {
-	if( (HAL_OK != BMP280_GetTemperature(dev)) && (HAL_OK != BMP280_GetPressure(dev)) )
+	// Read temperature first (required for t_fine calculation used in pressure)
+	if (BMP280_GetTemperature(dev) != HAL_OK)
+		return HAL_ERROR;
+
+	// Then read pressure
+	if (BMP280_GetPressure(dev) != HAL_OK)
 		return HAL_ERROR;
 
     return HAL_OK;

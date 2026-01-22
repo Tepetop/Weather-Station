@@ -30,6 +30,7 @@
 #include "si7021.h"
 #include "TSL2561.h"
 #include "bmp280.h"
+#include "measurement.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -39,9 +40,10 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define TSL 1
-#define SI7021 1
-#define BMP 1
+#define GROUP 1
+#define TSL 0
+#define SI7021 0
+#define BMP 0
 #define CHECK 0
 /* USER CODE END PD */
 
@@ -53,7 +55,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-char Message[64]; // Message to transfer by UART
+char Message[128]; // Message to transfer by UART
 uint8_t Length; // Message length
 
 Si7021_t sio;
@@ -109,6 +111,11 @@ int main(void)
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
 
+#if GROUP
+  Measurement_Init(&hi2c2);
+  Measurement_Process();
+#endif
+
 #if TSL
   TSL2561_Init(&tsl,&hi2c2, (uint8_t)0x39, TSL2561_INTEG_402MS, TSL2561_GAIN_1X);
 #endif
@@ -155,8 +162,14 @@ int main(void)
 	 UartLog(Message);
 #endif
 
-	 HAL_GPIO_TogglePin(USER_LED_GPIO_Port, USER_LED_Pin);
-	 HAL_Delay(500);
+#if GROUP
+   Measurement_Start();
+   Measurement_Process();
+   Measurement_GetCSV(Message, sizeof(Message));
+   UartLog(Message);
+#endif
+   HAL_GPIO_TogglePin(USER_LED_GPIO_Port, USER_LED_Pin);
+	 HAL_Delay(1000);
   }
   /* USER CODE END 3 */
 }
