@@ -76,6 +76,15 @@ build CMakeFiles/outdoor_unit_vscode.dir/Core/Src/i2c.c.obj: C_COMPILER__outdoor
   OBJECT_DIR = CMakeFiles\outdoor_unit_vscode.dir
   OBJECT_FILE_DIR = CMakeFiles\outdoor_unit_vscode.dir\Core\Src
 
+build CMakeFiles/outdoor_unit_vscode.dir/Core/Src/usart.c.obj: C_COMPILER__outdoor_unit_vscode_unscanned_Debug D$:/programing$ workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/Core/Src/usart.c || cmake_object_order_depends_target_outdoor_unit_vscode
+  CONFIG = Debug
+  DEFINES = -DDEBUG -DSTM32F103xB -DUSE_HAL_DRIVER
+  DEP_FILE = CMakeFiles\outdoor_unit_vscode.dir\Core\Src\usart.c.obj.d
+  FLAGS = -mcpu=cortex-m3  -Wall -fdata-sections -ffunction-sections -O0 -g3 -std=gnu11
+  INCLUDES = -I"D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/cmake/stm32cubemx/../../Core/Inc" -I"D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/cmake/stm32cubemx/../../Drivers/STM32F1xx_HAL_Driver/Inc" -I"D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/cmake/stm32cubemx/../../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy" -I"D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F1xx/Include" -I"D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/cmake/stm32cubemx/../../Drivers/CMSIS/Include"
+  OBJECT_DIR = CMakeFiles\outdoor_unit_vscode.dir
+  OBJECT_FILE_DIR = CMakeFiles\outdoor_unit_vscode.dir\Core\Src
+
 build CMakeFiles/outdoor_unit_vscode.dir/Core/Src/stm32f1xx_it.c.obj: C_COMPILER__outdoor_unit_vscode_unscanned_Debug D$:/programing$ workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/Core/Src/stm32f1xx_it.c || cmake_object_order_depends_target_outdoor_unit_vscode
   CONFIG = Debug
   DEFINES = -DDEBUG -DSTM32F103xB -DUSE_HAL_DRIVER
@@ -121,6 +130,42 @@ build CMakeFiles/outdoor_unit_vscode.dir/startup_stm32f103xb.s.obj: ASM_COMPILER
   OBJECT_DIR = CMakeFiles\outdoor_unit_vscode.dir
   OBJECT_FILE_DIR = CMakeFiles\outdoor_unit_vscode.dir
 
+build CMakeFiles/outdoor_unit_vscode.dir/Core/Src/si7021.c.obj: C_COMPILER__outdoor_unit_vscode_unscanned_Debug D$:/programing$ workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/Core/Src/si7021.c || cmake_object_order_depends_target_outdoor_unit_vscode
+  CONFIG = Debug
+  DEFINES = -DDEBUG -DSTM32F103xB -DUSE_HAL_DRIVER
+  DEP_FILE = CMakeFiles\outdoor_unit_vscode.dir\Core\Src\si7021.c.obj.d
+  FLAGS = -mcpu=cortex-m3  -Wall -fdata-sections -ffunction-sections -O0 -g3 -std=gnu11
+  INCLUDES = -I"D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/cmake/stm32cubemx/../../Core/Inc" -I"D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/cmake/stm32cubemx/../../Drivers/STM32F1xx_HAL_Driver/Inc" -I"D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/cmake/stm32cubemx/../../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy" -I"D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F1xx/Include" -I"D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/cmake/stm32cubemx/../../Drivers/CMSIS/Include"
+  OBJECT_DIR = CMakeFiles\outdoor_unit_vscode.dir
+  OBJECT_FILE_DIR = CMakeFiles\outdoor_unit_vscode.dir\Core\Src
+
+build CMakeFiles/outdoor_unit_vscode.dir/Core/Src/TSL2561.c.obj: C_COMPILER__outdoor_unit_vscode_unscanned_Debug D$:/programing$ workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/Core/Src/TSL2561.c || cmake_object_order_depends_target_outdoor_unit_vscode
+  CONFIG = Debug
+  DEFINES = -DDEBUG -DSTM32F103xB -DUSE_HAL_DRIVER
+  DEP_FILE = CMakeFiles\outdoor_unit_vscode.dir\Core\Src\TSL2561.c.obj.d
+  FLAGS = -mcpu=cortex-m3  -Wall -fdata-sections -ffunction-sections -O0 -g3 -std=gnu11
+  INCLUDES = -I"D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/cmake/stm32cubemx/../../Core/Inc" -I"D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/cmake/stm32cubemx/../../Drivers/STM32F1xx_HAL_Driver/Inc" -I"D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/cmake/stm32cubemx/../../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy" -I"D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F1xx/Include" -I"D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/cmake/stm32cubemx/../../Drivers/CMSIS/Include"
+  OBJECT_DIR = CMakeFiles\outdoor_unit_vscode.dir
+  OBJECT_FILE_DIR = CMakeFiles\outdoor_unit_vscode.dir\Core\Src
+
+build CMakeFiles/outdoor_unit_vscode.dir/Core/Src/bmp280.c.obj: C_COMPILER__outdoor_unit_vscode_unscanned_Debug D$:/programing$ workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/Core/Src/bmp280.c || cmake_object_order_depends_target_outdoor_unit_vscode
+  CONFIG = Debug
+  DEFINES = -DDEBUG -DSTM32F103xB -DUSE_HAL_DRIVER
+  DEP_FILE = CMakeFiles\outdoor_unit_vscode.dir\Core\Src\bmp280.c.obj.d
+  FLAGS = -mcpu=cortex-m3  -Wall -fdata-sections -ffunction-sections -O0 -g3 -std=gnu11
+  INCLUDES = -I"D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/cmake/stm32cubemx/../../Core/Inc" -I"D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/cmake/stm32cubemx/../../Drivers/STM32F1xx_HAL_Driver/Inc" -I"D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/cmake/stm32cubemx/../../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy" -I"D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F1xx/Include" -I"D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/cmake/stm32cubemx/../../Drivers/CMSIS/Include"
+  OBJECT_DIR = CMakeFiles\outdoor_unit_vscode.dir
+  OBJECT_FILE_DIR = CMakeFiles\outdoor_unit_vscode.dir\Core\Src
+
+build CMakeFiles/outdoor_unit_vscode.dir/Core/Src/measurement.c.obj: C_COMPILER__outdoor_unit_vscode_unscanned_Debug D$:/programing$ workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/Core/Src/measurement.c || cmake_object_order_depends_target_outdoor_unit_vscode
+  CONFIG = Debug
+  DEFINES = -DDEBUG -DSTM32F103xB -DUSE_HAL_DRIVER
+  DEP_FILE = CMakeFiles\outdoor_unit_vscode.dir\Core\Src\measurement.c.obj.d
+  FLAGS = -mcpu=cortex-m3  -Wall -fdata-sections -ffunction-sections -O0 -g3 -std=gnu11
+  INCLUDES = -I"D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/cmake/stm32cubemx/../../Core/Inc" -I"D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/cmake/stm32cubemx/../../Drivers/STM32F1xx_HAL_Driver/Inc" -I"D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/cmake/stm32cubemx/../../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy" -I"D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F1xx/Include" -I"D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/cmake/stm32cubemx/../../Drivers/CMSIS/Include"
+  OBJECT_DIR = CMakeFiles\outdoor_unit_vscode.dir
+  OBJECT_FILE_DIR = CMakeFiles\outdoor_unit_vscode.dir\Core\Src
+
 
 # =============================================================================
 # Link build statements for EXECUTABLE target outdoor_unit_vscode
@@ -129,10 +174,10 @@ build CMakeFiles/outdoor_unit_vscode.dir/startup_stm32f103xb.s.obj: ASM_COMPILER
 #############################################
 # Link the executable outdoor_unit_vscode.elf
 
-build outdoor_unit_vscode.elf: C_EXECUTABLE_LINKER__outdoor_unit_vscode_Debug cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Core/Src/system_stm32f1xx.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_gpio_ex.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_i2c.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_rcc.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_rcc_ex.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_gpio.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_dma.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_cortex.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_pwr.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_flash.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_flash_ex.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_exti.c.obj CMakeFiles/outdoor_unit_vscode.dir/Core/Src/main.c.obj CMakeFiles/outdoor_unit_vscode.dir/Core/Src/gpio.c.obj CMakeFiles/outdoor_unit_vscode.dir/Core/Src/i2c.c.obj CMakeFiles/outdoor_unit_vscode.dir/Core/Src/stm32f1xx_it.c.obj CMakeFiles/outdoor_unit_vscode.dir/Core/Src/stm32f1xx_hal_msp.c.obj CMakeFiles/outdoor_unit_vscode.dir/Core/Src/sysmem.c.obj CMakeFiles/outdoor_unit_vscode.dir/Core/Src/syscalls.c.obj CMakeFiles/outdoor_unit_vscode.dir/startup_stm32f103xb.s.obj || cmake/stm32cubemx/STM32_Drivers
+build outdoor_unit_vscode.elf: C_EXECUTABLE_LINKER__outdoor_unit_vscode_Debug cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Core/Src/system_stm32f1xx.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_gpio_ex.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_i2c.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_rcc.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_rcc_ex.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_gpio.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_dma.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_cortex.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_pwr.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_flash.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_flash_ex.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_exti.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_uart.c.obj CMakeFiles/outdoor_unit_vscode.dir/Core/Src/main.c.obj CMakeFiles/outdoor_unit_vscode.dir/Core/Src/gpio.c.obj CMakeFiles/outdoor_unit_vscode.dir/Core/Src/i2c.c.obj CMakeFiles/outdoor_unit_vscode.dir/Core/Src/usart.c.obj CMakeFiles/outdoor_unit_vscode.dir/Core/Src/stm32f1xx_it.c.obj CMakeFiles/outdoor_unit_vscode.dir/Core/Src/stm32f1xx_hal_msp.c.obj CMakeFiles/outdoor_unit_vscode.dir/Core/Src/sysmem.c.obj CMakeFiles/outdoor_unit_vscode.dir/Core/Src/syscalls.c.obj CMakeFiles/outdoor_unit_vscode.dir/startup_stm32f103xb.s.obj CMakeFiles/outdoor_unit_vscode.dir/Core/Src/si7021.c.obj CMakeFiles/outdoor_unit_vscode.dir/Core/Src/TSL2561.c.obj CMakeFiles/outdoor_unit_vscode.dir/Core/Src/bmp280.c.obj CMakeFiles/outdoor_unit_vscode.dir/Core/Src/measurement.c.obj || cmake/stm32cubemx/STM32_Drivers
   CONFIG = Debug
   FLAGS = -mcpu=cortex-m3  -Wall -fdata-sections -ffunction-sections -O0 -g3
-  LINK_FLAGS = -mcpu=cortex-m3  -T "D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/STM32F103XX_FLASH.ld" --specs=nano.specs -Wl,-Map=outdoor_unit_vscode.map -Wl,--gc-sections -Wl,--print-memory-usage
+  LINK_FLAGS = -mcpu=cortex-m3  -T "D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/STM32F103XX_FLASH.ld" --specs=nano.specs -u _printf_float -Wl,-Map=outdoor_unit_vscode.map -Wl,--gc-sections -Wl,--print-memory-usage
   LINK_LIBRARIES = -lm
   OBJECT_DIR = CMakeFiles\outdoor_unit_vscode.dir
   POST_BUILD = cd .
@@ -295,12 +340,21 @@ build cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL
   OBJECT_DIR = cmake\stm32cubemx\CMakeFiles\STM32_Drivers.dir
   OBJECT_FILE_DIR = cmake\stm32cubemx\CMakeFiles\STM32_Drivers.dir\__\__\Drivers\STM32F1xx_HAL_Driver\Src
 
+build cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_uart.c.obj: C_COMPILER__STM32_Drivers_unscanned_Debug D$:/programing$ workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_uart.c || cmake_object_order_depends_target_STM32_Drivers
+  CONFIG = Debug
+  DEFINES = -DDEBUG -DSTM32F103xB -DUSE_HAL_DRIVER
+  DEP_FILE = cmake\stm32cubemx\CMakeFiles\STM32_Drivers.dir\__\__\Drivers\STM32F1xx_HAL_Driver\Src\stm32f1xx_hal_uart.c.obj.d
+  FLAGS = -mcpu=cortex-m3  -Wall -fdata-sections -ffunction-sections -O0 -g3 -std=gnu11
+  INCLUDES = -I"D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/cmake/stm32cubemx/../../Core/Inc" -I"D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/cmake/stm32cubemx/../../Drivers/STM32F1xx_HAL_Driver/Inc" -I"D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/cmake/stm32cubemx/../../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy" -I"D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/cmake/stm32cubemx/../../Drivers/CMSIS/Device/ST/STM32F1xx/Include" -I"D:/programing workspace/stm32vscode/Weather-Station/outdoor_unit_vscode/cmake/stm32cubemx/../../Drivers/CMSIS/Include"
+  OBJECT_DIR = cmake\stm32cubemx\CMakeFiles\STM32_Drivers.dir
+  OBJECT_FILE_DIR = cmake\stm32cubemx\CMakeFiles\STM32_Drivers.dir\__\__\Drivers\STM32F1xx_HAL_Driver\Src
+
 
 
 #############################################
 # Object library STM32_Drivers
 
-build cmake/stm32cubemx/STM32_Drivers: phony cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Core/Src/system_stm32f1xx.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_gpio_ex.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_i2c.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_rcc.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_rcc_ex.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_gpio.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_dma.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_cortex.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_pwr.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_flash.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_flash_ex.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_exti.c.obj
+build cmake/stm32cubemx/STM32_Drivers: phony cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Core/Src/system_stm32f1xx.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_gpio_ex.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_i2c.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_rcc.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_rcc_ex.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_gpio.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_dma.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_cortex.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_pwr.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_flash.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_flash_ex.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_exti.c.obj cmake/stm32cubemx/CMakeFiles/STM32_Drivers.dir/__/__/Drivers/STM32F1xx_HAL_Driver/Src/stm32f1xx_hal_uart.c.obj
 
 
 #############################################

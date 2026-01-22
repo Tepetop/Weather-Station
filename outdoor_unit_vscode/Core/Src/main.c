@@ -19,6 +19,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "i2c.h"
+#include "usart.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -38,10 +39,9 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define BHT 0
-#define TSL 0
-#define SI7021 0
-#define BMP 0
+#define TSL 1
+#define SI7021 1
+#define BMP 1
 #define CHECK 0
 /* USER CODE END PD */
 
@@ -59,7 +59,6 @@ uint8_t Length; // Message length
 Si7021_t sio;
 TSL2561_t tsl;
 BMP280_t bmp;
-float BH1750_lux;
 
 /* USER CODE END PV */
 
@@ -106,29 +105,26 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  MX_I2C1_Init();
+  MX_I2C2_Init();
+  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-#if BHT
-  BH1750_Init(&hi2c1);
-  BH1750_SetMode(CONTINUOUS_HIGH_RES_MODE_2);
-#endif
 
 #if TSL
-  TSL2561_Init(&tsl,&hi2c1, (uint8_t)0x39, TSL2561_INTEG_402MS, TSL2561_GAIN_1X);
+  TSL2561_Init(&tsl,&hi2c2, (uint8_t)0x39, TSL2561_INTEG_402MS, TSL2561_GAIN_1X);
 #endif
 
 #if SI7021
-  Si7021_Init(&sio, &hi2c1, 0x40, SI7021_RESOLUTION_RH11_TEMP11);
+  Si7021_Init(&sio, &hi2c2, 0x40, SI7021_RESOLUTION_RH11_TEMP11);
 #endif
 
 #if BMP
-  BMP280_Init(&bmp, &hi2c1, 0x76);
+  BMP280_Init(&bmp, &hi2c2, 0x76);
   BMP280_SetCtrlMeas(&bmp, BMP280_OVERSAMPLING_X16, BMP280_MODE_NORMAL);
   BMP280_SetConfig(&bmp, BMP280_STANDBY_500_MS, BMP280_FILTER_16);
 #endif
 
 #if CHECK
-	I2C_CheckAddress(&hi2c1);
+	I2C_CheckAddress(&hi2c2);
 #endif
 
   /* USER CODE END 2 */
@@ -146,12 +142,6 @@ int main(void)
 	 UartLog(Message);
 #endif
 
-#if BHT
-	 BH1750_ReadLight(&BH1750_lux);
-	 sprintf(Message,"Lux from BHT = %.2f\n\r", BH1750_lux);
-	 UartLog(Message);
-#endif
-
 #if TSL
 	 TSL2561_CalculateLux(&tsl);
 	 sprintf(Message,"Lux from TSL = %.2f\n\r", tsl.data.lux);
@@ -161,11 +151,11 @@ int main(void)
 #if BMP
 	 BMP280_GetTemperature(&bmp);
 	 BMP280_GetPressure(&bmp);
-	 sprintf(Message," BMP Temp = %.2f, BMP Presure = %.2f\n\r", bmp.data.temperature, bmp.data.pressure);
+	 sprintf(Message,"BMP Temp = %.2f, BMP Presure = %.2f\n\r", bmp.data.temperature, bmp.data.pressure);
 	 UartLog(Message);
 #endif
 
-	 HAL_GPIO_TogglePin(GPIOB,GPIO_PIN_3);
+	 HAL_GPIO_TogglePin(USER_LED_GPIO_Port, USER_LED_Pin);
 	 HAL_Delay(500);
   }
   /* USER CODE END 3 */
@@ -210,6 +200,36 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+
+/**
+  * @brief  Send a message via UART
+  * @param  msg: Message to send
+  * @retval None
+  */
+void UartLog(char *msg)
+{
+  uint16_t len = strlen(msg);
+  HAL_UART_Transmit(&huart1, (uint8_t *)msg, len, HAL_MAX_DELAY);
+}
+
+/**
+  * @brief  Check for I2C devices on the bus
+  * @param  i2c: I2C handle
+  * @retval HAL_StatusTypeDef
+  */
+HAL_StatusTypeDef I2C_CheckAddress(I2C_HandleTypeDef *i2c)
+{
+
+  for (uint8_t addr = 0x01; addr < 0x7F; addr++)
+  {
+    if (HAL_OK == HAL_I2C_IsDeviceReady(i2c, addr << 1, 1, 100))
+    {
+      sprintf(Message, "Found I2C device at address: 0x%02X\n\r", addr);
+      UartLog(Message);
+    }
+  }
+  return HAL_OK;
+}
 
 /* USER CODE END 4 */
 
