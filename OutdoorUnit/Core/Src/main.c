@@ -45,8 +45,8 @@
 #define GROUP 0
 #define TSL 0
 #define SI7021 0
-#define BMP 1
-#define BMP_DMA 0  // Set to 1 to test DMA mode
+#define BMP 0
+#define BMP_DMA 1  // Set to 1 to test DMA mode
 #define CHECK 0
 /* USER CODE END PD */
 
@@ -193,16 +193,8 @@ int main(void)
 #endif
 
 #if BMP_DMA
-	 // DMA workflow: Start read -> Wait for completion -> Parse -> Compensate
-	 if (!bmp_dma_in_progress)
-	 {
-		 // Start DMA read of both pressure and temperature (6 bytes)
-		 if (HAL_OK == BMP280_ReadRawTemperaturePressure(&bmp, bmp_dma_buffer, sizeof(bmp_dma_buffer), BMP280_IO_DMA))
-		 {
-			 bmp_dma_in_progress = true;
-		 }
-	 }
-	 else if (bmp_dma_complete)
+	 // DMA workflow: Check completion first, then start new transfer
+	 if (bmp_dma_complete)
 	 {
 		 // DMA complete - parse and compensate
 		 bmp_dma_complete = false;
@@ -211,6 +203,14 @@ int main(void)
 		 BMP280_CompensateTemperatureAndPressure(&bmp);
 		 sprintf(Message,"BMP DMA Temp = %.2f, Pressure = %.2f\n\r", bmp.data.temperature, bmp.data.pressure);
 		 UartLog(Message);
+	 }
+	 else if (!bmp_dma_in_progress)
+	 {
+		 // Start DMA read of both pressure and temperature (6 bytes)
+		 if (HAL_OK == BMP280_ReadRawTemperaturePressure(&bmp, bmp_dma_buffer, sizeof(bmp_dma_buffer), BMP280_IO_DMA))
+		 {
+			 bmp_dma_in_progress = true;
+		 }
 	 }
 #endif
 
@@ -307,7 +307,6 @@ void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c)
   if (hi2c->Instance == hi2c2.Instance)
   {
     bmp_dma_complete = true;
-    bmp_dma_in_progress = false;
   }
 }
 #endif
