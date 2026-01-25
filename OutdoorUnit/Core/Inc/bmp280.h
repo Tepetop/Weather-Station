@@ -86,6 +86,11 @@ typedef enum {
     BMP280_STANDBY_4000_MS = 0x07
 } BMP280_StandbyTime;
 
+typedef enum {
+	BMP280_IO_BLOCKING = 0x00,
+	BMP280_IO_DMA = 0x01
+} BMP280_IoMode;
+
 /*	Data structures for BMP280	*/
 typedef struct {
 
@@ -141,14 +146,34 @@ HAL_StatusTypeDef BMP280_OperationMode(BMP280_t *dev, BMP280_Operation_t operati
 
 HAL_StatusTypeDef BMP280_GetStatus(BMP280_t *dev, uint8_t *measuring, uint8_t *im_update);
 
-HAL_StatusTypeDef BMP280_ReadRawTemperature(BMP280_t *dev);
+/* Unified read functions with mode selection */
+HAL_StatusTypeDef BMP280_ReadRawData(BMP280_t *dev, BMP280_Registers reg, uint8_t *buffer, uint16_t size, BMP280_IoMode mode);
 
-HAL_StatusTypeDef BMP280_ReadRawPressure(BMP280_t *dev);
+HAL_StatusTypeDef BMP280_ReadRawTemperature(BMP280_t *dev, uint8_t *buffer, uint16_t size, BMP280_IoMode mode);
 
+HAL_StatusTypeDef BMP280_ReadRawPressure(BMP280_t *dev, uint8_t *buffer, uint16_t size, BMP280_IoMode mode);
+
+HAL_StatusTypeDef BMP280_ReadRawTemperaturePressure(BMP280_t *dev, uint8_t *buffer, uint16_t size, BMP280_IoMode mode);
+
+/* Parse functions (work with both blocking and DMA data) */
+HAL_StatusTypeDef BMP280_ParseRawTemperature(BMP280_t *dev, const uint8_t *buffer);
+
+HAL_StatusTypeDef BMP280_ParseRawPressure(BMP280_t *dev, const uint8_t *buffer);
+
+HAL_StatusTypeDef BMP280_ParseRawTemperaturePressure(BMP280_t *dev, const uint8_t *buffer);
+
+/* Compensation functions */
+HAL_StatusTypeDef BMP280_CompensateTemperature(BMP280_t *dev);
+
+HAL_StatusTypeDef BMP280_CompensatePressure(BMP280_t *dev);
+
+HAL_StatusTypeDef BMP280_CompensateTemperatureAndPressure(BMP280_t *dev);
+
+/* High-level functions (blocking mode) */
 HAL_StatusTypeDef BMP280_GetTemperature(BMP280_t *dev);
 
 HAL_StatusTypeDef BMP280_GetPressure(BMP280_t *dev);
 
-HAL_StatusTypeDef BMP280_TemperatureAndPressure(BMP280_t *dev);
+HAL_StatusTypeDef BMP280_GetTemperatureAndPressure(BMP280_t *dev);
 
 #endif // BMP280_H

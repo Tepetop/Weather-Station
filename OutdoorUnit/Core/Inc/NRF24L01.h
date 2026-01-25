@@ -1,7 +1,7 @@
 #ifndef NRF24L01_H
 #define NRF24L01_H
 
-#include "stm32f3xx_hal.h"
+#include "stm32f1xx_hal.h"
 
 // Register addresses
 typedef enum {
@@ -69,7 +69,7 @@ NRF24_STATUS_RX_DR = 0x40
 
 // Data rates
 typedef enum {
-NRF24_DR_250KBPS = 0x00,
+NRF24_DR_250KBPS = 0x01, //TODO: bledne dane
 NRF24_DR_1MBPS = 0x00,
 NRF24_DR_2MBPS = 0x08
 } nrf24_data_rate_t;

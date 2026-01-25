@@ -1,3 +1,28 @@
+/**
+ ******************************************************************************
+ * @file    bmp280.c
+ * @brief   BMP280 temperature and pressure sensor driver with unified blocking/DMA support
+ * 
+ * This driver supports both blocking and DMA I2C operations through a unified API.
+ * 
+ * BLOCKING MODE Usage Example:
+ *   BMP280_GetTemperatureAndPressure(&bmp);  // Single call for both
+ *   // or individually:
+ *   BMP280_GetTemperature(&bmp);
+ *   BMP280_GetPressure(&bmp);
+ * 
+ * DMA MODE Usage Example:
+ *   // 1. Start DMA read
+ *   uint8_t buffer[6];
+ *   BMP280_ReadRawTemperaturePressure(&bmp, buffer, 6, BMP280_IO_DMA);
+ * 
+ *   // 2. In I2C DMA complete callback (HAL_I2C_MemRxCpltCallback):
+ *   BMP280_ParseRawTemperaturePressure(&bmp, buffer);
+ *   BMP280_CompensateTemperatureAndPressure(&bmp);
+ *   // Now bmp.data.temperature and bmp.data.pressure contain valid readings
+ * 
+ ******************************************************************************
+ */
 #include "bmp280.h"
 
 
@@ -43,18 +68,26 @@ HAL_StatusTypeDef BMP280_Init(BMP280_t *dev, I2C_HandleTypeDef *i2c_handle, uint
     HAL_StatusTypeDef status = bmp280_ReadData(dev, BMP280_REG_CHIP_ID, &chip_id, 1);
 
 
-    if (status != HAL_OK || chip_id != BMP280_CHIP_ID)
-        return HAL_ERROR;
+    if (status != HAL_OK || chip_id != BMP280_CHIP_ID) 
+		return HAL_ERROR;
 
-    status = BMP280_ReadCalibration(dev);						// Read calibration data
-    status = BMP280_OperationMode(dev, BMP280_OPERATION_1);		// Set sensor in operation mode 1. Lets call it default mode
+	status = BMP280_ReadCalibration(dev);						// Read calibration data
+
+	if (status != HAL_OK)
+		return status;
+
+	status = BMP280_OperationMode(dev, BMP280_OPERATION_1);		// Set sensor in operation mode 1. Lets call it default mode
+
+	if (status != HAL_OK)
+		return status;
 
 	// Default settings
 	status = BMP280_SetCtrlMeas(dev, BMP280_OVERSAMPLING_X16, BMP280_MODE_NORMAL);
-    status = BMP280_SetConfig(dev, BMP280_STANDBY_500_MS, BMP280_FILTER_16);
+	if (status != HAL_OK)
+		return status;
+	status = BMP280_SetConfig(dev, BMP280_STANDBY_500_MS, BMP280_FILTER_16);
 
-
-    return status;
+	return status;
 }
 
 /**
@@ -67,7 +100,8 @@ HAL_StatusTypeDef BMP280_Init(BMP280_t *dev, I2C_HandleTypeDef *i2c_handle, uint
  */
 HAL_StatusTypeDef BMP280_SoftReset(BMP280_t *dev)
 {
-	return bmp280_WriteData(dev, BMP280_REG_RESET, (uint8_t*)BMP280_RESET_COMMAND);
+	uint8_t cmd = (uint8_t)BMP280_RESET_COMMAND;
+	return bmp280_WriteData(dev, BMP280_REG_RESET, &cmd);
 }
 
 /**
@@ -248,6 +282,9 @@ HAL_StatusTypeDef BMP280_OperationMode(BMP280_t *dev, BMP280_Operation_t operati
  */
 HAL_StatusTypeDef BMP280_GetStatus(BMP280_t *dev, uint8_t *measuring, uint8_t *im_update)
 {
+	if (NULL == dev || NULL == measuring || NULL == im_update)
+		return HAL_ERROR;
+
     uint8_t status_reg;
     HAL_StatusTypeDef status = bmp280_ReadData(dev, BMP280_REG_STATUS, &status_reg, 1);
     if (status == HAL_OK)
@@ -259,145 +296,260 @@ HAL_StatusTypeDef BMP280_GetStatus(BMP280_t *dev, uint8_t *measuring, uint8_t *i
 }
 
 /**
- * @brief Reads the raw temperature calibration from the BMP280 sensor.
- *
- * Reads 3 bytes from registers 0xFA to 0xFC and combines them into a 20-bit raw temperature value.
+ * @brief Unified read function supporting both blocking and DMA modes.
  *
  * @param dev Pointer to the BMP280 handle structure.
- * @return Raw temperature ADC value.
+ * @param reg Register address to read from.
+ * @param buffer Buffer to store read data.
+ * @param size Number of bytes to read.
+ * @param mode BMP280_IO_BLOCKING or BMP280_IO_DMA.
+ * @return HAL status.
  */
-HAL_StatusTypeDef BMP280_ReadRawTemperature(BMP280_t *dev)
+HAL_StatusTypeDef BMP280_ReadRawData(BMP280_t *dev, BMP280_Registers reg, uint8_t *buffer, uint16_t size, BMP280_IoMode mode)
 {
-	if(NULL == dev)
+	if (NULL == dev || NULL == buffer)
 		return HAL_ERROR;
 
-    uint8_t buf[3];
-    HAL_StatusTypeDef status = bmp280_ReadData(dev, BMP280_REG_TEMP_MSB, buf, 3);
+	if (mode == BMP280_IO_DMA)
+		return HAL_I2C_Mem_Read_DMA(dev->i2c_handle, dev->address, reg, I2C_MEMADD_SIZE_8BIT, buffer, size);
 
-    if(status != HAL_OK)
-    	return HAL_ERROR;
-
-    dev->data.raw_temperature = ((int32_t)buf[0] << 12) | ((int32_t)buf[1] << 4) | ((int32_t)buf[2] >> 4);
-    return status;
+	return bmp280_ReadData(dev, reg, buffer, size);
 }
 
 /**
- * @brief Reads the raw pressure calibration from the BMP280 sensor.
- *
- * Reads 3 bytes from registers 0xF7 to 0xF9 and combines them into a 20-bit raw pressure value.
+ * @brief Reads raw temperature data (3 bytes) using specified I/O mode.
  *
  * @param dev Pointer to the BMP280 handle structure.
- * @return Raw pressure ADC value.
+ * @param buffer Buffer to store 3 bytes of raw temperature data.
+ * @param size Buffer size (must be >= 3).
+ * @param mode BMP280_IO_BLOCKING or BMP280_IO_DMA.
+ * @return HAL status.
  */
-HAL_StatusTypeDef BMP280_ReadRawPressure(BMP280_t *dev)
+HAL_StatusTypeDef BMP280_ReadRawTemperature(BMP280_t *dev, uint8_t *buffer, uint16_t size, BMP280_IoMode mode)
 {
-	if(NULL == dev)
+	if (NULL == dev || NULL == buffer || size < 3)
 		return HAL_ERROR;
 
-    uint8_t buf[3];
-    HAL_StatusTypeDef status = bmp280_ReadData(dev, BMP280_REG_PRESS_MSB, buf, 3);
-
-    if(status != HAL_OK)
-    	return HAL_ERROR;
-    dev->data.raw_pressure = ((int32_t)buf[0] << 12) | ((int32_t)buf[1] << 4) | ((int32_t)buf[2] >> 4);
-    return status;
+	return BMP280_ReadRawData(dev, BMP280_REG_TEMP_MSB, buffer, 3, mode);
 }
 
 /**
- * @brief Calculates the compensated temperature from raw calibration.
- *
- * Uses the raw temperature and calibration parameters to compute the temperature in degrees Celsius.
- * Updates the t_fine value used for pressure compensation.
- * Based on the compensation formula in section 3.11.3 of the calibrationsheet.
+ * @brief Reads raw pressure data (3 bytes) using specified I/O mode.
  *
  * @param dev Pointer to the BMP280 handle structure.
- * @return Temperature in degrees Celsius.
+ * @param buffer Buffer to store 3 bytes of raw pressure data.
+ * @param size Buffer size (must be >= 3).
+ * @param mode BMP280_IO_BLOCKING or BMP280_IO_DMA.
+ * @return HAL status.
  */
-HAL_StatusTypeDef BMP280_GetTemperature(BMP280_t *dev)
+HAL_StatusTypeDef BMP280_ReadRawPressure(BMP280_t *dev, uint8_t *buffer, uint16_t size, BMP280_IoMode mode)
 {
-    if(HAL_OK != BMP280_ReadRawTemperature(dev))
-    	return HAL_ERROR;
+	if (NULL == dev || NULL == buffer || size < 3)
+		return HAL_ERROR;
 
-
-    int32_t var1 = ((((dev->data.raw_temperature >> 3) - ((int32_t)dev->calibration.dig_T1 << 1))) * ((int32_t)dev->calibration.dig_T2)) >> 11;
-    int32_t var2 = (((((dev->data.raw_temperature >> 4) - ((int32_t)dev->calibration.dig_T1)) * ((dev->data.raw_temperature >> 4) - ((int32_t)dev->calibration.dig_T1))) >> 12) * ((int32_t)dev->calibration.dig_T3)) >> 14;
-
-    dev->calibration.t_fine = var1 + var2;
-    int32_t T = ((dev->calibration.t_fine) * 5 + 128) >> 8;
-
-    dev->data.temperature = (float)(T / 100.0);
-
-    //dev->data.temperature = (float)((((var1 + var2) * 5 + 128) >> 8) / 100.0);
-
-    return HAL_OK;
+	return BMP280_ReadRawData(dev, BMP280_REG_PRESS_MSB, buffer, 3, mode);
 }
 
 /**
- * @brief Calculates the compensated pressure from raw calibration.
- *
- * Uses the raw pressure, t_fine from temperature compensation, and calibration parameters
- * to compute the pressure in hPa.
- * Based on the compensation formula in section 3.11.3 of the calibrationsheet.
- * Requires temperature to be read first for t_fine.
+ * @brief Reads both raw pressure and temperature data (6 bytes) using specified I/O mode.
  *
  * @param dev Pointer to the BMP280 handle structure.
- * @return Pressure in hPa.
+ * @param buffer Buffer to store 6 bytes (pressure MSB/LSB/XLSB, temp MSB/LSB/XLSB).
+ * @param size Buffer size (must be >= 6).
+ * @param mode BMP280_IO_BLOCKING or BMP280_IO_DMA.
+ * @return HAL status.
  */
-HAL_StatusTypeDef BMP280_GetPressure(BMP280_t *dev)
+HAL_StatusTypeDef BMP280_ReadRawTemperaturePressure(BMP280_t *dev, uint8_t *buffer, uint16_t size, BMP280_IoMode mode)
 {
-    if (HAL_OK != BMP280_ReadRawPressure(dev))
-    	return HAL_ERROR;
+	if (NULL == dev || NULL == buffer || size < 6)
+		return HAL_ERROR;
 
-    int32_t var1 = (((int32_t)dev->calibration.t_fine) >> 1) - (int32_t)64000;
-    int32_t var2 = (((var1 >> 2) * (var1 >> 2)) >> 11) * ((int32_t)dev->calibration.dig_P6);
-    var2 = var2 + ((var1 * ((int32_t)dev->calibration.dig_P5)) << 1);
-    var2 = (var2 >> 2) + (((int32_t)dev->calibration.dig_P4) << 16);
-    var1 = (((dev->calibration.dig_P3 * (((var1 >> 2) * (var1 >> 2)) >> 13)) >> 3) + ((((int32_t)dev->calibration.dig_P2) * var1) >> 1)) >> 18;
-    var1 = ((((32768 + var1)) * ((int32_t)dev->calibration.dig_P1)) >> 15);
-
-    if (var1 == 0)
-    {
-        return HAL_ERROR;
-    }
-
-    uint32_t p = (((uint32_t)(((int32_t)1048576) - dev->data.raw_pressure) - (var2 >> 12))) * 3125;
-
-    if (p < 0x80000000UL)
-    	{
-        	p = (p << 1) / ((uint32_t)var1);
-    	}
-    else
-    	{
-    		p = (p / (uint32_t)var1) * 2;
-    	}
-
-    var1 = (((int32_t)dev->calibration.dig_P9) * ((int32_t)(((p >> 3) * (p >> 3)) >> 13))) >> 12;
-    var2 = (((int32_t)(p >> 2)) * ((int32_t)dev->calibration.dig_P8)) >> 13;
-
-    p = (uint32_t)((int32_t)p + ((var1 + var2 + dev->calibration.dig_P7) >> 4));
-    dev->data.pressure = (float)(p/100.0);
-
-    return HAL_OK;
+	return BMP280_ReadRawData(dev, BMP280_REG_PRESS_MSB, buffer, 6, mode);
 }
 
 /**
- * @brief Reads both temperature and pressure in one call.
+ * @brief Parses 3 bytes of raw temperature data into the device structure.
  *
- * Calls BMP280_GetTemperature and BMP280_GetPressure to get compensated values.
- * Temperature must be read first as it calculates t_fine needed for pressure compensation.
+ * @param dev Pointer to the BMP280 handle structure.
+ * @param buffer Buffer containing 3 bytes of raw temperature data.
+ * @return HAL status.
+ */
+HAL_StatusTypeDef BMP280_ParseRawTemperature(BMP280_t *dev, const uint8_t *buffer)
+{
+	if (NULL == dev || NULL == buffer)
+		return HAL_ERROR;
+
+	dev->data.raw_temperature = ((int32_t)buffer[0] << 12) | ((int32_t)buffer[1] << 4) | ((int32_t)buffer[2] >> 4);
+	return HAL_OK;
+}
+
+/**
+ * @brief Parses 3 bytes of raw pressure data into the device structure.
+ *
+ * @param dev Pointer to the BMP280 handle structure.
+ * @param buffer Buffer containing 3 bytes of raw pressure data.
+ * @return HAL status.
+ */
+HAL_StatusTypeDef BMP280_ParseRawPressure(BMP280_t *dev, const uint8_t *buffer)
+{
+	if (NULL == dev || NULL == buffer)
+		return HAL_ERROR;
+
+	dev->data.raw_pressure = ((int32_t)buffer[0] << 12) | ((int32_t)buffer[1] << 4) | ((int32_t)buffer[2] >> 4);
+	return HAL_OK;
+}
+
+/**
+ * @brief Parses 6 bytes of raw pressure+temperature data into the device structure.
+ *
+ * @param dev Pointer to the BMP280 handle structure.
+ * @param buffer Buffer containing 6 bytes (pressure MSB/LSB/XLSB, temp MSB/LSB/XLSB).
+ * @return HAL status.
+ */
+HAL_StatusTypeDef BMP280_ParseRawTemperaturePressure(BMP280_t *dev, const uint8_t *buffer)
+{
+	if (NULL == dev || NULL == buffer)
+		return HAL_ERROR;
+
+	dev->data.raw_pressure = ((int32_t)buffer[0] << 12) | ((int32_t)buffer[1] << 4) | ((int32_t)buffer[2] >> 4);
+	dev->data.raw_temperature = ((int32_t)buffer[3] << 12) | ((int32_t)buffer[4] << 4) | ((int32_t)buffer[5] >> 4);
+	return HAL_OK;
+}
+
+/**
+ * @brief Reads and compensates temperature in blocking mode.
  *
  * @param dev Pointer to the BMP280 handle structure.
  * @return HAL status.
  */
-HAL_StatusTypeDef BMP280_TemperatureAndPressure(BMP280_t *dev)
+HAL_StatusTypeDef BMP280_GetTemperature(BMP280_t *dev)
 {
-	// Read temperature first (required for t_fine calculation used in pressure)
-	if (BMP280_GetTemperature(dev) != HAL_OK)
+	uint8_t buf[3];
+	if (HAL_OK != BMP280_ReadRawTemperature(dev, buf, sizeof(buf), BMP280_IO_BLOCKING))
 		return HAL_ERROR;
 
-	// Then read pressure
-	if (BMP280_GetPressure(dev) != HAL_OK)
+	if (HAL_OK != BMP280_ParseRawTemperature(dev, buf))
 		return HAL_ERROR;
 
-    return HAL_OK;
+	return BMP280_CompensateTemperature(dev);
+}
+
+/**
+ * @brief Reads and compensates pressure in blocking mode.
+ *
+ * @param dev Pointer to the BMP280 handle structure.
+ * @return HAL status.
+ */
+HAL_StatusTypeDef BMP280_GetPressure(BMP280_t *dev)
+{
+	uint8_t buf[3];
+	if (HAL_OK != BMP280_ReadRawPressure(dev, buf, sizeof(buf), BMP280_IO_BLOCKING))
+		return HAL_ERROR;
+
+	if (HAL_OK != BMP280_ParseRawPressure(dev, buf))
+		return HAL_ERROR;
+
+	return BMP280_CompensatePressure(dev);
+}
+
+/**
+ * @brief Reads and compensates both temperature and pressure in blocking mode.
+ *
+ * @param dev Pointer to the BMP280 handle structure.
+ * @return HAL status.
+ */
+HAL_StatusTypeDef BMP280_GetTemperatureAndPressure(BMP280_t *dev)
+{
+	uint8_t buf[6];
+	if (HAL_OK != BMP280_ReadRawTemperaturePressure(dev, buf, sizeof(buf), BMP280_IO_BLOCKING))
+		return HAL_ERROR;
+
+	if (HAL_OK != BMP280_ParseRawTemperaturePressure(dev, buf))
+		return HAL_ERROR;
+
+	return BMP280_CompensateTemperatureAndPressure(dev);
+}
+
+/**
+ * @brief Compensates raw temperature data using calibration parameters.
+ *
+ * Uses the raw temperature and calibration parameters to compute the temperature in degrees Celsius.
+ * Updates the t_fine value used for pressure compensation.
+ *
+ * @param dev Pointer to the BMP280 handle structure.
+ * @return HAL status.
+ */
+HAL_StatusTypeDef BMP280_CompensateTemperature(BMP280_t *dev)
+{
+	if (NULL == dev)
+		return HAL_ERROR;
+
+	int32_t var1 = ((((dev->data.raw_temperature >> 3) - ((int32_t)dev->calibration.dig_T1 << 1))) * ((int32_t)dev->calibration.dig_T2)) >> 11;
+	int32_t var2 = (((((dev->data.raw_temperature >> 4) - ((int32_t)dev->calibration.dig_T1)) * ((dev->data.raw_temperature >> 4) - ((int32_t)dev->calibration.dig_T1))) >> 12) * ((int32_t)dev->calibration.dig_T3)) >> 14;
+
+	dev->calibration.t_fine = var1 + var2;
+	int32_t T = ((dev->calibration.t_fine) * 5 + 128) >> 8;
+
+	dev->data.temperature = (float)(T / 100.0);
+	return HAL_OK;
+}
+
+/**
+ * @brief Compensates raw pressure data using calibration parameters.
+ *
+ * Uses the raw pressure, t_fine from temperature compensation, and calibration parameters
+ * to compute the pressure in hPa. Temperature must be compensated first.
+ *
+ * @param dev Pointer to the BMP280 handle structure.
+ * @return HAL status.
+ */
+HAL_StatusTypeDef BMP280_CompensatePressure(BMP280_t *dev)
+{
+	if (NULL == dev)
+		return HAL_ERROR;
+
+	int32_t var1 = (((int32_t)dev->calibration.t_fine) >> 1) - (int32_t)64000;
+	int32_t var2 = (((var1 >> 2) * (var1 >> 2)) >> 11) * ((int32_t)dev->calibration.dig_P6);
+	var2 = var2 + ((var1 * ((int32_t)dev->calibration.dig_P5)) << 1);
+	var2 = (var2 >> 2) + (((int32_t)dev->calibration.dig_P4) << 16);
+	var1 = (((dev->calibration.dig_P3 * (((var1 >> 2) * (var1 >> 2)) >> 13)) >> 3) + ((((int32_t)dev->calibration.dig_P2) * var1) >> 1)) >> 18;
+	var1 = ((((32768 + var1)) * ((int32_t)dev->calibration.dig_P1)) >> 15);
+
+	if (var1 == 0)
+		return HAL_ERROR;
+
+	uint32_t p = (((uint32_t)(((int32_t)1048576) - dev->data.raw_pressure) - (var2 >> 12))) * 3125;
+
+	if (p < 0x80000000UL)
+	{
+		p = (p << 1) / ((uint32_t)var1);
+	}
+	else
+	{
+		p = (p / (uint32_t)var1) * 2;
+	}
+
+	var1 = (((int32_t)dev->calibration.dig_P9) * ((int32_t)(((p >> 3) * (p >> 3)) >> 13))) >> 12;
+	var2 = (((int32_t)(p >> 2)) * ((int32_t)dev->calibration.dig_P8)) >> 13;
+
+	p = (uint32_t)((int32_t)p + ((var1 + var2 + dev->calibration.dig_P7) >> 4));
+	dev->data.pressure = (float)(p/100.0);
+
+	return HAL_OK;
+}
+
+/**
+ * @brief Compensates both temperature and pressure.
+ *
+ * Temperature must be compensated first as it calculates t_fine needed for pressure.
+ *
+ * @param dev Pointer to the BMP280 handle structure.
+ * @return HAL status.
+ */
+HAL_StatusTypeDef BMP280_CompensateTemperatureAndPressure(BMP280_t *dev)
+{
+	if (HAL_OK != BMP280_CompensateTemperature(dev))
+		return HAL_ERROR;
+
+	return BMP280_CompensatePressure(dev);
 }

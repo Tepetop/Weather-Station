@@ -18,7 +18,9 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "dma.h"
 #include "i2c.h"
+#include "spi.h"
 #include "usart.h"
 #include "gpio.h"
 
@@ -40,10 +42,11 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define GROUP 1
+#define GROUP 0
 #define TSL 0
 #define SI7021 0
-#define BMP 0
+#define BMP 1
+#define BMP_DMA 0  // Set to 1 to test DMA mode
 #define CHECK 0
 /* USER CODE END PD */
 
@@ -58,10 +61,29 @@
 char Message[128]; // Message to transfer by UART
 uint8_t Length; // Message length
 
-Si7021_t sio;
+#if TSL
 TSL2561_t tsl;
-BMP280_t bmp;
+#endif
 
+#if SI7021
+Si7021_t sio;
+#endif
+
+#if BMP || BMP_DMA
+BMP280_t bmp;
+#endif
+
+#if BMP_DMA
+static uint8_t bmp_dma_buffer[6];
+static volatile bool bmp_dma_complete = false;
+static volatile bool bmp_dma_in_progress = false;
+#endif
+
+#if GROUP
+TSL2561_t tsl;
+Si7021_t sio;
+BMP280_t bmp;
+#endif
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -107,8 +129,10 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_I2C2_Init();
   MX_USART1_UART_Init();
+  MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
 
 #if GROUP
@@ -125,6 +149,12 @@ int main(void)
 #endif
 
 #if BMP
+  BMP280_Init(&bmp, &hi2c2, 0x76);
+  BMP280_SetCtrlMeas(&bmp, BMP280_OVERSAMPLING_X16, BMP280_MODE_NORMAL);
+  BMP280_SetConfig(&bmp, BMP280_STANDBY_500_MS, BMP280_FILTER_16);
+#endif
+
+#if BMP_DMA
   BMP280_Init(&bmp, &hi2c2, 0x76);
   BMP280_SetCtrlMeas(&bmp, BMP280_OVERSAMPLING_X16, BMP280_MODE_NORMAL);
   BMP280_SetConfig(&bmp, BMP280_STANDBY_500_MS, BMP280_FILTER_16);
@@ -162,6 +192,28 @@ int main(void)
 	 UartLog(Message);
 #endif
 
+#if BMP_DMA
+	 // DMA workflow: Start read -> Wait for completion -> Parse -> Compensate
+	 if (!bmp_dma_in_progress)
+	 {
+		 // Start DMA read of both pressure and temperature (6 bytes)
+		 if (HAL_OK == BMP280_ReadRawTemperaturePressure(&bmp, bmp_dma_buffer, sizeof(bmp_dma_buffer), BMP280_IO_DMA))
+		 {
+			 bmp_dma_in_progress = true;
+		 }
+	 }
+	 else if (bmp_dma_complete)
+	 {
+		 // DMA complete - parse and compensate
+		 bmp_dma_complete = false;
+		 bmp_dma_in_progress = false;
+		 BMP280_ParseRawTemperaturePressure(&bmp, bmp_dma_buffer);
+		 BMP280_CompensateTemperatureAndPressure(&bmp);
+		 sprintf(Message,"BMP DMA Temp = %.2f, Pressure = %.2f\n\r", bmp.data.temperature, bmp.data.pressure);
+		 UartLog(Message);
+	 }
+#endif
+
 #if GROUP
    Measurement_Start();
    Measurement_Process();
@@ -169,7 +221,7 @@ int main(void)
    UartLog(Message);
 #endif
    HAL_GPIO_TogglePin(USER_LED_GPIO_Port, USER_LED_Pin);
-	 HAL_Delay(1000);
+	 HAL_Delay(350);
   }
   /* USER CODE END 3 */
 }
@@ -243,6 +295,22 @@ HAL_StatusTypeDef I2C_CheckAddress(I2C_HandleTypeDef *i2c)
   }
   return HAL_OK;
 }
+
+#if BMP_DMA
+/**
+  * @brief  I2C Memory Read DMA completion callback
+  * @param  hi2c: I2C handle
+  * @retval None
+  */
+void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c)
+{
+  if (hi2c->Instance == hi2c2.Instance)
+  {
+    bmp_dma_complete = true;
+    bmp_dma_in_progress = false;
+  }
+}
+#endif
 
 /* USER CODE END 4 */
 

@@ -82,7 +82,7 @@ static void Measurement_ReadSi7021(void) {
  * @brief Read BMP280 temperature and pressure sensor
  */
 static void Measurement_ReadBMP280(void) {
-    if (BMP280_TemperatureAndPressure(&hbmp280) == HAL_OK) {
+    if (BMP280_GetTemperatureAndPressure(&hbmp280) == HAL_OK) {
         devices.data.bmp280_temp = hbmp280.data.temperature;
         devices.data.bmp280_press = hbmp280.data.pressure;
     } else {
