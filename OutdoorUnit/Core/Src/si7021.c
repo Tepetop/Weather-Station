@@ -300,13 +300,6 @@ HAL_StatusTypeDef Si7021_ReadHumidityAndTemperature(Si7021_t *hsi7021)
 	HAL_StatusTypeDef status = Si7021_ReadHumidity(hsi7021);
     uint8_t temp_data[2];
 
-//    uint8_t cmd = SI7021_CMD_READ_TEMP_PREV_RH;
-//    if(HAL_OK != HAL_I2C_Master_Transmit(hsi7021->hi2c, hsi7021->address, &cmd, 1, HAL_MAX_DELAY))
-//    	return 0;
-//
-//    if(HAL_OK != HAL_I2C_Master_Receive(hsi7021->hi2c, hsi7021->address, temp_data, 2, HAL_MAX_DELAY))
-//    	return 0;
-
     status = Si7021_ReadRegister(hsi7021, SI7021_CMD_READ_TEMP_PREV_RH, temp_data, 2);
     if (status != HAL_OK)
     	return status;

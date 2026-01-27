@@ -42,11 +42,11 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define GROUP 0
+#define GROUP 1
 #define TSL 0
 #define SI7021 0
 #define BMP 0
-#define BMP_DMA 1  // Set to 1 to test DMA mode
+#define BMP_DMA 0 
 #define CHECK 0
 /* USER CODE END PD */
 
@@ -137,7 +137,7 @@ int main(void)
 
 #if GROUP
   Measurement_Init(&hi2c2);
-  Measurement_Process();
+  Measurement_Start();
 #endif
 
 #if TSL
@@ -215,13 +215,32 @@ int main(void)
 #endif
 
 #if GROUP
-   Measurement_Start();
+   // Process state machine - handles init, sleep, wakeup, and measurements
    Measurement_Process();
-   Measurement_GetCSV(Message, sizeof(Message));
-   UartLog(Message);
+   
+   // Check if measurement cycle is complete (sensors are now sleeping)
+   Measurement_State_t state = Measurement_GetState();
+   if (state == MEAS_SLEEP) {
+       // Get and display measurement results
+       Measurement_GetCSV(Message, sizeof(Message));
+       UartLog(Message);
+       
+       // Check for any sensor errors and log them
+       uint8_t errors = Measurement_GetErrorCode();
+       if (errors != ERROR_NONE) {
+           sprintf(Message, "Sensor errors: 0x%02X\r\n", errors);
+           UartLog(Message);
+       }
+       
+       // Start new measurement cycle (will wake up sensors)
+       Measurement_Start();
+   } else if (state == MEAS_ERROR) {
+       sprintf(Message, "Critical error! Attempting recovery...\r\n");
+       UartLog(Message);
+   }
 #endif
    HAL_GPIO_TogglePin(USER_LED_GPIO_Port, USER_LED_Pin);
-	 HAL_Delay(350);
+	 HAL_Delay(500);
   }
   /* USER CODE END 3 */
 }
