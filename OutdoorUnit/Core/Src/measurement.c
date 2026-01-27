@@ -282,7 +282,7 @@ void Measurement_WakeupSensors(void) {
     if (devices.sensorsInitialized & SENSOR_TSL2561_INIT) {
         TSL2561_PowerOn(&htsl2561);
         // Allow sensor to stabilize after power on
-        HAL_Delay(50);
+        HAL_Delay(5);
     }
 }
 
@@ -299,8 +299,6 @@ void Measurement_Process(void)
             break;
         
         case MEAS_INIT_ERROR:
-            // Delay before retry
-            HAL_Delay(MEASUREMENT_RETRY_DELAY_MS);
             // Try to reinitialize only failed sensors
             Measurement_InitializeSensors();
             break;

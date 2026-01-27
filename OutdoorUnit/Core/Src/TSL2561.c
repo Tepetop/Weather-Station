@@ -162,15 +162,17 @@ HAL_StatusTypeDef TSL2561_ReadADC(TSL2561_t *sensor)
     HAL_StatusTypeDef status;
     uint16_t data[2];
 
-    status = TSL2561_ReadWord(sensor, TSL2561_REG_DATA0LOW, &data[1]);
+    status = TSL2561_ReadWord(sensor, TSL2561_REG_DATA0LOW, &data[0]);
 
     if (status != HAL_OK)
+    {
+        
     	return status;
+    }
 
-     status = TSL2561_ReadWord(sensor, TSL2561_REG_DATA1LOW, &data[2]);
-
-     sensor->data.chan0 = data[1];
-     sensor->data.chan1 = data[2];
+    status = TSL2561_ReadWord(sensor, TSL2561_REG_DATA1LOW, &data[1]);
+    sensor->data.chan0 = data[0];
+    sensor->data.chan1 = data[1];
     return status;
 }
 
