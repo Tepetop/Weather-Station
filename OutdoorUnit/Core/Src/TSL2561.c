@@ -2,13 +2,26 @@
 #include <math.h>
 
 // Helper function to write a single byte to a register
+/**
+ * @brief  Helper function to write a single byte to a register
+ * @param  sensor Pointer to TSL2561 handle
+ * @param  reg    Register address
+ * @param  value  Data to write
+ * @retval HAL Status
+ */
 static HAL_StatusTypeDef TSL2561_WriteByte(TSL2561_t *sensor, uint8_t reg, uint8_t value)
 {
     uint8_t data[2] = {TSL2561_REG_COMMAND | reg, value};
     return HAL_I2C_Master_Transmit(sensor->hi2c, sensor->address, data, 2, HAL_MAX_DELAY);
 }
 
-// Helper function to read a single byte from a register
+/**
+ * @brief  Helper function to read a single byte from a register
+ * @param  sensor Pointer to TSL2561 handle
+ * @param  reg    Register address
+ * @param  value  Pointer to store the read value
+ * @retval HAL Status
+ */
 static HAL_StatusTypeDef TSL2561_ReadByte(TSL2561_t *sensor, uint8_t reg, uint8_t *value)
 {
     uint8_t reg_cmd = TSL2561_REG_COMMAND | reg;
@@ -20,14 +33,26 @@ static HAL_StatusTypeDef TSL2561_ReadByte(TSL2561_t *sensor, uint8_t reg, uint8_
     return HAL_I2C_Master_Receive(sensor->hi2c, sensor->address | 1, value, 1, HAL_MAX_DELAY);
 }
 
-// Helper function to write a 16-bit word to a register pair
+/**
+ * @brief  Helper function to write a 16-bit word to a register pair
+ * @param  sensor  Pointer to TSL2561 handle
+ * @param  reg_low Register lower address
+ * @param  value   16-bit value to write
+ * @retval HAL Status
+ */
 static HAL_StatusTypeDef TSL2561_WriteWord(TSL2561_t *sensor, uint8_t reg_low, uint16_t value)
 {
     uint8_t data[3] = {TSL2561_REG_COMMAND | TSL2561_REG_WORD | reg_low, value & 0xFF, (value >> 8) & 0xFF};
     return HAL_I2C_Master_Transmit(sensor->hi2c, sensor->address, data, 3, HAL_MAX_DELAY);
 }
 
-// Helper function to read a 16-bit word from a register pair
+/**
+ * @brief  Helper function to read a 16-bit word from a register pair
+ * @param  sensor  Pointer to TSL2561 handle
+ * @param  reg_low Register lower address
+ * @param  value   Pointer to store the read 16-bit value
+ * @retval HAL Status
+ */
 static HAL_StatusTypeDef TSL2561_ReadWord(TSL2561_t *sensor, uint8_t reg_low, uint16_t *value)
 {
     uint8_t reg_cmd = TSL2561_REG_COMMAND | TSL2561_REG_WORD | reg_low;
@@ -46,7 +71,15 @@ static HAL_StatusTypeDef TSL2561_ReadWord(TSL2561_t *sensor, uint8_t reg_low, ui
     return HAL_OK;
 }
 
-// Initialize the TSL2561 sensor
+/**
+ * @brief  Initialize the TSL2561 sensor
+ * @param  sensor    Pointer to TSL2561 handle
+ * @param  hi2c      Pointer to I2C handle
+ * @param  address   I2C address of the sensor
+ * @param  timing_ms Integration time setting
+ * @param  gain      Gain setting
+ * @retval HAL Status
+ */
 HAL_StatusTypeDef TSL2561_Init(TSL2561_t *sensor, I2C_HandleTypeDef *hi2c, uint8_t address,
 		TSL2561_IntegrationTime_t timing_ms, TSL2561_Gain_t gain)
 {
@@ -74,7 +107,11 @@ HAL_StatusTypeDef TSL2561_Init(TSL2561_t *sensor, I2C_HandleTypeDef *hi2c, uint8
     return HAL_OK;
 }
 
-// Power on the sensor
+/**
+ * @brief  Power on the sensor
+ * @param  sensor Pointer to TSL2561 handle
+ * @retval HAL Status
+ */
 HAL_StatusTypeDef TSL2561_PowerOn(TSL2561_t *sensor)
 {
     HAL_StatusTypeDef status = TSL2561_WriteByte(sensor, TSL2561_REG_CONTROL, 0x03);
@@ -85,7 +122,11 @@ HAL_StatusTypeDef TSL2561_PowerOn(TSL2561_t *sensor)
     return status;
 }
 
-// Power off the sensor
+/**
+ * @brief  Power off the sensor
+ * @param  sensor Pointer to TSL2561 handle
+ * @retval HAL Status
+ */
 HAL_StatusTypeDef TSL2561_PowerOff(TSL2561_t *sensor)
 {
     HAL_StatusTypeDef status = TSL2561_WriteByte(sensor, TSL2561_REG_CONTROL, 0x00);
@@ -98,7 +139,13 @@ HAL_StatusTypeDef TSL2561_PowerOff(TSL2561_t *sensor)
 
 
 
-// Configure integration time, gain, and manual mode
+/**
+ * @brief  Configure integration time and gain
+ * @param  sensor Pointer to TSL2561 handle
+ * @param  time   Integration time
+ * @param  gain   Gain setting
+ * @retval HAL Status
+ */
 HAL_StatusTypeDef TSL2561_SetTiming(TSL2561_t *sensor, TSL2561_IntegrationTime_t time, TSL2561_Gain_t gain)
 {
 	if (sensor == NULL)
@@ -112,7 +159,13 @@ HAL_StatusTypeDef TSL2561_SetTiming(TSL2561_t *sensor, TSL2561_IntegrationTime_t
     return TSL2561_WriteByte(sensor, TSL2561_REG_TIMING, timing);
 }
 
-// Set interrupt thresholds
+/**
+ * @brief  Set interrupt thresholds
+ * @param  sensor          Pointer to TSL2561 handle
+ * @param  low_threshold   Low threshold value
+ * @param  high_threshold  High threshold value
+ * @retval HAL Status
+ */
 HAL_StatusTypeDef TSL2561_SetInterruptThreshold(TSL2561_t *sensor, uint16_t low_threshold, uint16_t high_threshold)
 {
     HAL_StatusTypeDef status;
@@ -124,20 +177,36 @@ HAL_StatusTypeDef TSL2561_SetInterruptThreshold(TSL2561_t *sensor, uint16_t low_
     return TSL2561_WriteWord(sensor, TSL2561_REG_THRESHHIGHLOW, high_threshold);
 }
 
-// Configure interrupt control and persistence
+/**
+ * @brief  Configure interrupt control and persistence
+ * @param  sensor     Pointer to TSL2561 handle
+ * @param  intr_mode  Interrupt mode
+ * @param  persist    Persistence filter value
+ * @retval HAL Status
+ */
 HAL_StatusTypeDef TSL2561_SetInterruptControl(TSL2561_t *sensor, uint8_t intr_mode, uint8_t persist)
 {
     uint8_t intr_control = (intr_mode & 0x30) | (persist & 0x0F);
     return TSL2561_WriteByte(sensor, TSL2561_REG_INTERRUPT, intr_control);
 }
 
-// Clear interrupt
+/**
+ * @brief  Clear interrupt
+ * @param  sensor Pointer to TSL2561 handle
+ * @retval HAL Status
+ */
 HAL_StatusTypeDef TSL2561_ClearInterrupt(TSL2561_t *sensor)
 {
     return TSL2561_WriteByte(sensor, TSL2561_REG_COMMAND | TSL2561_REG_CLEAR, 0x00);
 }
 
-// Read ID register
+/**
+ * @brief  Read ID register
+ * @param  sensor   Pointer to TSL2561 handle
+ * @param  part_no  Pointer to store Part Number
+ * @param  rev_no   Pointer to store Revision Number
+ * @retval HAL Status
+ */
 HAL_StatusTypeDef TSL2561_ReadID(TSL2561_t *sensor, uint8_t *part_no, uint8_t *rev_no)
 {
     uint8_t id;
@@ -151,7 +220,11 @@ HAL_StatusTypeDef TSL2561_ReadID(TSL2561_t *sensor, uint8_t *part_no, uint8_t *r
     return HAL_OK;
 }
 
-// Read ADC channel data
+/**
+ * @brief  Read ADC channel data
+ * @param  sensor Pointer to TSL2561 handle
+ * @retval HAL Status
+ */
 HAL_StatusTypeDef TSL2561_ReadADC(TSL2561_t *sensor)
 {
 	if (sensor == NULL)
@@ -176,7 +249,11 @@ HAL_StatusTypeDef TSL2561_ReadADC(TSL2561_t *sensor)
     return status;
 }
 
-// Calculate lux value based on datasheet formulas
+/**
+ * @brief  Calculate lux value based on datasheet formulas
+ * @param  sensor Pointer to TSL2561 handle
+ * @retval HAL Status
+ */
 HAL_StatusTypeDef TSL2561_CalculateLux(TSL2561_t *sensor)
 {
 	HAL_StatusTypeDef status;
