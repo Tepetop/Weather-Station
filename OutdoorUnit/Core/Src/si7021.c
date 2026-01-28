@@ -1,12 +1,12 @@
 #include "si7021.h"
 
 /**
- * @brief Odczyt rejestru czujnika
- * @param hsi7021 Wskaźnik na strukturę konfiguracyjną
- * @param reg_cmd Komenda odczytu rejestru lub pomiaru (np. SI7021_CMD_READ_USER_REG1, SI7021_CMD_MEASURE_RH_HOLD)
- * @param value Wskaźnik na bufor przechowujący odczytane dane
- * @param size Liczba bajtów do odczytania
- * @return Status operacji
+ * @brief Read sensor register
+ * @param hsi7021 Pointer to the configuration structure
+ * @param reg_cmd Register read command or measurement command (e.g. SI7021_CMD_READ_USER_REG1, SI7021_CMD_MEASURE_RH_HOLD)
+ * @param value Pointer to buffer storing read data
+ * @param size Number of bytes to read
+ * @return Operation status
  */
 HAL_StatusTypeDef Si7021_ReadRegister(Si7021_t *hsi7021, Si7021_Command_t reg_cmd, uint8_t *value, uint8_t size)
 {
@@ -33,11 +33,11 @@ HAL_StatusTypeDef Si7021_ReadRegister(Si7021_t *hsi7021, Si7021_Command_t reg_cm
 }
 
 /**
- * @brief Zapis do rejestru czujnika
- * @param hsi7021 Wskaźnik na strukturę konfiguracyjną
- * @param reg_cmd Komenda zapisu rejestru (np. SI7021_CMD_WRITE_USER_REG1)
- * @param value Wartość do zapisania
- * @return Status operacji
+ * @brief Write to sensor register
+ * @param hsi7021 Pointer to the configuration structure
+ * @param reg_cmd Register write command (e.g. SI7021_CMD_WRITE_USER_REG1)
+ * @param value Value to write
+ * @return Operation status
  */
 HAL_StatusTypeDef Si7021_WriteRegister(Si7021_t *hsi7021, Si7021_Command_t reg_cmd, uint8_t value)
 {
@@ -45,9 +45,9 @@ HAL_StatusTypeDef Si7021_WriteRegister(Si7021_t *hsi7021, Si7021_Command_t reg_c
 }
 
 /**
- * @brief Odczytanie ustawień fabrycznych
- * @param hsi7021 Wskaźnik na strukturę konfiguracyjną
- * @return Status operacji
+ * @brief Read factory settings
+ * @param hsi7021 Pointer to the configuration structure
+ * @return Operation status
  */
 HAL_StatusTypeDef Si7021_ReadFirmware(Si7021_t *hsi7021)
 {
@@ -55,9 +55,9 @@ HAL_StatusTypeDef Si7021_ReadFirmware(Si7021_t *hsi7021)
 }
 
 /**
- * @brief Programowy reset czujnika do ustawień fabrycznych
- * @param hsi7021 Wskaźnik na strukturę konfiguracyjną
- * @return Status operacji
+ * @brief Software reset of sensor to factory settings
+ * @param hsi7021 Pointer to the configuration structure
+ * @return Operation status
  */
 HAL_StatusTypeDef Si7021_SoftwareReset(Si7021_t *hsi7021)
 {
@@ -65,11 +65,12 @@ HAL_StatusTypeDef Si7021_SoftwareReset(Si7021_t *hsi7021)
 }
 
 /**
- * @brief Inicjalizacja czujnika Si7021
- * @param hsi7021 Wskaźnik na strukturę konfiguracyjną czujnika
- * @param hi2c Wskaźnik na uchwyt I2C
- * @param address Adres I2C czujnika
- * @return Status operacji (HAL_OK jeśli sukces)
+ * @brief Initialize Si7021 sensor
+ * @param hsi7021 Pointer to sensor configuration structure
+ * @param hi2c Pointer to I2C handle
+ * @param address I2C address of sensor
+ * @param resolution Measurement resolution setting
+ * @return Operation status (HAL_OK if successful)
  */
 HAL_StatusTypeDef Si7021_Init(Si7021_t *hsi7021, I2C_HandleTypeDef *hi2c, uint8_t address, Si7021_Resolution_t resolution)
 {
@@ -88,10 +89,10 @@ HAL_StatusTypeDef Si7021_Init(Si7021_t *hsi7021, I2C_HandleTypeDef *hi2c, uint8_
 }
 
 /**
- * @brief Ustawienie rozdzielczości pomiaru
- * @param hsi7021 Wskaźnik na strukturę konfiguracyjną
- * @param resolution Wybrana rozdzielczość
- * @return Status operacji
+ * @brief Set measurement resolution
+ * @param hsi7021 Pointer to the configuration structure
+ * @param resolution Selected resolution
+ * @return Operation status
  */
 HAL_StatusTypeDef Si7021_SetResolution(Si7021_t *hsi7021, Si7021_Resolution_t resolution)
 {
@@ -105,10 +106,10 @@ HAL_StatusTypeDef Si7021_SetResolution(Si7021_t *hsi7021, Si7021_Resolution_t re
     if (status != HAL_OK)
     	return status;
 
-    // Wyczyszczenie bitów RES1 (bit 7) i RES0 (bit 0)
+    // Clear RES1 (bit 7) and RES0 (bit 0) bits
     reg &= ~(1 << 7 | 1 << 0);
 
-    // Ustawienie bitów zgodnie z rozdzielczością
+    // Set bits according to resolution
     switch (resolution)
     {
         case SI7021_RESOLUTION_RH12_TEMP14:
@@ -132,10 +133,9 @@ HAL_StatusTypeDef Si7021_SetResolution(Si7021_t *hsi7021, Si7021_Resolution_t re
 }
 
 /**
- * @brief Odczyt aktualnej rozdzielczości pomiaru
- * @param hsi7021 Wskaźnik na strukturę konfiguracyjną
- * @param resolution Wskaźnik na zmienną przechowującą rozdzielczość
- * @return Status operacji
+ * @brief Read current measurement resolution
+ * @param hsi7021 Pointer to the configuration structure
+ * @return Operation status
  */
 HAL_StatusTypeDef Si7021_GetResolution(Si7021_t *hsi7021)
 {
@@ -149,17 +149,17 @@ HAL_StatusTypeDef Si7021_GetResolution(Si7021_t *hsi7021)
     if (status != HAL_OK)
     	return status;
 
-    // Wyodrębnienie bitów RES1 (bit 7) i RES0 (bit 0)
+    // Extract RES1 (bit 7) and RES0 (bit 0) bits
     uint8_t res_bits = ((reg >> 7) & 1) << 1 | (reg & 1);
     hsi7021->data.resolution = (Si7021_Resolution_t)res_bits;
     return HAL_OK;
 }
 
 /**
- * @brief Ustawienie grzałki na wskazaną wartość prądu
- * @param hsi7021 Wskaźnik na strukturę konfiguracyjną
- * @param current Wartość nastawialnego prądu. Przy 3.3V maksymalny prąd to 94mA
- * @return Status operacji
+ * @brief Set heater to specified current value
+ * @param hsi7021 Pointer to the configuration structure
+ * @param current Adjustable current value. At 3.3V maximum current is 94mA
+ * @return Operation status
  */
 HAL_StatusTypeDef Si7021_SetHeaterCurrent(Si7021_t *hsi7021, uint8_t current)
 {
@@ -176,9 +176,9 @@ HAL_StatusTypeDef Si7021_SetHeaterCurrent(Si7021_t *hsi7021, uint8_t current)
 }
 
 /**
- * @brief Pobranie aktualnej nastawy prądu grzałki
- * @param hsi7021 Wskaźnik na strukturę konfiguracyjną
- * @return Status operacji
+ * @brief Get current heater current setting
+ * @param hsi7021 Pointer to the configuration structure
+ * @return Operation status
  */
 HAL_StatusTypeDef Si7021_GetHeaterCurrent(Si7021_t *hsi7021)
 {
@@ -197,10 +197,10 @@ HAL_StatusTypeDef Si7021_GetHeaterCurrent(Si7021_t *hsi7021)
 }
 
 /**
- * @brief Funkcja pomocnicza do obliczania CRC-8 z polynomem 0x31
- * @param data Wskaźnik na dane do obliczenia CRC
- * @param len Długość danych
- * @return Obliczona suma kontrolna
+ * @brief Helper function to compute CRC-8 with polynomial 0x31
+ * @param data Pointer to data for CRC calculation
+ * @param len Data length
+ * @return Calculated checksum
  */
 static uint8_t Si7021_ComputeCRC8(uint8_t *data, uint8_t len) 
 {
@@ -223,10 +223,9 @@ static uint8_t Si7021_ComputeCRC8(uint8_t *data, uint8_t len)
 }
 
 /**
- * @brief Odczyt wilgotności z weryfikacją sumy kontrolnej
- * @param hsi7021 Wskaźnik na strukturę konfiguracyjną
- * @param humidity Wskaźnik na zmienną przechowującą wilgotność w %RH
- * @return Status operacji
+ * @brief Read humidity with checksum verification
+ * @param hsi7021 Pointer to the configuration structure
+ * @return Operation status
  */
 HAL_StatusTypeDef Si7021_ReadHumidity(Si7021_t *hsi7021)
 {
@@ -259,10 +258,9 @@ HAL_StatusTypeDef Si7021_ReadHumidity(Si7021_t *hsi7021)
 }
 
 /**
- * @brief Odczyt temperatury z weryfikacją sumy kontrolnej
- * @param hsi7021 Wskaźnik na strukturę konfiguracyjną
- * @param temperature Wskaźnik na zmienną przechowującą temperaturę w °C
- * @return Status operacji
+ * @brief Read temperature with checksum verification
+ * @param hsi7021 Pointer to the configuration structure
+ * @return Operation status
  */
 HAL_StatusTypeDef Si7021_ReadTemperature(Si7021_t *hsi7021)
 {
@@ -289,10 +287,9 @@ HAL_StatusTypeDef Si7021_ReadTemperature(Si7021_t *hsi7021)
 }
 
 /**
- * @brief Odczyt wilgotności i temperatury. Odczyt temperatury z poprzedniego pomiaru wilgotności (bez sumy kontrolnej dla komendy 0xE0)
- * @param hsi7021 Wskaźnik na strukturę konfiguracyjną
- * @param measurement Wskaźnik na strukturę przechowującą wilgotność i temperaturę
- * @return Status operacji
+ * @brief Read humidity and temperature. Temperature reading from previous humidity measurement (no checksum for 0xE0 command)
+ * @param hsi7021 Pointer to the configuration structure
+ * @return Operation status
  */
 HAL_StatusTypeDef Si7021_ReadHumidityAndTemperature(Si7021_t *hsi7021)
 {
