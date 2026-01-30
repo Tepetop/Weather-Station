@@ -1,0 +1,34 @@
+/*
+ * PCD8544_fonts.h
+ *
+ *  Created on: Apr 17, 2025
+ *      Author: Remik
+ */
+
+#ifndef __PCD8544_FONTS_H_
+#define __PCD8544_FONTS_H_
+
+
+#include "PCD8544_config.h"
+
+typedef struct
+{
+	const uint8_t width;                /**< Font width in pixels */
+	const uint8_t height;               /**< Font height in pixels */
+	const uint16_t *const data;         /**< Pointer to font data array */
+}PCD8544_Font_t;
+
+
+#ifdef PCD8544_INCLUDE_FONT6x8
+extern const PCD8544_Font_t Font_6x8;
+#endif
+
+#ifdef SSD1306_INCLUDE_FONT_6x8
+extern const PCD8544_Font_t FontT;
+#endif
+
+
+
+#endif /* __PCD8544_FONTS_H_ */
+
+
