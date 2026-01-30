@@ -5,7 +5,7 @@
  *      Author: Remik
  */
 
-#include "PCD_header/PCD8544_fonts.h"
+#include "PCD8544_fonts.h"
 
 
 // Characters definition

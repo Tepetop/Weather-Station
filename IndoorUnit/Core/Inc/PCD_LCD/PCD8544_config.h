@@ -5,14 +5,14 @@
  *      Author: Remik
  */
 
-#ifndef __PCD8544_CONFIG_H_
-#define __PCD8544_CONFIG_H_
+#ifndef INC_PCD8544_CONFIG_H_
+#define INC_PCD8544_CONFIG_H_
 
 
 #define PCD8544_INCLUDE_FONT6x8
 
 #include <main.h>
-#include "PCD8544_fonts.h"
+
 
 
 #endif /* __PCD8544_CONFIG_H_ */

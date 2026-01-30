@@ -43,14 +43,14 @@ PCD_Status PCD8544_Init (PCD8544_t *PCD, SPI_HandleTypeDef *hspi, GPIO_TypeDef *
 
       PCD -> RST_GPIOPort = rst_port;
       PCD -> RST_GpioPin = rst_pin;
-	// Initialize cacheMem and starting index
-      memset(PCD -> PCD8544_BUFFER, 0x00, PCD8544_BUFFER_SIZE);
+
 
       PCD -> PCD8544_CurrentX = 0;
       PCD -> PCD8544_CurrentY = 0;
 
       PCD -> PCD8544_BUFFER_INDEX = 0;
-      
+      	// Initialize cacheMem and starting index
+      memset(PCD -> PCD8544_BUFFER, 0x00, PCD8544_BUFFER_SIZE);
       // Set default communication mode to blocking
       PCD -> PCD8544_SPI_Mode = PCD_SPI_MODE_BLOCKING;
       

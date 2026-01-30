@@ -5,15 +5,14 @@
  *      Author: remik
  */
 
-#ifndef __PCD8544_H_
-#define __PCD8544_H_
+#ifndef INC_PCD8544_H_
+#define INC_PCD8544_H_
 
-#include "stm32f1xx_hal.h"
+#include <main.h>
 #include <stdio.h>
 #include <string.h>
 
-#include "PCD8544_config.h"
-
+#include "PCD8544_fonts.h"
 
 
 // AREA definition

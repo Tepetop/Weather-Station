@@ -7,7 +7,7 @@
 
 #ifndef INC_PCD8544_MENU_H_
 #define INC_PCD8544_MENU_H_
-#include <PCD_header/PCD8544.h>
+#include <PCD8544.h>
 #include "main.h"
 
 /*		DEFINES										*/
