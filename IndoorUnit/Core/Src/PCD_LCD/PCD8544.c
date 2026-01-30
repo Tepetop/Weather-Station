@@ -341,10 +341,10 @@ PCD_Status PCD8544_SetCursor(PCD8544_t *PCD, uint8_t x, uint8_t y, const PCD8544
 		// out of range
 		return PCD_OutOfBounds;
 	}
-	PCD->PCD8544_CurrentX = x * Font->width;
-    PCD->PCD8544_CurrentY = y * Font->height;
 
-    return PCD_OK;
+	PCD->PCD8544_CurrentX = x * Font->width;
+  PCD->PCD8544_CurrentY = y * Font->height;
+  return PCD_OK;
 }
 
 /**
@@ -383,7 +383,7 @@ PCD_Status PCD8544_WriteChar(PCD8544_t *PCD, const char *znak, const PCD8544_Fon
 {
     if (NULL == znak || NULL == Font)
     {
-        return PCD_ERROR;
+      return PCD_ERROR;
     }
 
     uint8_t character = *znak - 32;  // Calculate character offset in font array
@@ -391,32 +391,32 @@ PCD_Status PCD8544_WriteChar(PCD8544_t *PCD, const char *znak, const PCD8544_Fon
     // Check if character is within supported range (32 to 127)
     if (character > (0x7f - 32))
     {
-        return PCD_OutOfBounds;  // Invalid character
+      return PCD_OutOfBounds;  // Invalid character
     }
 
     // Draw character pixels using DrawPixel
     for (uint8_t col = 0; col < Font->width; col++)
     {
-        uint8_t columnData = Font->data[character * Font->width + col];
+      uint8_t columnData = Font->data[character * Font->width + col];
 
-        for (uint8_t row = 0; row < Font->height; row++)
-        {
-            if (columnData & (1 << row))
-            {
-                // Draw pixel only if bit is set
-                PCD8544_DrawPixel(PCD, PCD->PCD8544_CurrentX + col, PCD->PCD8544_CurrentY + row);
-            }
-        }
+      for (uint8_t row = 0; row < Font->height; row++)
+      {
+          if (columnData & (1 << row))
+          {
+              // Draw pixel only if bit is set
+              PCD8544_DrawPixel(PCD, PCD->PCD8544_CurrentX + col, PCD->PCD8544_CurrentY + row);
+          }
+      }
     }
 
-        // Increment X for the next character(its needed for string writing)
+    // Increment X for the next character(its needed for string writing)
     PCD->PCD8544_CurrentX += Font->width;
 
     // Check & handle Y-axis wrapping if the character exceeds the screen's width
     if (PCD->PCD8544_CurrentX + Font->width >= PCD8544_WIDTH)
     {
-        PCD->PCD8544_CurrentX = 0;  // Reset X to the beginning of the next line
-        PCD->PCD8544_CurrentY += Font->height; // Increment Y with spacing
+      PCD->PCD8544_CurrentX = 0;  // Reset X to the beginning of the next line
+      PCD->PCD8544_CurrentY += Font->height; // Increment Y with spacing
     }
 
     return PCD_OK;
@@ -436,7 +436,7 @@ PCD_Status PCD8544_WriteString(PCD8544_t *PCD, const char *str, const PCD8544_Fo
     // Check if string exists
     if (NULL == str)
     {
-        return PCD_ERROR;
+      return PCD_ERROR;
     }
     // Loop through the characters in the string
     while (*str != '\0')
@@ -459,7 +459,7 @@ PCD_Status PCD8544_WriteNumberToBuffer(PCD8544_t *PCD, uint8_t x, uint8_t y, int
 {
 	if ((x >= PCD8544_COLS) || (y >= PCD8544_ROWS))
     {
-        return PCD_OutOfBounds;
+      return PCD_OutOfBounds;
     }
 
     char str[7];  // Buffer to store number value (max. -32768 to 32767)
@@ -475,7 +475,7 @@ PCD_Status PCD8544_WriteNumberToBuffer(PCD8544_t *PCD, uint8_t x, uint8_t y, int
     // Check if buffer is large enough to store number
     if (7 < length)
     {
-        return PCD_OutOfBounds;  // Number too long to fit on screen
+      return PCD_OutOfBounds;  // Number too long to fit on screen
     }
 
     // If number changes from negative to positive or vice versa - clear space after '-' sign
@@ -511,7 +511,7 @@ PCD_Status PCD8544_ClearBufferRegion(PCD8544_t *PCD, uint8_t x, uint8_t y, uint8
 {
 	if ((x >= PCD8544_COLS) || (y >= PCD8544_ROWS))
     {
-        return PCD_OutOfBounds;
+      return PCD_OutOfBounds;
     }
 
 	if(NumOfChars > (PCD8544_COLS - x))
@@ -524,10 +524,10 @@ PCD_Status PCD8544_ClearBufferRegion(PCD8544_t *PCD, uint8_t x, uint8_t y, uint8
     // Clear the specified region by setting it to 0x00
     for (uint8_t i = 0; i < (NumOfChars * PCD8544_CHAR_PIXEL_X); i++)
     {
-        if (startIndex + i < PCD8544_BUFFER_SIZE)
-        {
-            PCD -> PCD8544_BUFFER[startIndex + i] = 0x00;
-        }
+      if (startIndex + i < PCD8544_BUFFER_SIZE)
+      {
+        PCD -> PCD8544_BUFFER[startIndex + i] = 0x00;
+      }
     }
     return PCD_OK;
 }
@@ -543,7 +543,7 @@ PCD_Status PCD8544_ClearBufferLine(PCD8544_t *PCD, uint8_t y)
 {
     if (y >= PCD8544_ROWS)
     {
-        return PCD_OutOfBounds;
+      return PCD_OutOfBounds;
     }
     // Calculate starting index in the buffer for the given y position
     uint16_t startIndex = y * PCD8544_WIDTH;
@@ -567,7 +567,7 @@ PCD_Status PCD8544_InvertSelectedRegion(PCD8544_t *PCD, uint8_t x, uint8_t y, ui
 {
 	if ((x >= PCD8544_COLS) || (y >= PCD8544_ROWS))
     {
-        return PCD_OutOfBounds;
+      return PCD_OutOfBounds;
     }
 
 	if(NumOfChars > (PCD8544_COLS - x))
@@ -577,15 +577,15 @@ PCD_Status PCD8544_InvertSelectedRegion(PCD8544_t *PCD, uint8_t x, uint8_t y, ui
     // Calculate starting index in the buffer for the given x, y position
     uint16_t startIndex = y * PCD8544_WIDTH + (x * PCD8544_CHAR_PIXEL_X);
 
-    // Clear the specified region by setting it to 0x00
-    for (uint8_t i = 0; i < (NumOfChars * PCD8544_CHAR_PIXEL_X); i++)
+  // Clear the specified region by setting it to 0x00
+  for (uint8_t i = 0; i < (NumOfChars * PCD8544_CHAR_PIXEL_X); i++)
+  {
+    if (startIndex + i < PCD8544_BUFFER_SIZE)
     {
-        if (startIndex + i < PCD8544_BUFFER_SIZE)
-        {
-        	// XOR buffer with 0XFF to invert it
-            PCD -> PCD8544_BUFFER[startIndex + i] ^= 0xFF;
-        }
+      // XOR buffer with 0XFF to invert it
+      PCD -> PCD8544_BUFFER[startIndex + i] ^= 0xFF;
     }
+  }
     return PCD_OK;
 }
 

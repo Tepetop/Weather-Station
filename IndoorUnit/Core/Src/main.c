@@ -97,6 +97,7 @@ int main(void)
   MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
   PCD8544_Init(&LCD, &hspi1, LCD_DC_GPIO_Port, LCD_DC_Pin, LCD_CE_GPIO_Port, LCD_CE_Pin, LCD_RST_GPIO_Port, LCD_RST_Pin);
+  PCD8544_ClearScreen(&LCD);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -107,6 +108,12 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
     HAL_GPIO_TogglePin(USER_LED_GPIO_Port, USER_LED_Pin);
+
+    // Update counter display on LCD
+    sprintf(buffer, "Count: %d", counter);
+    PCD8544_SetCursor(&LCD, 0, 1, &Font_6x8);
+    PCD8544_WriteString(&LCD, buffer, &Font_6x8);
+    PCD8544_UpdateScreen(&LCD);
 
     if(counter >= 20)
     {
