@@ -72,9 +72,9 @@ Menu_Status Menu_SetCursorSign(PCD8544_t *PCD, Menu_Context_t *content)
 
 	static int8_t PrevCursorPos = 0;
 
-    if (content->state.CursorPosOnLCD >= PCD8544_ROWS)			// Zabezpieczenie przed wyjściem poza ekran
+    if (content->state.CursorPosOnLCD >= PCD->font.PCD8544_ROWS)			// Zabezpieczenie przed wyjściem poza ekran
     {
-        content->state.CursorPosOnLCD = PCD8544_ROWS - 1;
+        content->state.CursorPosOnLCD = PCD->font.PCD8544_ROWS - 1;
     }
 
   // PCD8544_WriteStringToBuffer(PCD, 0, content->state.CursorPosOnLCD, ">");
@@ -106,19 +106,19 @@ Menu_Status Menu_RefreshDisplay(PCD8544_t *PCD, Menu_Context_t *content)
     Menu_t *tempMenu = content->rootMenu;
 
     // Jeśli kursor jest na górze i MenuIndex pozwala na wyświetlenie wcześniejszych elementów
-    if((content->state.CursorPosOnLCD == MENU_MIN_CURSOR_ROW) && (content->state.MenuIndex >= PCD8544_ROWS - 1))
+    if((content->state.CursorPosOnLCD == MENU_MIN_CURSOR_ROW) && (content->state.MenuIndex >= (PCD->font.PCD8544_ROWS - 1)))
     {
     // Cofamy się o pełną wysokość ekranu aby wyświetlić poprzedni "ekran" menu
-        for (uint8_t i = 0;(( i < PCD8544_ROWS) && (NULL != tempMenu->prev)); i++)
+        for (uint8_t i = 0;(( i < PCD->font.PCD8544_ROWS) && (NULL != tempMenu->prev)); i++)
         {
             tempMenu = tempMenu->prev;
         }
     }
     // Jeśli kursor jest na dole i menu jest przewinięte
-    else if((content->state.CursorPosOnLCD == PCD8544_ROWS - 1) && (content->state.MenuIndex >= PCD8544_ROWS))
+    else if((content->state.CursorPosOnLCD == (PCD->font.PCD8544_ROWS - 1)) && (content->state.MenuIndex >= PCD->font.PCD8544_ROWS))
     {
     // Cofamy się o (wysokość ekranu - 1) aby wyświetlić menu od odpowiedniej pozycji
-        for (uint8_t i = 0; ((i < PCD8544_ROWS - 1) && (NULL != tempMenu->prev)); i++)
+        for (uint8_t i = 0; ((i < (PCD->font.PCD8544_ROWS - 1)) && (NULL != tempMenu->prev)); i++)
         {
             tempMenu = tempMenu->prev;
         }
@@ -137,10 +137,10 @@ Menu_Status Menu_RefreshDisplay(PCD8544_t *PCD, Menu_Context_t *content)
     PCD8544_ClearBuffer(PCD);
 
     /*		Write data to the buffer	*/
-    for (uint8_t i = 0; (i < PCD8544_ROWS && (NULL != tempMenu)); i++)
+    for (uint8_t i = 0; (i < PCD->font.PCD8544_ROWS && (NULL != tempMenu)); i++)
     {
-    	PCD8544_SetCursor(PCD, 1, i, &Font_6x8);
-		PCD8544_WriteString(PCD, tempMenu->name, &Font_6x8);
+    	PCD8544_SetCursor(PCD, 1, i);
+		PCD8544_WriteString(PCD, tempMenu->name);
 		tempMenu = tempMenu->next;
     }
 
@@ -166,7 +166,7 @@ Menu_Status Menu_Next(PCD8544_t *PCD, Menu_Context_t *content)
     content->state.MenuIndex++;
 
     /*	Change cursor positon if menu index is less that PCD8544_ROWS  [0-5]*/
-    if (content->state.MenuIndex < PCD8544_ROWS)
+    if (content->state.MenuIndex < PCD->font.PCD8544_ROWS)
     {
         content->state.CursorPosOnLCD++;
         Menu_SetCursorSign(PCD, content);			//Small optimalization
@@ -174,7 +174,7 @@ Menu_Status Menu_Next(PCD8544_t *PCD, Menu_Context_t *content)
     /*	Cursor stays on PCD8544_ROWS position (menu index > PCD8544_ROWS) */
     else
     {
-        content->state.CursorPosOnLCD = PCD8544_ROWS - 1;
+        content->state.CursorPosOnLCD = (PCD->font.PCD8544_ROWS - 1);
         Menu_RefreshDisplay(PCD, content);			//Small optimalization,
     }
     /**

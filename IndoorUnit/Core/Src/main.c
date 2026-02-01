@@ -50,7 +50,7 @@
 /* USER CODE BEGIN PV */
 PCD8544_t LCD;
 char buffer[64];
-uint8_t counter = 0;
+uint8_t counter = 1;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -111,10 +111,11 @@ int main(void)
 
     // Update counter display on LCD
     sprintf(buffer, "Count: %d", counter);
-    PCD8544_SetCursor(&LCD, 0, 1, &Font_6x8);
-    PCD8544_WriteString(&LCD, buffer, &Font_6x8);
+    PCD8544_SetFont(&LCD, &Font_6x8);
+    PCD8544_SetCursor(&LCD, 1, 2);
+    PCD8544_WriteString(&LCD, buffer);
     PCD8544_UpdateScreen(&LCD);
-
+    PCD8544_ClearBuffer(&LCD);
     if(counter >= 20)
     {
       counter = 0;
@@ -123,7 +124,7 @@ int main(void)
       counter++;    
     }
 
-    HAL_Delay(150);
+    HAL_Delay(750);
   }
   /* USER CODE END 3 */
 }

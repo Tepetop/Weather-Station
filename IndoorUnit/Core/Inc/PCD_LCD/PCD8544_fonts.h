@@ -15,7 +15,7 @@ typedef struct
 {
 	const uint8_t width;                /**< Font width in pixels */
 	const uint8_t height;               /**< Font height in pixels */
-	const uint16_t *const data;         /**< Pointer to font data array */
+	uint16_t *const data;         /**< Pointer to font data array */
 }PCD8544_Font_t;
 
 

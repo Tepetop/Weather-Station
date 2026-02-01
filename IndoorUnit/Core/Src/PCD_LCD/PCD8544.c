@@ -12,6 +12,12 @@
  *              Copyright (C) 2024 Remigiusz Pieprzyk
  *              Library writen for SMT32 with HAL support based on Marian Hrinko (mato.hrinko@gmail.com)
  *              https://github.com/Matiasus/PCD8544/tree/master
+ *
+ *          VERY IMPORTANT !!! PINS CE AND RST MUST BE IN HIGH STATE AFTER GPIO INIT !!!!!
+ *
+ *
+ *
+ *
 */
 
 #include "PCD8544.h"
@@ -26,57 +32,63 @@
 PCD_Status PCD8544_Init (PCD8544_t *PCD, SPI_HandleTypeDef *hspi, GPIO_TypeDef *dc_port, uint16_t dc_pin,
 		GPIO_TypeDef *ce_port, uint16_t ce_pin, GPIO_TypeDef *rst_port, uint16_t rst_pin)
 {
-    if( NULL == PCD || NULL == hspi)
-      {
-    	  return PCD_OutOfBounds;
-      }
+  if( NULL == PCD || NULL == hspi)
+    {
+      return PCD_OutOfBounds;
+    }
 
-      PCD_Status state = PCD_OK;
-      // Peripherial initialize
-      PCD -> PCD8544_SPI = hspi;
-	
-      PCD -> DC_GPIOPort = dc_port;
-      PCD -> DC_GpioPin = dc_pin;
+    PCD_Status state = PCD_OK;
+    // Peripherial initialize
+    PCD -> PCD8544_SPI = hspi;
 
-      PCD -> CE_GPIOPort = ce_port;
-      PCD -> CE_GpioPin = ce_pin;
+    PCD -> DC_GPIOPort = dc_port;
+    PCD -> DC_GpioPin = dc_pin;
 
-      PCD -> RST_GPIOPort = rst_port;
-      PCD -> RST_GpioPin = rst_pin;
+    PCD -> CE_GPIOPort = ce_port;
+    PCD -> CE_GpioPin = ce_pin;
+
+    PCD -> RST_GPIOPort = rst_port;
+    PCD -> RST_GpioPin = rst_pin;
 
 
-      PCD -> PCD8544_CurrentX = 0;
-      PCD -> PCD8544_CurrentY = 0;
+    PCD -> buffer.PCD8544_CurrentX = 0;
+    PCD -> buffer.PCD8544_CurrentY = 0;
 
-      PCD -> PCD8544_BUFFER_INDEX = 0;
-      	// Initialize cacheMem and starting index
-      memset(PCD -> PCD8544_BUFFER, 0x00, PCD8544_BUFFER_SIZE);
-      // Set default communication mode to blocking
-      PCD -> PCD8544_SPI_Mode = PCD_SPI_MODE_BLOCKING;
-      
-        // Initialize PCD display, 1 ms rst impuls
-      PCD8544_ResetImpulse(PCD);
-        // extended instruction set
-      state = PCD8544_CommandSend (PCD, FUNCTION_SET | EXTEN_INS_SET);
-      if (state != PCD_OK) return state;
-        // Set Vop
-      state = PCD8544_CommandSend (PCD, VOP_SET);
-      if (state != PCD_OK) return state;
-        // bias 1:48 - optimum bias value
-      state = PCD8544_CommandSend (PCD, BIAS_CONTROL | BIAS_1_48);
-      if (state != PCD_OK) return state;
-        // temperature set - temperature coefficient of IC / correction 3
-      state = PCD8544_CommandSend (PCD, TEMP_CONTROL | TEMP_COEF_3);
-      if (state != PCD_OK) return state;
-        // normal instruction set / horizontal adressing mode
-      state = PCD8544_CommandSend (PCD, (FUNCTION_SET | BASIC_INS_SET | HORIZ_ADDR_MODE));
-      if (state != PCD_OK) return state;
-        // normal mode
-      state = PCD8544_CommandSend (PCD, DISPLAY_CONTROL | NORMAL_MODE);
+    PCD -> buffer.PCD8544_BUFFER_INDEX = 0;
+    // Set default font size (6x8)
+    PCD -> font.font_width = 6;
+    PCD -> font.font_height = 8;
+    // Calculate number of rows and columns based on font size
+    PCD -> font.PCD8544_COLS = PCD8544_WIDTH / PCD -> font.font_width;
+    PCD -> font.PCD8544_ROWS = PCD8544_HEIGHT / PCD -> font.font_height;
+      // Initialize cacheMem and starting index
+    memset(PCD -> buffer.PCD8544_BUFFER, 0x00, PCD8544_BUFFER_SIZE);
+    // Set default communication mode to blocking
+    PCD -> PCD8544_SPI_Mode = PCD_SPI_MODE_BLOCKING;
+    
+    // Initialize PCD display, 1 ms rst impuls
+    PCD8544_ResetImpulse(PCD);
+      // extended instruction set
+    state = PCD8544_CommandSend (PCD, FUNCTION_SET | EXTEN_INS_SET);
+    if (state != PCD_OK) return state;
+      // Set Vop
+    state = PCD8544_CommandSend (PCD, VOP_SET);
+    if (state != PCD_OK) return state;
+      // bias 1:48 - optimum bias value
+    state = PCD8544_CommandSend (PCD, BIAS_CONTROL | BIAS_1_48);
+    if (state != PCD_OK) return state;
+      // temperature set - temperature coefficient of IC / correction 3
+    state = PCD8544_CommandSend (PCD, TEMP_CONTROL | TEMP_COEF_3);
+    if (state != PCD_OK) return state;
+      // normal instruction set / horizontal adressing mode
+    state = PCD8544_CommandSend (PCD, (FUNCTION_SET | BASIC_INS_SET | HORIZ_ADDR_MODE));
+    if (state != PCD_OK) return state;
+      // normal mode
+    state = PCD8544_CommandSend (PCD, DISPLAY_CONTROL | NORMAL_MODE);
 
-      //PCD8544_SetCursor(PCD, 0, 0);
+    //PCD8544_SetCursor(PCD, 0, 0);
 
-      return state;
+    return state;
 }
 
 /**
@@ -88,18 +100,18 @@ PCD_Status PCD8544_Init (PCD8544_t *PCD, SPI_HandleTypeDef *hspi, GPIO_TypeDef *
  */
 PCD_Status PCD8544_CommandSend (PCD8544_t *PCD, uint8_t data)
 {
-    // Select the device, CE - active LOW
-      HAL_GPIO_WritePin(PCD->CE_GPIOPort, PCD->CE_GpioPin, GPIO_PIN_RESET);
-      // Select command mode, DC - active HIGH
-      HAL_GPIO_WritePin(PCD->DC_GPIOPort, PCD->DC_GpioPin, GPIO_PIN_RESET);
-    // Transmit data via SPI
-      if(HAL_ERROR ==  HAL_SPI_Transmit(PCD->PCD8544_SPI, &data, 1, HAL_MAX_DELAY))
-        {
-      	  return PCD_TransmitError;
-        }
-     // Deselect the device, CE - inactive HIGH
-      HAL_GPIO_WritePin(PCD->CE_GPIOPort, PCD->CE_GpioPin, GPIO_PIN_SET);
-      return PCD_OK;
+  // Select the device, CE - active LOW
+  HAL_GPIO_WritePin(PCD->CE_GPIOPort, PCD->CE_GpioPin, GPIO_PIN_RESET);
+  // Select command mode, DC - active LOW
+  HAL_GPIO_WritePin(PCD->DC_GPIOPort, PCD->DC_GpioPin, GPIO_PIN_RESET);
+  // Transmit data via SPI
+  if(HAL_ERROR ==  HAL_SPI_Transmit(PCD->PCD8544_SPI, &data, 1, HAL_MAX_DELAY))
+  {
+    return PCD_TransmitError;
+  }
+  // Deselect the device, CE - inactive HIGH
+  HAL_GPIO_WritePin(PCD->CE_GPIOPort, PCD->CE_GpioPin, GPIO_PIN_SET);
+  return PCD_OK;
 }
 
 /**
@@ -172,6 +184,33 @@ PCD_Status PCD8544_SetCommunicationMode(PCD8544_t *PCD, PCD_SPI_Mode mode)
   }
   
   PCD->PCD8544_SPI_Mode = mode;
+  return PCD_OK;
+}
+
+/**
+ * @desc    Set font for PCD8544
+ *
+ * @param   PCD - pointer to PCD type struct
+ * @param   Font - pointer to font structure
+ *
+ * @return  PCD_Status
+ */
+PCD_Status PCD8544_SetFont(PCD8544_t *PCD, const PCD8544_Font_t *Font)
+{
+  if (NULL == PCD || NULL == Font)
+  {
+    return PCD_ERROR;
+  }
+  
+  // Set font width and height from Font structure
+  PCD->font.font_width = Font->width;
+  PCD->font.font_height = Font->height;
+  PCD->font.font = Font->data;
+  
+  // Calculate number of rows and columns based on font size
+  PCD->font.PCD8544_COLS = PCD8544_WIDTH / PCD->font.font_width;
+  PCD->font.PCD8544_ROWS = PCD8544_HEIGHT / PCD->font.font_height;
+  
   return PCD_OK;
 }
 
@@ -259,7 +298,7 @@ void PCD8544_TxCpltCallback(PCD8544_t *PCD)
 void PCD8544_ResetImpulse (PCD8544_t *PCD)
 {
 	HAL_GPIO_WritePin(PCD->RST_GPIOPort, PCD->RST_GpioPin, GPIO_PIN_RESET);
-    HAL_Delay(1); // 1 ms delay between pin toggle
+  HAL_Delay(10); // 1 ms delay between pin toggle
 	HAL_GPIO_WritePin(PCD->RST_GPIOPort, PCD->RST_GpioPin, GPIO_PIN_SET);
 }
 
@@ -272,7 +311,7 @@ void PCD8544_ResetImpulse (PCD8544_t *PCD)
  */
 void PCD8544_ClearBuffer (PCD8544_t *PCD)
 {
-  memset(PCD -> PCD8544_BUFFER, 0x00, PCD8544_BUFFER_SIZE);
+  memset(PCD -> buffer.PCD8544_BUFFER, 0x00, PCD8544_BUFFER_SIZE);
 }
 
 /**
@@ -285,16 +324,16 @@ void PCD8544_ClearBuffer (PCD8544_t *PCD)
 PCD_Status PCD8544_ClearScreen (PCD8544_t *PCD)
 {
 	PCD_Status status;
-	memset(PCD -> PCD8544_BUFFER, 0x00, PCD8544_BUFFER_SIZE);
+	memset(PCD -> buffer.PCD8544_BUFFER, 0x00, PCD8544_BUFFER_SIZE);
 	
 	// Use appropriate communication mode
 	if (PCD->PCD8544_SPI_Mode == PCD_SPI_MODE_DMA)
 	{
-		status = PCD8544_SendDataFromBuffer_DMA(PCD, PCD->PCD8544_BUFFER, PCD8544_BUFFER_SIZE);
+		status = PCD8544_SendDataFromBuffer_DMA(PCD, PCD->buffer.PCD8544_BUFFER, PCD8544_BUFFER_SIZE);
 	}
 	else
 	{
-		status = PCD8544_SendDataFromBuffer(PCD, PCD->PCD8544_BUFFER);
+		status = PCD8544_SendDataFromBuffer(PCD, PCD->buffer.PCD8544_BUFFER);
 	}
 	
 	return status;
@@ -314,36 +353,35 @@ PCD_Status PCD8544_UpdateScreen (PCD8544_t *PCD)
 	// Use appropriate communication mode
 	if (PCD->PCD8544_SPI_Mode == PCD_SPI_MODE_DMA)
 	{
-		status = PCD8544_SendDataFromBuffer_DMA(PCD, PCD -> PCD8544_BUFFER, PCD8544_BUFFER_SIZE);
+		status = PCD8544_SendDataFromBuffer_DMA(PCD, PCD->buffer.PCD8544_BUFFER, PCD8544_BUFFER_SIZE);
 	}
 	else
 	{
-		status = PCD8544_SendDataFromBuffer(PCD, PCD -> PCD8544_BUFFER);
+		status = PCD8544_SendDataFromBuffer(PCD, PCD->buffer.PCD8544_BUFFER);
 	}
 	
 	return status;
 }
 
 /**
- * @desc   Set cursor on x and y position, depense of font choosen
+ * @desc   Set cursor on x and y position, depends on font chosen
  *
  * @param   PCD - pointer to PCD type struct
- * @param   x - row position in pixels
- * @param   y - col position in pixels
- * @param   Font - pointer to struct contains font type
+ * @param   x - row position in character units
+ * @param   y - col position in character units
  *
  * @return  PCD_Status
  */
-PCD_Status PCD8544_SetCursor(PCD8544_t *PCD, uint8_t x, uint8_t y, const PCD8544_Font_t *Font)
+PCD_Status PCD8544_SetCursor(PCD8544_t *PCD, uint8_t x, uint8_t y)
 {
-	if (x >= (PCD8544_WIDTH / Font->width) || y >= (PCD8544_HEIGHT / Font->height))
+	if (x >= PCD->font.PCD8544_COLS || y >= PCD->font.PCD8544_ROWS)
 	{
 		// out of range
 		return PCD_OutOfBounds;
 	}
 
-	PCD->PCD8544_CurrentX = x * Font->width;
-  PCD->PCD8544_CurrentY = y * Font->height;
+	PCD->buffer.PCD8544_CurrentX = x * PCD->font.font_width;
+  PCD->buffer.PCD8544_CurrentY = y * PCD->font.font_height;
   return PCD_OK;
 }
 
@@ -364,8 +402,8 @@ PCD_Status PCD8544_DrawPixel(PCD8544_t *PCD, uint8_t x, uint8_t y)
 		// out of range
 		return PCD_OutOfBounds;
 	  }
-	PCD -> PCD8544_BUFFER_INDEX = x + (y / PCD8544_CHAR_PIXEL_Y) * PCD8544_WIDTH;
-	PCD -> PCD8544_BUFFER[PCD -> PCD8544_BUFFER_INDEX] |= 1 << (y % PCD8544_CHAR_PIXEL_Y);
+	PCD->buffer.PCD8544_BUFFER_INDEX = x + (y / PCD8544_CHAR_PIXEL_Y) * PCD8544_WIDTH;
+	PCD->buffer.PCD8544_BUFFER[PCD->buffer.PCD8544_BUFFER_INDEX] |= 1 << (y % PCD8544_CHAR_PIXEL_Y);
 	// success return
 	return PCD_OK;
 }
@@ -379,9 +417,9 @@ PCD_Status PCD8544_DrawPixel(PCD8544_t *PCD, uint8_t x, uint8_t y)
  *
  * @return  PCD_Status
  */
-PCD_Status PCD8544_WriteChar(PCD8544_t *PCD, const char *znak, const PCD8544_Font_t *Font)
+PCD_Status PCD8544_WriteChar(PCD8544_t *PCD, const char *znak)
 {
-    if (NULL == znak || NULL == Font)
+    if (NULL == znak || NULL == PCD->font.font)
     {
       return PCD_ERROR;
     }
@@ -395,28 +433,28 @@ PCD_Status PCD8544_WriteChar(PCD8544_t *PCD, const char *znak, const PCD8544_Fon
     }
 
     // Draw character pixels using DrawPixel
-    for (uint8_t col = 0; col < Font->width; col++)
+    for (uint8_t col = 0; col < PCD->font.font_width; col++)
     {
-      uint8_t columnData = Font->data[character * Font->width + col];
+      uint8_t columnData = PCD->font.font[character * PCD->font.font_width + col];
 
-      for (uint8_t row = 0; row < Font->height; row++)
+      for (uint8_t row = 0; row < PCD->font.font_height; row++)
       {
           if (columnData & (1 << row))
           {
               // Draw pixel only if bit is set
-              PCD8544_DrawPixel(PCD, PCD->PCD8544_CurrentX + col, PCD->PCD8544_CurrentY + row);
+              PCD8544_DrawPixel(PCD, PCD->buffer.PCD8544_CurrentX + col, PCD->buffer.PCD8544_CurrentY + row);
           }
       }
     }
 
     // Increment X for the next character(its needed for string writing)
-    PCD->PCD8544_CurrentX += Font->width;
+    PCD->buffer.PCD8544_CurrentX += PCD->font.font_width;
 
     // Check & handle Y-axis wrapping if the character exceeds the screen's width
-    if (PCD->PCD8544_CurrentX + Font->width >= PCD8544_WIDTH)
+    if (PCD->buffer.PCD8544_CurrentX + PCD->font.font_width >= PCD8544_WIDTH)
     {
-      PCD->PCD8544_CurrentX = 0;  // Reset X to the beginning of the next line
-      PCD->PCD8544_CurrentY += Font->height; // Increment Y with spacing
+      PCD->buffer.PCD8544_CurrentX = 0;  // Reset X to the beginning of the next line
+      PCD->buffer.PCD8544_CurrentY += PCD->font.font_height; // Increment Y with spacing
     }
 
     return PCD_OK;
@@ -431,7 +469,7 @@ PCD_Status PCD8544_WriteChar(PCD8544_t *PCD, const char *znak, const PCD8544_Fon
  *
  * @return  PCD_Status
  */
-PCD_Status PCD8544_WriteString(PCD8544_t *PCD, const char *str, const PCD8544_Font_t *Font)
+PCD_Status PCD8544_WriteString(PCD8544_t *PCD, const char *str)
 {
     // Check if string exists
     if (NULL == str)
@@ -441,7 +479,7 @@ PCD_Status PCD8544_WriteString(PCD8544_t *PCD, const char *str, const PCD8544_Fo
     // Loop through the characters in the string
     while (*str != '\0')
     {
-    	PCD8544_WriteChar(PCD, str, Font);
+    	PCD8544_WriteChar(PCD, str);
     	str++;
     }
 
@@ -457,7 +495,7 @@ PCD_Status PCD8544_WriteString(PCD8544_t *PCD, const char *str, const PCD8544_Fo
  */
 PCD_Status PCD8544_WriteNumberToBuffer(PCD8544_t *PCD, uint8_t x, uint8_t y, int16_t number)
 {
-	if ((x >= PCD8544_COLS) || (y >= PCD8544_ROWS))
+	if (x >= PCD->font.PCD8544_COLS || y >= PCD->font.PCD8544_ROWS)
     {
       return PCD_OutOfBounds;
     }
@@ -503,30 +541,30 @@ PCD_Status PCD8544_WriteNumberToBuffer(PCD8544_t *PCD, uint8_t x, uint8_t y, int
 /**
  * @desc    Clear selected region of buffer (clear one row in screen)
  *
- * @param   uint8_t x, uint8_t y - x and y position, uint8_t NumOfChars - number of chars to delete (from signle line 14 is MAX)
+ * @param   uint8_t x, uint8_t y - x and y position, uint8_t NumOfChars - number of chars to delete (from single line 14 is MAX)
  *
  * @return  PCD_Status
  */
 PCD_Status PCD8544_ClearBufferRegion(PCD8544_t *PCD, uint8_t x, uint8_t y, uint8_t NumOfChars)
 {
-	if ((x >= PCD8544_COLS) || (y >= PCD8544_ROWS))
+	if (x >= PCD->font.PCD8544_COLS || y >= PCD->font.PCD8544_ROWS)
     {
       return PCD_OutOfBounds;
     }
 
-	if(NumOfChars > (PCD8544_COLS - x))
+	if(NumOfChars > (PCD->font.PCD8544_COLS - x))
 	{
-		NumOfChars = PCD8544_COLS - x;
+		NumOfChars = PCD->font.PCD8544_COLS - x;
 	}
     // Calculate starting index in the buffer for the given x, y position
-    uint16_t startIndex = y * PCD8544_WIDTH + (x * PCD8544_CHAR_PIXEL_X);
+    uint16_t startIndex = y * PCD8544_WIDTH + (x * PCD->font.font_width);
 
     // Clear the specified region by setting it to 0x00
-    for (uint8_t i = 0; i < (NumOfChars * PCD8544_CHAR_PIXEL_X); i++)
+    for (uint8_t i = 0; i < (NumOfChars * PCD->font.font_width); i++)
     {
       if (startIndex + i < PCD8544_BUFFER_SIZE)
       {
-        PCD -> PCD8544_BUFFER[startIndex + i] = 0x00;
+        PCD->buffer.PCD8544_BUFFER[startIndex + i] = 0x00;
       }
     }
     return PCD_OK;
@@ -541,7 +579,7 @@ PCD_Status PCD8544_ClearBufferRegion(PCD8544_t *PCD, uint8_t x, uint8_t y, uint8
  */
 PCD_Status PCD8544_ClearBufferLine(PCD8544_t *PCD, uint8_t y)
 {
-    if (y >= PCD8544_ROWS)
+    if (y >= PCD->font.PCD8544_ROWS)
     {
       return PCD_OutOfBounds;
     }
@@ -551,7 +589,7 @@ PCD_Status PCD8544_ClearBufferLine(PCD8544_t *PCD, uint8_t y)
     // Clear the entire line by setting it to 0x00
     for (uint8_t i = 0; i < PCD8544_WIDTH; i++)
     {
-    	PCD -> PCD8544_BUFFER[startIndex + i] = 0x00;
+    	PCD->buffer.PCD8544_BUFFER[startIndex + i] = 0x00;
     }
     return PCD_OK;
 }
@@ -565,14 +603,14 @@ PCD_Status PCD8544_ClearBufferLine(PCD8544_t *PCD, uint8_t y)
  */
 PCD_Status PCD8544_InvertSelectedRegion(PCD8544_t *PCD, uint8_t x, uint8_t y, uint8_t NumOfChars)
 {
-	if ((x >= PCD8544_COLS) || (y >= PCD8544_ROWS))
+	if (x >= PCD->font.PCD8544_COLS || y >= PCD->font.PCD8544_ROWS)
     {
       return PCD_OutOfBounds;
     }
 
-	if(NumOfChars > (PCD8544_COLS - x))
+	if(NumOfChars > (PCD->font.PCD8544_COLS - x))
 	{
-		NumOfChars = PCD8544_COLS - x;
+		NumOfChars = PCD->font.PCD8544_COLS - x;
 	}
     // Calculate starting index in the buffer for the given x, y position
     uint16_t startIndex = y * PCD8544_WIDTH + (x * PCD8544_CHAR_PIXEL_X);
@@ -583,7 +621,7 @@ PCD_Status PCD8544_InvertSelectedRegion(PCD8544_t *PCD, uint8_t x, uint8_t y, ui
     if (startIndex + i < PCD8544_BUFFER_SIZE)
     {
       // XOR buffer with 0XFF to invert it
-      PCD -> PCD8544_BUFFER[startIndex + i] ^= 0xFF;
+      PCD->buffer.PCD8544_BUFFER[startIndex + i] ^= 0xFF;
     }
   }
     return PCD_OK;
@@ -599,7 +637,7 @@ PCD_Status PCD8544_InvertSelectedRegion(PCD8544_t *PCD, uint8_t x, uint8_t y, ui
 PCD_Status PCD8544_InvertLine(PCD8544_t *PCD, uint8_t y)
 {
 	// TODO: when buffer is empty, inverting doesnt work. Same goes for overwriting data
-    if (y >= PCD8544_ROWS)
+    if (y >= PCD->font.PCD8544_ROWS)
     {
         return PCD_OutOfBounds;
     }
@@ -609,7 +647,7 @@ PCD_Status PCD8544_InvertLine(PCD8544_t *PCD, uint8_t y)
     // XOR buffer with 0XFF to invert it
     for (uint8_t i = 0; i < PCD8544_WIDTH; i++)
     {
-    	PCD -> PCD8544_BUFFER[startIndex + i] ^= 0xFF;
+    	PCD->buffer.PCD8544_BUFFER[startIndex + i] ^= 0xFF;
     }
     return PCD_OK;
 }

@@ -21,8 +21,6 @@
 #define PCD8544_HEIGHT				48
 #define PCD8544_CHAR_PIXEL_X			6 											/* 6 pix in X axis per char (space included) */
 #define PCD8544_CHAR_PIXEL_Y			8											/* 8 pix in Y axis per char (space included) */
-#define PCD8544_ROWS      			((PCD8544_HEIGHT / PCD8544_CHAR_PIXEL_Y))
-#define PCD8544_COLS				((PCD8544_WIDTH / PCD8544_CHAR_PIXEL_X))
 #define MIN_ROW_COLS				0
 #define PCD8544_BUFFER_SIZE    			(PCD8544_WIDTH * PCD8544_HEIGHT / 8)
 
@@ -43,26 +41,40 @@ typedef enum
   PCD_SPI_MODE_DMA
 } PCD_SPI_Mode;
 
-
-
 typedef struct
 {
-	SPI_HandleTypeDef	*PCD8544_SPI; // SPI hadler for PCD8544
-
-	GPIO_TypeDef		*DC_GPIOPort; // GPIO DC Port for a button
-	uint16_t		 	DC_GpioPin; // GPIO DC Pin for a button
-
-	GPIO_TypeDef		*RST_GPIOPort; // GPIO RST Port for a button
-	uint16_t			RST_GpioPin; // GPIO RST Pin for a button
-
-	GPIO_TypeDef		*CE_GPIOPort; // GPIO CE Port for a button
-	uint16_t			CE_GpioPin; // GPIO CE Pin for a button
-
-	PCD_SPI_Mode		PCD8544_SPI_Mode; // Communication mode (blocking or DMA)
 	uint16_t			PCD8544_BUFFER_INDEX;        				//  array Cache memory char index
 	uint8_t				PCD8544_CurrentX;
 	uint8_t				PCD8544_CurrentY;
    	uint8_t				PCD8544_BUFFER[PCD8544_BUFFER_SIZE]; 	// array Cache memory Lcd 6 * 84 = 504 bytes
+}PCD8544_BUFFER_INFO_T;
+
+typedef struct
+{
+	uint8_t				font_width;  // Current font width in pixels
+	uint8_t				font_height; // Current font height in pixels
+	uint8_t				PCD8544_ROWS; // Number of character rows (calculated from font height)
+	uint8_t				PCD8544_COLS; // Number of character columns (calculated from font width)
+	uint16_t     *font;
+}PCD8544_FONT_INFO_t;
+
+typedef struct
+{
+	/*PORTS AND HANDLER*/
+	SPI_HandleTypeDef	*PCD8544_SPI; // SPI hadler for PCD8544
+	GPIO_TypeDef		*DC_GPIOPort; // GPIO DC Port for a button
+	GPIO_TypeDef		*RST_GPIOPort; // GPIO RST Port for a button
+	GPIO_TypeDef		*CE_GPIOPort; // GPIO CE Port for a button
+
+	/*PINS*/
+	uint16_t		 	DC_GpioPin; // GPIO DC Pin for a button
+	uint16_t			RST_GpioPin; // GPIO RST Pin for a button
+	uint16_t			CE_GpioPin; // GPIO CE Pin for a button
+	/*INTERNAL STRUCTURES*/
+	PCD8544_FONT_INFO_t font;
+	PCD8544_BUFFER_INFO_T buffer;
+
+	PCD_SPI_Mode		PCD8544_SPI_Mode; // Communication mode (blocking or DMA)
 }PCD8544_t;
 
 
@@ -142,6 +154,8 @@ PCD_Status PCD8544_Init (PCD8544_t *PCD, SPI_HandleTypeDef *hspi, GPIO_TypeDef *
 
 PCD_Status PCD8544_SetCommunicationMode(PCD8544_t *PCD, PCD_SPI_Mode mode);
 
+PCD_Status PCD8544_SetFont(PCD8544_t *PCD, const PCD8544_Font_t *Font);
+
 PCD_Status PCD8544_CommandSend (PCD8544_t *PCD, uint8_t data);
 
 PCD_Status PCD8544_DrawBitMap(PCD8544_t *PCD, uint8_t *bitmap, uint16_t size);
@@ -159,13 +173,13 @@ PCD_Status PCD8544_UpdateScreen (PCD8544_t *PCD);
 void PCD8544_TxCpltCallback(PCD8544_t *PCD);
 
 
-PCD_Status PCD8544_SetCursor(PCD8544_t *PCD, uint8_t x, uint8_t y, const PCD8544_Font_t *Font);
+PCD_Status PCD8544_SetCursor(PCD8544_t *PCD, uint8_t x, uint8_t y);
 
 PCD_Status PCD8544_DrawPixel (PCD8544_t *PCD, uint8_t x, uint8_t y);
 
-PCD_Status PCD8544_WriteChar(PCD8544_t *PCD, const char *znak, const PCD8544_Font_t *Font);
+PCD_Status PCD8544_WriteChar(PCD8544_t *PCD, const char *znak);
 
-PCD_Status PCD8544_WriteString(PCD8544_t *PCD, const char *str, const PCD8544_Font_t *Font);
+PCD_Status PCD8544_WriteString(PCD8544_t *PCD, const char *str);
 
 PCD_Status PCD8544_WriteNumberToBuffer(PCD8544_t *PCD, uint8_t x, uint8_t y, int16_t number);
 

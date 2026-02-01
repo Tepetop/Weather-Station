@@ -61,10 +61,10 @@ void Error_Handler(void);
 #define USER_LED_GPIO_Port GPIOC
 #define LCD_RST_Pin GPIO_PIN_7
 #define LCD_RST_GPIO_Port GPIOB
-#define LCD_DC_Pin GPIO_PIN_8
-#define LCD_DC_GPIO_Port GPIOB
-#define LCD_CE_Pin GPIO_PIN_9
+#define LCD_CE_Pin GPIO_PIN_8
 #define LCD_CE_GPIO_Port GPIOB
+#define LCD_DC_Pin GPIO_PIN_9
+#define LCD_DC_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 
