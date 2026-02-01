@@ -202,7 +202,7 @@ PCD_Status PCD8544_SetFont(PCD8544_t *PCD, const PCD8544_Font_t *Font)
     return PCD_ERROR;
   }
   
-  // Set font width and height from Font structure
+  // Set font width, height and pointer to char array from Font structure
   PCD->font.font_width = Font->width;
   PCD->font.font_height = Font->height;
   PCD->font.font = Font->data;
@@ -374,7 +374,7 @@ PCD_Status PCD8544_UpdateScreen (PCD8544_t *PCD)
  */
 PCD_Status PCD8544_SetCursor(PCD8544_t *PCD, uint8_t x, uint8_t y)
 {
-	if (x >= PCD->font.PCD8544_COLS || y >= PCD->font.PCD8544_ROWS)
+	if (x > PCD->font.PCD8544_COLS || y > PCD->font.PCD8544_ROWS)
 	{
 		// out of range
 		return PCD_OutOfBounds;
@@ -451,7 +451,7 @@ PCD_Status PCD8544_WriteChar(PCD8544_t *PCD, const char *znak)
     PCD->buffer.PCD8544_CurrentX += PCD->font.font_width;
 
     // Check & handle Y-axis wrapping if the character exceeds the screen's width
-    if (PCD->buffer.PCD8544_CurrentX + PCD->font.font_width >= PCD8544_WIDTH)
+    if (PCD->buffer.PCD8544_CurrentX + PCD->font.font_width > PCD8544_WIDTH)
     {
       PCD->buffer.PCD8544_CurrentX = 0;  // Reset X to the beginning of the next line
       PCD->buffer.PCD8544_CurrentY += PCD->font.font_height; // Increment Y with spacing
@@ -495,7 +495,7 @@ PCD_Status PCD8544_WriteString(PCD8544_t *PCD, const char *str)
  */
 PCD_Status PCD8544_WriteNumberToBuffer(PCD8544_t *PCD, uint8_t x, uint8_t y, int16_t number)
 {
-	if (x >= PCD->font.PCD8544_COLS || y >= PCD->font.PCD8544_ROWS)
+	if (x > PCD->font.PCD8544_COLS || y > PCD->font.PCD8544_ROWS)
     {
       return PCD_OutOfBounds;
     }
@@ -547,7 +547,7 @@ PCD_Status PCD8544_WriteNumberToBuffer(PCD8544_t *PCD, uint8_t x, uint8_t y, int
  */
 PCD_Status PCD8544_ClearBufferRegion(PCD8544_t *PCD, uint8_t x, uint8_t y, uint8_t NumOfChars)
 {
-	if (x >= PCD->font.PCD8544_COLS || y >= PCD->font.PCD8544_ROWS)
+	if (x > PCD->font.PCD8544_COLS || y > PCD->font.PCD8544_ROWS)
     {
       return PCD_OutOfBounds;
     }
@@ -579,7 +579,7 @@ PCD_Status PCD8544_ClearBufferRegion(PCD8544_t *PCD, uint8_t x, uint8_t y, uint8
  */
 PCD_Status PCD8544_ClearBufferLine(PCD8544_t *PCD, uint8_t y)
 {
-    if (y >= PCD->font.PCD8544_ROWS)
+    if (y > PCD->font.PCD8544_ROWS)
     {
       return PCD_OutOfBounds;
     }
@@ -603,7 +603,7 @@ PCD_Status PCD8544_ClearBufferLine(PCD8544_t *PCD, uint8_t y)
  */
 PCD_Status PCD8544_InvertSelectedRegion(PCD8544_t *PCD, uint8_t x, uint8_t y, uint8_t NumOfChars)
 {
-	if (x >= PCD->font.PCD8544_COLS || y >= PCD->font.PCD8544_ROWS)
+	if (x > PCD->font.PCD8544_COLS || y > PCD->font.PCD8544_ROWS)
     {
       return PCD_OutOfBounds;
     }
@@ -637,7 +637,7 @@ PCD_Status PCD8544_InvertSelectedRegion(PCD8544_t *PCD, uint8_t x, uint8_t y, ui
 PCD_Status PCD8544_InvertLine(PCD8544_t *PCD, uint8_t y)
 {
 	// TODO: when buffer is empty, inverting doesnt work. Same goes for overwriting data
-    if (y >= PCD->font.PCD8544_ROWS)
+    if (y > PCD->font.PCD8544_ROWS)
     {
         return PCD_OutOfBounds;
     }

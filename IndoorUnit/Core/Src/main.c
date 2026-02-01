@@ -26,6 +26,8 @@
 /* USER CODE BEGIN Includes */
 #include <PCD_LCD/PCD8544.h>
 #include <PCD_LCD/PCD8544_fonts.h>
+#include <PCD_LCD/PCD8544_Menu.h>
+#include <PCD_LCD/PCD8544_Menu_config.h>
 #include <stdint.h>
 #include <stdio.h>
 /* USER CODE END Includes */
@@ -51,6 +53,9 @@
 PCD8544_t LCD;
 char buffer[64];
 uint8_t counter = 1;
+
+// Menu context for managing menu state
+Menu_Context_t menuContext;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -98,6 +103,16 @@ int main(void)
   /* USER CODE BEGIN 2 */
   PCD8544_Init(&LCD, &hspi1, LCD_DC_GPIO_Port, LCD_DC_Pin, LCD_CE_GPIO_Port, LCD_CE_Pin, LCD_RST_GPIO_Port, LCD_RST_Pin);
   PCD8544_ClearScreen(&LCD);
+  
+  // Initialize menu system with predefined configuration
+  Menu_Init(&menu1, &menuContext);  // menu1 is the root menu from config
+  
+  // Set font for menu display
+  PCD8544_SetFont(&LCD, &Font_6x8);
+  
+  // Display initial menu
+  Menu_RefreshDisplay(&LCD, &menuContext);
+  
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -109,22 +124,76 @@ int main(void)
     /* USER CODE BEGIN 3 */
     HAL_GPIO_TogglePin(USER_LED_GPIO_Port, USER_LED_Pin);
 
-    // Update counter display on LCD
-    sprintf(buffer, "Count: %d", counter);
-    PCD8544_SetFont(&LCD, &Font_6x8);
-    PCD8544_SetCursor(&LCD, 1, 2);
-    PCD8544_WriteString(&LCD, buffer);
-    PCD8544_UpdateScreen(&LCD);
-    PCD8544_ClearBuffer(&LCD);
-    if(counter >= 20)
+    // Enhanced menu demonstration: navigate to menu → enter submenu → escape back
+    // This shows all menu functionality including submenus for every available menu
+    static uint32_t lastUpdate = 0;
+    static uint8_t demo_state = 0; // 0 = main menu, 1 = enter submenu, 2 = in submenu, 3 = escape back
+    static uint8_t current_menu_index = 0;
+    static uint8_t total_menus = 10; // We have 10 main menus (menu1 to menu10)
+    static uint8_t direction = 0;
+    
+    if(HAL_GetTick() - lastUpdate > 400)  // Change every 750ms
     {
-      counter = 0;
-    }
-    else {
-      counter++;    
+        switch(demo_state)
+        {
+            case 0: // Navigate to specific menu item
+                // Move cursor to current_menu_index
+                while(menuContext.state.MenuIndex != current_menu_index)
+                {
+                    if(menuContext.state.MenuIndex < current_menu_index)
+                    {
+                        Menu_Next(&LCD, &menuContext);
+                    }
+                    else
+                    {
+                        Menu_Previev(&LCD, &menuContext);
+                    }
+                }
+                demo_state = 1; // Next: enter submenu
+                break;
+                
+            case 1: // Enter submenu
+                Menu_Enter(&LCD, &menuContext);
+                demo_state = 2; // Next: wait in submenu
+                break;
+                
+            case 2: // Stay in submenu (show submenu for one cycle)
+                demo_state = 3; // Next: escape back
+                break;
+                
+            case 3: // Escape back to main menu
+                Menu_Escape(&LCD, &menuContext);
+                
+                // Handle bidirectional navigation
+                if(direction == 0)  // Forward direction
+                {
+                    current_menu_index++;
+                    if(current_menu_index >= total_menus)  // Reached last menu
+                    {
+                        current_menu_index = total_menus - 1;  // Stay at last menu
+                        direction = 1;  // Change to backward direction
+                    }
+                }
+                else  // Backward direction (direction == 1)
+                {
+                    if(current_menu_index > 0)
+                    {
+                        current_menu_index--;
+                    }
+                    if(current_menu_index == 0)  // Reached first menu
+                    {
+                        direction = 0;  // Change to forward direction
+                    }
+                }
+                
+                demo_state = 0; // Next: navigate to next menu
+                break;
+        }
+        
+        lastUpdate = HAL_GetTick();
     }
 
-    HAL_Delay(750);
+    HAL_Delay(100);
   }
   /* USER CODE END 3 */
 }
