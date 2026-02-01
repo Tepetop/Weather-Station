@@ -5,6 +5,7 @@
  *      Author: remik
  */
 #include "PCD8544_Menu.h"
+#include "PCD8544.h"
 
 
 /*							FUNCTIONS							*/
@@ -20,9 +21,16 @@ Menu_Status Menu_Init(Menu_t *root, Menu_Context_t *content)
 {
 	content->rootMenu = root;
 	content->state.CursorPosOnLCD = 0;
-	content->state.PrevLCDRowPos = 0;
 	content->state.MenuIndex = 0;
-	content->state.PrevMenuIndex = 0;
+	content->state.CurrentDepth = 0;
+	
+	// Initialize arrays to zero
+	for(uint8_t i = 0; i < MENU_MAX_DEPTH; i++)
+	{
+		content->state.PrevLCDRowPos[i] = 0;
+		content->state.PrevMenuIndex[i] = 0;
+	}
+	
 	return Menu_OK;
 }
 
@@ -72,19 +80,20 @@ Menu_Status Menu_SetCursorSign(PCD8544_t *PCD, Menu_Context_t *content)
 
 	static int8_t PrevCursorPos = 0;
 
-    if (content->state.CursorPosOnLCD >= PCD->font.PCD8544_ROWS)			// Zabezpieczenie przed wyjściem poza ekran
+    if (content->state.CursorPosOnLCD > PCD->font.PCD8544_ROWS)			// Zabezpieczenie przed wyjściem poza ekran
     {
         content->state.CursorPosOnLCD = PCD->font.PCD8544_ROWS - 1;
     }
-
-  // PCD8544_WriteStringToBuffer(PCD, 0, content->state.CursorPosOnLCD, ">");
 
     if (PrevCursorPos != content->state.CursorPosOnLCD)
     {
         PCD8544_ClearBufferRegion(PCD, 0, PrevCursorPos, 1);
         PrevCursorPos = content->state.CursorPosOnLCD;
     }
-
+    
+    // ODKOMENTUJ TĘ LINIĘ:
+    PCD8544_SetCursor(PCD, 0, content->state.CursorPosOnLCD);
+    PCD8544_WriteChar(PCD, ">");
     PCD8544_UpdateScreen(PCD);
     return Menu_OK;
 }
@@ -227,7 +236,7 @@ Menu_Status Menu_Enter(PCD8544_t *PCD, Menu_Context_t *content)
 {
 	if (NULL == PCD || NULL == content->rootMenu->child || NULL == content)
 	{
-		return Menu_Error;
+		return Menu_OK;
 	}
 
 	if (NULL != content->rootMenu->menuFunction)
@@ -235,16 +244,23 @@ Menu_Status Menu_Enter(PCD8544_t *PCD, Menu_Context_t *content)
 		content->rootMenu->menuFunction();
 	}
 
-	content->state.PrevMenuIndex = content->state.MenuIndex;
-	content->state.PrevLCDRowPos = content->state.CursorPosOnLCD;
+	// Zabezpieczenie przed przepełnieniem stosu
+    if (content->state.CurrentDepth >= MENU_MAX_DEPTH) return Menu_Error;
 
-	content->state.MenuIndex = 0;
-	content->state.CursorPosOnLCD = 0;
+    // Zapisz obecną pozycję na stosie na obecnym poziomie głębokości
+    content->state.PrevMenuIndex[content->state.CurrentDepth] = content->state.MenuIndex;
+    content->state.PrevLCDRowPos[content->state.CurrentDepth] = content->state.CursorPosOnLCD;
+    
+    // Zwiększ głębokość
+    content->state.CurrentDepth++;
 
-	content->rootMenu = content->rootMenu->child;
+    content->state.MenuIndex = 0;
+    content->state.CursorPosOnLCD = 0;
 
-	Menu_RefreshDisplay(PCD, content);
-	return Menu_OK;
+    content->rootMenu = content->rootMenu->child;
+
+    Menu_RefreshDisplay(PCD, content);
+    return Menu_OK;
 }
 
 /**
@@ -256,27 +272,23 @@ Menu_Status Menu_Enter(PCD8544_t *PCD, Menu_Context_t *content)
  */
 Menu_Status Menu_Escape(PCD8544_t *PCD, Menu_Context_t *content)
 {
-	if (NULL == PCD || NULL == content->rootMenu->parent || NULL == content)
-	{
-		return Menu_Error;
-	}
+    // Jeśli to główne menu (parent NULL) lub głębokość 0, nie można wyjść
+    if (NULL == PCD || NULL == content->rootMenu->parent || NULL == content || content->state.CurrentDepth == 0)
+    {
+        return Menu_Error;
+    }
 
-	uint8_t tempMenuIndex;
-	uint8_t tempLCDIndex;
+    // Zmniejsz głębokość, aby wrócić do poprzedniego poziomu
+    content->state.CurrentDepth--;
 
-	tempMenuIndex = content->state.MenuIndex;
-	tempLCDIndex = content->state.CursorPosOnLCD;
+    // Przywróć pozycję ze stosu
+    content->state.MenuIndex = content->state.PrevMenuIndex[content->state.CurrentDepth];
+    content->state.CursorPosOnLCD = content->state.PrevLCDRowPos[content->state.CurrentDepth];
 
-	content->state.MenuIndex = content->state.PrevMenuIndex;
-	content->state.CursorPosOnLCD = content->state.PrevLCDRowPos;
+    content->rootMenu = content->rootMenu->parent;
 
-	content->state.PrevMenuIndex = tempMenuIndex;
-	content->state.PrevLCDRowPos = tempLCDIndex;
+    Menu_RefreshDisplay(PCD, content);
 
-	content->rootMenu = content->rootMenu->parent;
-
-	Menu_RefreshDisplay(PCD, content);
-
-	return Menu_OK;
+    return Menu_OK;
 }
 

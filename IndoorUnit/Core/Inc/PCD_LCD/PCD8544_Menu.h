@@ -13,7 +13,7 @@
 /*		DEFINES										*/
 
 #define MENU_MIN_CURSOR_ROW			0x00U
-
+#define MENU_MAX_DEPTH              5       // Maksymalna głębokość zagnieżdżenia
 
 /*		Struktura list połączonych menu					*/
 typedef struct menu_s Menu_t;
@@ -32,10 +32,12 @@ struct menu_s
 
 typedef struct
 {
-	uint8_t		MenuIndex;
-	uint8_t 	CursorPosOnLCD;
-	uint8_t		PrevMenuIndex;
-	uint8_t		PrevLCDRowPos;
+    uint8_t		MenuIndex;
+    uint8_t 	CursorPosOnLCD;
+    // Zmieniono na tablice (stos)
+    uint8_t		PrevMenuIndex[MENU_MAX_DEPTH];
+    uint8_t		PrevLCDRowPos[MENU_MAX_DEPTH];
+    uint8_t     CurrentDepth;
 }Menu_Variables_t;
 
 /*		Struktura zawierająca wskaźnik na pierwszy element zdefiniowanego menu oraz strukturę zmiennych menu	*/
