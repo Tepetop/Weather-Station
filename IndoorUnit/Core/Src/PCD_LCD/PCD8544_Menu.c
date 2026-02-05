@@ -31,6 +31,10 @@ Menu_Status Menu_Init(Menu_t *root, Menu_Context_t *content)
 		content->state.PrevMenuIndex[i] = 0;
 	}
 	
+	// Initialize state machine to IDLE
+	content->state.currentAction = MENU_ACTION_IDLE;
+	content->state.actionPending = 0;
+	
 	return Menu_OK;
 }
 
@@ -290,5 +294,127 @@ Menu_Status Menu_Escape(PCD8544_t *PCD, Menu_Context_t *content)
     Menu_RefreshDisplay(PCD, content);
 
     return Menu_OK;
+}
+
+/*							STATE MACHINE FUNCTIONS							*/
+
+/**
+ * @desc    Main menu task function to be called from main loop
+ *          Processes pending menu actions set by button interrupts
+ *
+ * @param   PCD8544_t pointer, Menu_Context_t pointer
+ *
+ * @return  Menu status
+ */
+Menu_Status Menu_Task(PCD8544_t *PCD, Menu_Context_t *content)
+{
+    if(NULL == PCD || NULL == content)
+    {
+        return Menu_Error;
+    }
+    
+    // Check if there's a pending action
+    if(content->state.actionPending)
+    {
+        switch(content->state.currentAction)
+        {
+            case MENU_ACTION_NEXT:
+                Menu_Next(PCD, content);
+                break;
+                
+            case MENU_ACTION_PREV:
+                Menu_Previev(PCD, content);
+                break;
+                
+            case MENU_ACTION_ENTER:
+                Menu_Enter(PCD, content);
+                break;
+                
+            case MENU_ACTION_ESCAPE:
+                Menu_Escape(PCD, content);
+                break;
+                
+            case MENU_ACTION_IDLE:
+            default:
+                // No action or invalid action
+                break;
+        }
+        
+        // Clear the pending action
+        content->state.actionPending = 0;
+        content->state.currentAction = MENU_ACTION_IDLE;
+    }
+    
+    return Menu_OK;
+}
+
+/**
+ * @desc    Set menu action (generic function)
+ *          Can be called from button interrupts
+ *
+ * @param   content - Menu context pointer
+ * @param   action - Menu action to set
+ *
+ * @return  None
+ */
+void Menu_SetAction(Menu_Context_t *content, Menu_Action_t action)
+{
+    if(content != NULL)
+    {
+        content->state.currentAction = action;
+        content->state.actionPending = 1;
+    }
+}
+
+/**
+ * @desc    Set next menu action
+ *          Call this from button interrupt for "down" or "next" button
+ *
+ * @param   content - Menu context pointer
+ *
+ * @return  None
+ */
+void Menu_SetNextAction(Menu_Context_t *content)
+{
+    Menu_SetAction(content, MENU_ACTION_NEXT);
+}
+
+/**
+ * @desc    Set previous menu action
+ *          Call this from button interrupt for "up" or "previous" button
+ *
+ * @param   content - Menu context pointer
+ *
+ * @return  None
+ */
+void Menu_SetPrevAction(Menu_Context_t *content)
+{
+    Menu_SetAction(content, MENU_ACTION_PREV);
+}
+
+/**
+ * @desc    Set enter menu action
+ *          Call this from button interrupt for "enter" or "select" button
+ *
+ * @param   content - Menu context pointer
+ *
+ * @return  None
+ */
+void Menu_SetEnterAction(Menu_Context_t *content)
+{
+    Menu_SetAction(content, MENU_ACTION_ENTER);
+}
+
+/**
+ * @desc    Set escape menu action
+ *          Call this from button interrupt for "back" or "escape" button
+ *
+ * @param   content - Menu context pointer
+ *
+ * @return  None
+ */
+void Menu_SetEscapeAction(Menu_Context_t *content)
+{
+    Menu_SetAction(content, MENU_ACTION_ESCAPE);
 }
 
