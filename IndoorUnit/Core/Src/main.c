@@ -21,16 +21,23 @@
 #include "dma.h"
 #include "i2c.h"
 #include "spi.h"
+#include "stm32f1xx_hal.h"
+#include "stm32f1xx_hal_gpio.h"
+#include "tim.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+
 #include <PCD_LCD/PCD8544.h>
 #include <PCD_LCD/PCD8544_fonts.h>
 #include <PCD_LCD/PCD8544_Menu.h>
 #include <PCD_LCD/PCD8544_Menu_config.h>
+
 #include <stdint.h>
 #include <stdio.h>
+
+#include <encoder.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -40,7 +47,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define MENU_DEMO 0
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -51,12 +58,12 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-PCD8544_t LCD;
+Menu_Context_t menuContext;   // Menu context for managing menu state
+PCD8544_t LCD;                // LCD instance
+Encoder_t encoder;            // Encoder instance
 char buffer[64];
 uint8_t counter = 1;
-
-// Menu context for managing menu state
-Menu_Context_t menuContext;
+uint32_t softTimer = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -102,8 +109,10 @@ int main(void)
   MX_DMA_Init();
   MX_SPI1_Init();
   MX_I2C2_Init();
+  MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
-  PCD8544_Init(&LCD, &hspi1, LCD_DC_GPIO_Port, LCD_DC_Pin, LCD_CE_GPIO_Port, LCD_CE_Pin, LCD_RST_GPIO_Port, LCD_RST_Pin);
+  Encoder_Init(&encoder, &htim1, 4, TIM_CHANNEL_1, TIM_CHANNEL_2);                                                            // Initialize encoder
+  PCD8544_Init(&LCD, &hspi1, LCD_DC_GPIO_Port, LCD_DC_Pin, LCD_CE_GPIO_Port, LCD_CE_Pin, LCD_RST_GPIO_Port, LCD_RST_Pin);     // Initialize LCD
   PCD8544_ClearScreen(&LCD);
   
   // Initialize menu system with predefined configuration
@@ -115,6 +124,8 @@ int main(void)
   // Display initial menu
   Menu_RefreshDisplay(&LCD, &menuContext);
   
+  /*  Soft timer for LED toggle */
+  softTimer = HAL_GetTick();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -124,11 +135,16 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    HAL_GPIO_TogglePin(USER_LED_GPIO_Port, USER_LED_Pin);
+    if(HAL_GetTick() - softTimer > 750)
+    {
+      HAL_GPIO_TogglePin(USER_LED_GPIO_Port, USER_LED_Pin);
+      softTimer = HAL_GetTick();
+    }  
 
     // Call the menu task to handle any pending button actions
     Menu_Task(&LCD, &menuContext);
 
+#if MENU_DEMO
     // Demo: Simulate button presses for demonstration
     // Replace this with actual button interrupt handlers
     static uint32_t lastUpdate = 0;
@@ -167,8 +183,8 @@ int main(void)
         
         lastUpdate = HAL_GetTick();
     }
+#endif
 
-    HAL_Delay(100);
   }
   /* USER CODE END 3 */
 }
@@ -213,9 +229,25 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+/*      Encoder timer handler     */
+void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
+{
+  if (htim->Instance == TIM1) // Check if the interrupt is from TIM1
+  {
+    Encoder_Get_Ticks(&encoder); // Update encoder tick count
+  }
+}
 
+
+/*      Encoder button IRQ handler      */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+  if(GPIO_Pin == ECN_BUTTON_Pin) // Check if the interrupt is from the encoder button pin
+  {
+    Menu_SetEnterAction(&menuContext); 
+  }
+}
 /* USER CODE END 4 */
-
 /**
   * @brief  This function is executed in case of error occurrence.
   * @retval None
