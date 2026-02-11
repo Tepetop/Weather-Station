@@ -10,6 +10,7 @@
 
 
 #define PCD8544_INCLUDE_FONT6x8
+#define PCD8544_ENCODER_MODE // Enable encoder mode with "POWROT" option in submenus    
 
 #include <main.h>
 
