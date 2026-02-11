@@ -118,8 +118,8 @@ Menu_Status Menu_RefreshDisplay(PCD8544_t *PCD, Menu_Context_t *content)
         const char* titleString = "SUBMENU";
         if (tempMenu != NULL && tempMenu->parent != NULL) {
             titleString = tempMenu->parent->name;
+            PCD8544_WriteString(PCD, "-");
         }
-        PCD8544_WriteString(PCD, "-");
         PCD8544_WriteString(PCD, (char*)titleString);
         PCD8544_WriteString(PCD, "-");
 
