@@ -36,6 +36,7 @@
 #include <stdio.h>
 
 #include <encoder.h>
+#include <button_debounce.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -59,6 +60,7 @@
 Menu_Context_t menuContext;   // Menu context for managing menu state
 PCD8544_t LCD;                // LCD instance
 Encoder_t encoder;            // Encoder instance
+Button_t encoderSW;          // Button instance for encoder switch
 char buffer[64];
 uint8_t counter = 1;
 uint32_t softTimer = 0;
@@ -67,7 +69,7 @@ uint32_t softTimer = 0;
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
-
+void EncoderButtonFlag(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -109,11 +111,19 @@ int main(void)
   MX_I2C2_Init();
   MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
-  Encoder_Init(&encoder, &htim1, TIM_CHANNEL_1, TIM_CHANNEL_2);                                                            // Initialize encoder
-  PCD8544_Init(&LCD, &hspi1, LCD_DC_GPIO_Port, LCD_DC_Pin, LCD_CE_GPIO_Port, LCD_CE_Pin, LCD_RST_GPIO_Port, LCD_RST_Pin);     // Initialize LCD
+
+  /*            Initialize encoder        */
+  Encoder_Init(&encoder, &htim1, TIM_CHANNEL_1, TIM_CHANNEL_2);   
+
+  /*             Initialize debounce button        */
+  ButtonInitKey(&encoderSW, ENC_BUTTON_GPIO_Port, ENC_BUTTON_Pin, 50, 1000, 500, BUTTON_MODE_INTERRUPT);
+  ButtonRegisterPressCallback(&encoderSW, EncoderButtonFlag);
+
+  /*            Initialize LCD           */
+  PCD8544_Init(&LCD, &hspi1, LCD_DC_GPIO_Port, LCD_DC_Pin, LCD_CE_GPIO_Port, LCD_CE_Pin, LCD_RST_GPIO_Port, LCD_RST_Pin);
   PCD8544_ClearScreen(&LCD);
   
-  // Initialize menu system with predefined configuration
+  /* Initialize menu system with predefined configuration */
   Menu_Init(&menu1, &menuContext);  // menu1 is the root menu from config
   
   // Set font for menu display
@@ -138,11 +148,13 @@ int main(void)
       HAL_GPIO_TogglePin(USER_LED_GPIO_Port, USER_LED_Pin);
       softTimer = HAL_GetTick();
     }  
+    /* Process button state machine*/
+    ButtonTask(&encoderSW); 
 
-    // Call the menu task to handle any pending button actions
+    /*Call the menu task to handle any pending button actions*/
     Menu_Task(&LCD, &menuContext);
     
-    // Call user-defined encoder task
+    /* Call user-defined encoder task*/
     Encoder_Task(&encoder, &menuContext);
 
 #if MENU_DEMO
@@ -235,7 +247,7 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 {
   if (htim->Instance == TIM1) // Check if the interrupt is from TIM1
   {
-      encoder.IRQ_Flag = 1;
+    encoder.IRQ_Flag = 1;
   }
 }
 
@@ -243,10 +255,13 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 /*      Encoder button IRQ handler      */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-  if(GPIO_Pin == ENC_BUTTON_Pin) // Check if the interrupt is from the encoder button pin
-  {
-    encoder.ButtonIRQ_Flag = 1;
-  }
+  ButtonIRQHandler(&encoderSW, GPIO_Pin);
+}
+
+/*      Encoder button flag handler      */
+void EncoderButtonFlag(void)
+{
+  encoder.ButtonIRQ_Flag = 1;
 }
 /* USER CODE END 4 */
 

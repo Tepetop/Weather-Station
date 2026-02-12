@@ -50,6 +50,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/PCD_LCD/PCD8544_fonts.c
     Core/Src/ds3231.c
     Core/Src/encoder.c
+    Core/Src/button_debounce.c
 )
 
 # Add include paths

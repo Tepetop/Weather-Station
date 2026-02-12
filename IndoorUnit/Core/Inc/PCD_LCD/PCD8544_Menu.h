@@ -48,6 +48,7 @@ typedef struct
     uint8_t		PrevMenuIndex[MENU_MAX_DEPTH];
     uint8_t		PrevLCDRowPos[MENU_MAX_DEPTH];
     uint8_t     CurrentDepth;
+    uint8_t     InDetailsView;
     // State machine
     Menu_Action_t currentAction;
     uint8_t actionPending;
