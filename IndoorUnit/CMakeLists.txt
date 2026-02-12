@@ -48,12 +48,15 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/PCD_LCD/PCD8544.c
     Core/Src/PCD_LCD/PCD8544_Menu.c
     Core/Src/PCD_LCD/PCD8544_fonts.c
+    Core/Src/ds3231.c
+    Core/Src/encoder.c
 )
 
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
     Core/Inc/PCD_LCD
+    Core/Inc
 )
 
 # Add project symbols (macros)

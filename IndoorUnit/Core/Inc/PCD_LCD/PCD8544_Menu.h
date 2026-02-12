@@ -28,6 +28,16 @@ struct menu_s
 	void(*menuFunction)(void);
 };
 
+/*		Menu Action enumeration for state machine			*/
+typedef enum
+{
+	MENU_ACTION_IDLE = 0x00U,
+	MENU_ACTION_NEXT,
+	MENU_ACTION_PREV,
+	MENU_ACTION_ENTER,
+	MENU_ACTION_ESCAPE
+}Menu_Action_t;
+
 /*		Zmienne potrzebne do obsługi biblioteki menu											*/
 
 typedef struct
@@ -38,6 +48,9 @@ typedef struct
     uint8_t		PrevMenuIndex[MENU_MAX_DEPTH];
     uint8_t		PrevLCDRowPos[MENU_MAX_DEPTH];
     uint8_t     CurrentDepth;
+    // State machine
+    Menu_Action_t currentAction;
+    uint8_t actionPending;
 }Menu_Variables_t;
 
 /*		Struktura zawierająca wskaźnik na pierwszy element zdefiniowanego menu oraz strukturę zmiennych menu	*/
@@ -66,5 +79,13 @@ Menu_Status Menu_Next(PCD8544_t *PCD, Menu_Context_t *content);
 Menu_Status Menu_Previev(PCD8544_t *PCD, Menu_Context_t *content);
 Menu_Status Menu_Enter(PCD8544_t *PCD, Menu_Context_t *content);
 Menu_Status Menu_Escape(PCD8544_t *PCD, Menu_Context_t *content);
+
+/*		State Machine functions		*/
+Menu_Status Menu_Task(PCD8544_t *PCD, Menu_Context_t *content);
+void Menu_SetAction(Menu_Context_t *content, Menu_Action_t action);
+void Menu_SetNextAction(Menu_Context_t *content);
+void Menu_SetPrevAction(Menu_Context_t *content);
+void Menu_SetEnterAction(Menu_Context_t *content);
+void Menu_SetEscapeAction(Menu_Context_t *content);
 
 #endif /* INC_MENU_H_ */
