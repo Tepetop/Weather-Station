@@ -24,6 +24,7 @@ Menu_Status Menu_Init(Menu_t *root, Menu_Context_t *content)
 	content->state.CursorPosOnLCD = 0;
 	content->state.MenuIndex = 0;
 	content->state.CurrentDepth = 0;
+	content->state.InDetailsView = 0;
 	
 	// Initialize arrays to zero
 	for(uint8_t i = 0; i < MENU_MAX_DEPTH; i++)
@@ -107,6 +108,40 @@ Menu_Status Menu_RefreshDisplay(PCD8544_t *PCD, Menu_Context_t *content)
     Menu_t *tempMenu = content->rootMenu;
     uint8_t effectiveDepth = content->state.CurrentDepth;
 
+#ifdef PCD8544_SHOW_DETAILS
+    // --- Details View Mode ---
+    if(content->state.InDetailsView)
+    {
+        // 1. Draw Title (Current Item Name)
+        PCD8544_SetCursor(PCD, 0, 0); 
+        const char* titleString = tempMenu->name; // In Details View, rootMenu is the item itself
+        
+        // Centering logic
+        uint8_t textPixelWidth = (strlen(titleString) + 2) * PCD->font.font_width;
+        if(textPixelWidth < PCD8544_WIDTH)
+        {
+             PCD->buffer.PCD8544_CurrentX = (PCD8544_WIDTH - textPixelWidth) / 2;
+        }
+        PCD8544_WriteString(PCD, "-");
+        PCD8544_WriteString(PCD, (char*)titleString);
+        PCD8544_WriteString(PCD, "-");
+
+        // 2. Draw "Powrot"
+        PCD8544_SetCursor(PCD, 1, 1);
+        PCD8544_WriteString(PCD, "Powrot");
+
+        // 3. Draw Details
+        if(tempMenu->details != NULL)
+        {
+            PCD8544_SetCursor(PCD, 0, 2);
+            PCD8544_WriteString(PCD, tempMenu->details);
+        }
+        
+        PCD8544_UpdateScreen(PCD);
+        return Menu_OK;
+    }
+#endif
+
     // --- Title Logic (Row 0) ---
     // Show title ONLY if Depth > 0 (Submenu)
     uint8_t listStartVisualRow = 0;
@@ -118,8 +153,18 @@ Menu_Status Menu_RefreshDisplay(PCD8544_t *PCD, Menu_Context_t *content)
         const char* titleString = "SUBMENU";
         if (tempMenu != NULL && tempMenu->parent != NULL) {
             titleString = tempMenu->parent->name;
-            PCD8544_WriteString(PCD, "-");
         }
+        
+        // Calculate centering: (Screen_Width - Text_Width) / 2
+        // Text is "-TITLE-"
+        uint8_t textPixelWidth = (strlen(titleString) + 2) * PCD->font.font_width;
+        
+        if(textPixelWidth < PCD8544_WIDTH)
+        {
+            PCD->buffer.PCD8544_CurrentX = (PCD8544_WIDTH - textPixelWidth) / 2;
+        }
+
+        PCD8544_WriteString(PCD, "-");
         PCD8544_WriteString(PCD, (char*)titleString);
         PCD8544_WriteString(PCD, "-");
 
@@ -231,6 +276,11 @@ Menu_Status Menu_RefreshDisplay(PCD8544_t *PCD, Menu_Context_t *content)
 Menu_Status Menu_Next(PCD8544_t *PCD, Menu_Context_t *content)
 {
     if (NULL == PCD || NULL == content) return Menu_Error;
+    
+#ifdef PCD8544_SHOW_DETAILS
+    // In Details View, we have only one option (Return at index 0), so block Next
+    if(content->state.InDetailsView) return Menu_OK;
+#endif
 
 #ifdef PCD8544_ENCODER_MODE
     // Special handling for moving FROM "POWROT" (index 0) TO the first item (index 1)
@@ -304,6 +354,11 @@ Menu_Status Menu_Next(PCD8544_t *PCD, Menu_Context_t *content)
 Menu_Status Menu_Previev(PCD8544_t *PCD, Menu_Context_t *content)
 {
     if (NULL == PCD || NULL == content) return Menu_Error;
+    
+#ifdef PCD8544_SHOW_DETAILS
+    // In Details View, we have only one option (Return at index 0), so block Prev (scrolling up)
+    if(content->state.InDetailsView) return Menu_OK;
+#endif
 
 #ifdef PCD8544_ENCODER_MODE
     // Handling transition FROM first item (index 1) TO "POWROT" (index 0)
@@ -371,7 +426,35 @@ Menu_Status Menu_Enter(PCD8544_t *PCD, Menu_Context_t *content)
 
 	if (NULL == content->rootMenu->child)
 	{
-		return Menu_OK; // Or Error? Original code returned OK for leaf.
+#ifdef PCD8544_SHOW_DETAILS
+		// Check for details
+        if(content->rootMenu->details != NULL)
+        {
+            // Enter Details Mode
+            if (content->state.CurrentDepth >= MENU_MAX_DEPTH) return Menu_Error;
+
+            // Save state
+            content->state.PrevMenuIndex[content->state.CurrentDepth] = content->state.MenuIndex;
+            content->state.PrevLCDRowPos[content->state.CurrentDepth] = content->state.CursorPosOnLCD;
+
+            content->state.CurrentDepth++;
+            content->state.InDetailsView = 1;
+            
+            // Set context for new view (Only return option)
+            content->state.MenuIndex = 0;
+            content->state.CursorPosOnLCD = 0;
+            
+            // Do NOT change rootMenu
+            
+            Menu_RefreshDisplay(PCD, content);
+            // Also need to draw the cursor (at pos 0, offset 1 due to depth > 0)
+            Menu_SetCursorSign(PCD, content);
+            
+            return Menu_OK;
+        }
+#endif
+
+		return Menu_OK; 
 	}
 
 	if (NULL != content->rootMenu->menuFunction)
@@ -407,8 +490,33 @@ Menu_Status Menu_Enter(PCD8544_t *PCD, Menu_Context_t *content)
  */
 Menu_Status Menu_Escape(PCD8544_t *PCD, Menu_Context_t *content)
 {
+    if(NULL == PCD || NULL == content) return Menu_Error;
+
+#ifdef PCD8544_SHOW_DETAILS
+    // Handle Exit from Details View
+    if(content->state.InDetailsView)
+    {
+        if(content->state.CurrentDepth > 0)
+        {
+            content->state.CurrentDepth--;
+            content->state.InDetailsView = 0;
+            
+            // Restore State
+            content->state.MenuIndex = content->state.PrevMenuIndex[content->state.CurrentDepth];
+            content->state.CursorPosOnLCD = content->state.PrevLCDRowPos[content->state.CurrentDepth];
+            
+            // Do NOT change rootMenu (we never left it)
+            
+            Menu_RefreshDisplay(PCD, content);
+            
+            return Menu_OK;
+        }
+        return Menu_Error;
+    }
+#endif
+
     // Jeśli to główne menu (parent NULL) lub głębokość 0, nie można wyjść
-    if (NULL == PCD || NULL == content->rootMenu->parent || NULL == content || content->state.CurrentDepth == 0)
+    if (NULL == content->rootMenu->parent || content->state.CurrentDepth == 0)
     {
         return Menu_Error;
     }
