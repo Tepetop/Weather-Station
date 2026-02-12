@@ -21,8 +21,6 @@
 #include "dma.h"
 #include "i2c.h"
 #include "spi.h"
-#include "stm32f1xx_hal.h"
-#include "stm32f1xx_hal_gpio.h"
 #include "tim.h"
 #include "gpio.h"
 
@@ -111,7 +109,7 @@ int main(void)
   MX_I2C2_Init();
   MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
-  Encoder_Init(&encoder, &htim1, 4, TIM_CHANNEL_1, TIM_CHANNEL_2);                                                            // Initialize encoder
+  Encoder_Init(&encoder, &htim1, TIM_CHANNEL_1, TIM_CHANNEL_2);                                                            // Initialize encoder
   PCD8544_Init(&LCD, &hspi1, LCD_DC_GPIO_Port, LCD_DC_Pin, LCD_CE_GPIO_Port, LCD_CE_Pin, LCD_RST_GPIO_Port, LCD_RST_Pin);     // Initialize LCD
   PCD8544_ClearScreen(&LCD);
   
@@ -143,6 +141,9 @@ int main(void)
 
     // Call the menu task to handle any pending button actions
     Menu_Task(&LCD, &menuContext);
+    
+    // Call user-defined encoder task
+    Encoder_Task(&encoder, &menuContext);
 
 #if MENU_DEMO
     // Demo: Simulate button presses for demonstration
@@ -234,7 +235,7 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 {
   if (htim->Instance == TIM1) // Check if the interrupt is from TIM1
   {
-    Encoder_Get_Ticks(&encoder); // Update encoder tick count
+      encoder.IRQ_Flag = 1;
   }
 }
 
@@ -242,12 +243,13 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 /*      Encoder button IRQ handler      */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
-  if(GPIO_Pin == ECN_BUTTON_Pin) // Check if the interrupt is from the encoder button pin
+  if(GPIO_Pin == ENC_BUTTON_Pin) // Check if the interrupt is from the encoder button pin
   {
-    Menu_SetEnterAction(&menuContext); 
+    encoder.ButtonIRQ_Flag = 1;
   }
 }
 /* USER CODE END 4 */
+
 /**
   * @brief  This function is executed in case of error occurrence.
   * @retval None
