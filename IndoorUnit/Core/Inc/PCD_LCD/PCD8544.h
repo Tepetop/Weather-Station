@@ -77,7 +77,6 @@ typedef struct
 	PCD_SPI_Mode		PCD8544_SPI_Mode; // Communication mode (blocking or DMA)
 }PCD8544_t;
 
-
 // Function set
 // -----------------------------------
 // D7 D6 D5 D4 D3 D2 D1 D0
@@ -192,10 +191,5 @@ PCD_Status PCD8544_ClearBufferLine(PCD8544_t *PCD, uint8_t y);
 PCD_Status PCD8544_InvertSelectedRegion(PCD8544_t *PCD, uint8_t x, uint8_t y, uint8_t NumOfChars);
 
 PCD_Status PCD8544_InvertLine(PCD8544_t *PCD, uint8_t y);
-
-
-
-
-PCD_Status PCD8544_DrawLine (PCD8544_t *PCD, uint8_t x1, uint8_t x2, uint8_t y1, uint8_t y2);
 
 #endif /* INC_PCD8544_H_ */

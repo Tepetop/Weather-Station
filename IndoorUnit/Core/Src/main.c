@@ -31,6 +31,7 @@
 #include <PCD_LCD/PCD8544_fonts.h>
 #include <PCD_LCD/PCD8544_Menu.h>
 #include <PCD_LCD/PCD8544_Menu_config.h>
+#include <PCD_LCD/PCD8544_Drawing.h>
 
 #include <stdint.h>
 #include <stdio.h>
@@ -47,6 +48,7 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define MENU_DEMO 0
+#define DRAWING_DEMO 1
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -122,7 +124,8 @@ int main(void)
   /*            Initialize LCD           */
   PCD8544_Init(&LCD, &hspi1, LCD_DC_GPIO_Port, LCD_DC_Pin, LCD_CE_GPIO_Port, LCD_CE_Pin, LCD_RST_GPIO_Port, LCD_RST_Pin);
   PCD8544_ClearScreen(&LCD);
-  
+
+#if DRAWING_DEMO == 0
   /* Initialize menu system with predefined configuration */
   Menu_Init(&menu1, &menuContext);  // menu1 is the root menu from config
   
@@ -131,7 +134,16 @@ int main(void)
   
   // Display initial menu
   Menu_RefreshDisplay(&LCD, &menuContext);
+#elif DRAWING_DEMO == 1
+  //PCD8544_DrawCircle(&LCD, 42, 24, 12);
+  PCD8544_FillCircle(&LCD, 42, 24, 20);
+//  PCD8544_DrawLine(&LCD, 0, 0, 83, 47);
+//  PCD8544_DrawLine(&LCD, 0, 47, 83, 0);
+  PCD8544_UpdateScreen(&LCD);
   
+#endif
+
+
   /*  Soft timer for LED toggle */
   softTimer = HAL_GetTick();
   /* USER CODE END 2 */
@@ -148,6 +160,8 @@ int main(void)
       HAL_GPIO_TogglePin(USER_LED_GPIO_Port, USER_LED_Pin);
       softTimer = HAL_GetTick();
     }  
+  
+#if DRAWING_DEMO == 0
     /* Process button state machine*/
     ButtonTask(&encoderSW); 
 
@@ -156,6 +170,7 @@ int main(void)
     
     /* Call user-defined encoder task*/
     Encoder_Task(&encoder, &menuContext);
+#endif
 
 #if MENU_DEMO
     // Demo: Simulate button presses for demonstration
