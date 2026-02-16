@@ -47,8 +47,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define MENU_DEMO 0
-#define DRAWING_DEMO 1
+#define DRAWING_DEMO 0
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -72,6 +71,8 @@ uint32_t softTimer = 0;
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 void EncoderButtonFlag(void);
+
+void demo_measurement_function(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -127,20 +128,19 @@ int main(void)
 
 #if DRAWING_DEMO == 0
   /* Initialize menu system with predefined configuration */
-  Menu_Init(&menu1, &menuContext);  // menu1 is the root menu from config
-  
+  Menu_Init(&StronaDomyslna, &menuContext); 
   // Set font for menu display
-  PCD8544_SetFont(&LCD, &Font_6x8);
-  
-  // Display initial menu
+  PCD8544_SetFont(&LCD, &Font_6x8);  
+  // Display initial menu and then show default measurement screen
   Menu_RefreshDisplay(&LCD, &menuContext);
+  demo_measurement_function();
+
 #elif DRAWING_DEMO == 1
   //PCD8544_DrawCircle(&LCD, 42, 24, 12);
   PCD8544_FillCircle(&LCD, 42, 24, 20);
 //  PCD8544_DrawLine(&LCD, 0, 0, 83, 47);
 //  PCD8544_DrawLine(&LCD, 0, 47, 83, 0);
-  PCD8544_UpdateScreen(&LCD);
-  
+  PCD8544_UpdateScreen(&LCD);  
 #endif
 
 
@@ -170,49 +170,12 @@ int main(void)
     
     /* Call user-defined encoder task*/
     Encoder_Task(&encoder, &menuContext);
-#endif
 
-#if MENU_DEMO
-    // Demo: Simulate button presses for demonstration
-    // Replace this with actual button interrupt handlers
-    static uint32_t lastUpdate = 0;
-    static uint8_t demo_state = 0; // 0 = next, 1 = enter, 2 = wait, 3 = escape
-    static uint8_t menu_counter = 0; // Track which menu we're on (0-9)
-    static uint8_t total_menus = 10; // Total number of menus
-    
-    if(HAL_GetTick() - lastUpdate > 750)  // Change every 750ms
+    if (menuContext.state.InDefaultMeasurementsView)
     {
-        switch(demo_state)
-        {
-            case 0: // Navigate to next menu (with wrapping)
-                Menu_SetNextAction(&menuContext);
-                demo_state = 1;
-                break;
-                
-            case 1: // Simulate enter button press
-                Menu_SetEnterAction(&menuContext);
-                demo_state = 2;
-                break;
-                
-            case 2: // Wait in submenu
-                demo_state = 3;
-                break;
-                
-            case 3: // Simulate escape button press and prepare for next menu
-                Menu_SetEscapeAction(&menuContext);
-                menu_counter++;
-                if(menu_counter >= total_menus)
-                {
-                    menu_counter = 0; // Wrap around to first menu
-                }
-                demo_state = 0; // Go to next menu
-                break;
-        }
-        
-        lastUpdate = HAL_GetTick();
+      demo_measurement_function();
     }
 #endif
-
   }
   /* USER CODE END 3 */
 }
@@ -257,6 +220,7 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
+
 /*      Encoder timer handler     */
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 {
@@ -265,7 +229,6 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
     encoder.IRQ_Flag = 1;
   }
 }
-
 
 /*      Encoder button IRQ handler      */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
@@ -277,6 +240,106 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 void EncoderButtonFlag(void)
 {
   encoder.ButtonIRQ_Flag = 1;
+}
+
+/* Simulation of measurements display */
+void demo_measurement_function(void)
+{
+  static uint32_t lastUpdate = 0;
+  static uint8_t initialized = 0;
+
+  static int16_t tempDeciC = 253;   // 25.3C
+  static uint8_t humidity = 57;     // 57%
+  static uint16_t pressure = 1013;  // 1013 hPa
+
+  static int8_t tempStep = 1;
+  static int8_t humStep = 1;
+  static int8_t pressStep = 1;
+
+  static uint8_t hour = 15;
+  static uint8_t minute = 48;
+  static uint8_t day = 1;
+  static uint8_t month = 1;
+  static uint8_t year = 25;
+
+  uint32_t now = HAL_GetTick();
+  uint8_t advanceValues = initialized;
+
+  if (initialized && (now - lastUpdate) < 700)
+  {
+    return;
+  }
+
+  lastUpdate = now;
+  initialized = 1;
+
+  if (advanceValues)
+  {
+    tempDeciC += tempStep;
+    if (tempDeciC >= 299 || tempDeciC <= 214)
+    {
+      tempStep = -tempStep;
+      tempDeciC += tempStep;
+    }
+
+    humidity += humStep;
+    if (humidity >= 70 || humidity <= 45)
+    {
+      humStep = -humStep;
+      humidity += humStep;
+    }
+
+    pressure += pressStep;
+    if (pressure >= 1025 || pressure <= 1002)
+    {
+      pressStep = -pressStep;
+      pressure += pressStep;
+    }
+
+    minute++;
+    if (minute >= 60)
+    {
+      minute = 0;
+      hour++;
+      if (hour >= 24)
+      {
+        hour = 0;
+        day++;
+        if (day > 30)
+        {
+          day = 1;
+          month++;
+          if (month > 12)
+          {
+            month = 1;
+            year++;
+          }
+        }
+      }
+    }
+  }
+
+  // Display the simulated measurements
+  PCD8544_ClearScreen(&LCD);
+  PCD8544_SetCursor(&LCD, 0, 0);
+  PCD8544_WriteString(&LCD, "DANE POMIAROWE");
+
+  snprintf(buffer, sizeof(buffer), "TEMP: %2d.%1dC", tempDeciC / 10, tempDeciC % 10);
+  PCD8544_SetCursor(&LCD, 0, 1);
+  PCD8544_WriteString(&LCD, buffer);
+
+  snprintf(buffer, sizeof(buffer), "WILG: %2u%%", humidity);
+  PCD8544_SetCursor(&LCD, 0, 2);
+  PCD8544_WriteString(&LCD, buffer);
+
+  snprintf(buffer, sizeof(buffer), "CISN: %4uhPa", pressure);
+  PCD8544_SetCursor(&LCD, 0, 3);
+  PCD8544_WriteString(&LCD, buffer);
+
+  snprintf(buffer, sizeof(buffer), "%02u:%02u %02u.%02u.%02u", hour, minute, day, month, year);
+  PCD8544_SetCursor(&LCD, 0, 4);
+  PCD8544_WriteString(&LCD, buffer);
+  PCD8544_UpdateScreen(&LCD);
 }
 /* USER CODE END 4 */
 

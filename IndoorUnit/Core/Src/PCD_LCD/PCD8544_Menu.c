@@ -21,10 +21,12 @@
 Menu_Status Menu_Init(Menu_t *root, Menu_Context_t *content)
 {
 	content->rootMenu = root;
+    content->defaultMenu = root;
 	content->state.CursorPosOnLCD = 0;
 	content->state.MenuIndex = 0;
 	content->state.CurrentDepth = 0;
 	content->state.InDetailsView = 0;
+    content->state.InDefaultMeasurementsView = 1;   // Default to showing measurements on startup
 	
 	// Initialize arrays to zero
 	for(uint8_t i = 0; i < MENU_MAX_DEPTH; i++)
@@ -126,9 +128,9 @@ Menu_Status Menu_RefreshDisplay(PCD8544_t *PCD, Menu_Context_t *content)
         PCD8544_WriteString(PCD, (char*)titleString);
         PCD8544_WriteString(PCD, "-");
 
-        // 2. Draw "Powrot"
+        // 2. Draw "Return"
         PCD8544_SetCursor(PCD, 1, 1);
-        PCD8544_WriteString(PCD, "Powrot");
+        PCD8544_WriteString(PCD, "Return");
 
         // 3. Draw Details
         if(tempMenu->details != NULL)
@@ -213,7 +215,7 @@ Menu_Status Menu_RefreshDisplay(PCD8544_t *PCD, Menu_Context_t *content)
         PCD8544_SetCursor(PCD, 1, visualRow);
         
         if (effectiveDepth > 0 && currentVirtualIndex == 0) {
-            PCD8544_WriteString(PCD, "POWROT");
+            PCD8544_WriteString(PCD, "Return");
         } else {
             if (tempMenu != NULL) {
                 PCD8544_WriteString(PCD, tempMenu->name);
@@ -306,38 +308,36 @@ Menu_Status Menu_Next(PCD8544_t *PCD, Menu_Context_t *content)
     content->rootMenu = content->rootMenu->next;
     content->state.MenuIndex++;
 
-#ifdef PCD8544_ENCODER_MODE
-    /* Window size is reduced by 1 (Title Row). Max Cursor Index is ROWS - 2 (e.g. 4) */
-    /* If MenuIndex fits in initial window (0 to ROWS-2), just inc cursor */
-    /* e.g. ROWS=6. Max Item Visible at start = 4. If Index becomes 5, we scroll. */
-    if (content->state.MenuIndex < (PCD->font.PCD8544_ROWS - 1))
-    {
-        content->state.CursorPosOnLCD++;
-        Menu_SetCursorSign(PCD, content);
-    }
-    else
-    {
-        content->state.CursorPosOnLCD = (PCD->font.PCD8544_ROWS - 2);
-        Menu_RefreshDisplay(PCD, content);
-    }
-#else
-    /*  Determine viewport height: full screen if Main Menu (depth 0), -1 if Submenu (depth > 0) */
-    uint8_t viewportHeight = PCD->font.PCD8544_ROWS;
-    if (content->state.CurrentDepth > 0) viewportHeight--;
+    #ifdef PCD8544_ENCODER_MODE
+        /* Window size is reduced by 1 (Title Row). Max Cursor Index is ROWS - 2 (e.g. 4) */
+        /* If MenuIndex fits in initial window (0 to ROWS-2), just inc cursor */
+        /* e.g. ROWS=6. Max Item Visible at start = 4. If Index becomes 5, we scroll. */
+        if (content->state.MenuIndex < (PCD->font.PCD8544_ROWS - 1))
+        {
+            content->state.CursorPosOnLCD++;
+        }
+        else
+        {
+            content->state.CursorPosOnLCD = (PCD->font.PCD8544_ROWS - 2);
+        }
+    #else
+        /*  Determine viewport height: full screen if Main Menu (depth 0), -1 if Submenu (depth > 0) */
+        uint8_t viewportHeight = PCD->font.PCD8544_ROWS;
+        if (content->state.CurrentDepth > 0) viewportHeight--;
 
-    /*	Change cursor positon if menu index is less that viewPort */
-    if (content->state.MenuIndex < viewportHeight)
-    {
-        content->state.CursorPosOnLCD++;
-        Menu_SetCursorSign(PCD, content);			//Small optimalization
-    }
-    /*	Cursor stays on viewPort position (menu index > viewPort) */
-    else
-    {
-        content->state.CursorPosOnLCD = (viewportHeight - 1);
-        Menu_RefreshDisplay(PCD, content);			//Small optimalization,
-    }
-#endif
+        /*	Change cursor positon if menu index is less that viewPort */
+        if (content->state.MenuIndex < viewportHeight)
+        {
+            content->state.CursorPosOnLCD++;
+        }
+        /*	Cursor stays on viewPort position (menu index > viewPort) */
+        else
+        {
+            content->state.CursorPosOnLCD = (viewportHeight - 1);
+        }
+    #endif
+
+    Menu_RefreshDisplay(PCD, content);
     /**
      * Menu_RefreshDisplay(PCD, content);
      * */
@@ -393,12 +393,9 @@ Menu_Status Menu_Previev(PCD8544_t *PCD, Menu_Context_t *content)
     if (content->state.CursorPosOnLCD > MENU_MIN_CURSOR_ROW)
     {
         content->state.CursorPosOnLCD--;
-        Menu_SetCursorSign(PCD, content);			//Small optimalization
     }
-    else
-    {
-    	Menu_RefreshDisplay(PCD, content);			//Small optimalization
-    }
+
+	Menu_RefreshDisplay(PCD, content);
 
     /**
      * Menu_RefreshDisplay(PCD, content);
@@ -424,8 +421,18 @@ Menu_Status Menu_Enter(PCD8544_t *PCD, Menu_Context_t *content)
     }
 #endif
 
-	if (NULL == content->rootMenu->child)
+    if (NULL == content->rootMenu->child)
 	{
+        if (NULL != content->rootMenu->menuFunction)
+        {
+            content->rootMenu->menuFunction();
+            if (content->rootMenu == content->defaultMenu)
+            {
+                content->state.InDefaultMeasurementsView = 1;
+            }
+            return Menu_OK;
+        }
+
 #ifdef PCD8544_SHOW_DETAILS
 		// Check for details
         if(content->rootMenu->details != NULL)
@@ -552,6 +559,31 @@ Menu_Status Menu_Task(PCD8544_t *PCD, Menu_Context_t *content)
         return Menu_Error;
     }
     
+    // Handle special default measurements view mode
+    if(content->state.InDefaultMeasurementsView)
+    {
+        if(content->state.actionPending)
+        {
+            if(content->state.currentAction == MENU_ACTION_ENTER)
+            {
+                content->state.InDefaultMeasurementsView = 0;
+
+                if(content->defaultMenu != NULL && content->defaultMenu->next != NULL)
+                {
+                    content->rootMenu = content->defaultMenu->next;
+                    content->state.MenuIndex = 1;
+                    content->state.CursorPosOnLCD = 1;
+                    Menu_RefreshDisplay(PCD, content);
+                }
+            }
+
+            content->state.actionPending = 0;
+            content->state.currentAction = MENU_ACTION_IDLE;
+        }
+
+        return Menu_OK;
+    }
+
     // Check if there's a pending action
     if(content->state.actionPending)
     {

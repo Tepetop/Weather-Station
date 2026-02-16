@@ -20,7 +20,6 @@ typedef struct menu_s Menu_t;
 struct menu_s
 {
 	const char *name;
-	const char *details;
 	Menu_t *next;
 	Menu_t *prev;
 	Menu_t *child;
@@ -49,9 +48,10 @@ typedef struct
     uint8_t		PrevLCDRowPos[MENU_MAX_DEPTH];
     uint8_t     CurrentDepth;
     uint8_t     InDetailsView;
+	uint8_t     InDefaultMeasurementsView;
     // State machine
+	uint8_t 	actionPending;
     Menu_Action_t currentAction;
-    uint8_t actionPending;
 }Menu_Variables_t;
 
 /*		Struktura zawierająca wskaźnik na pierwszy element zdefiniowanego menu oraz strukturę zmiennych menu	*/
@@ -59,6 +59,7 @@ typedef struct
 typedef struct
 {
 	Menu_t				*rootMenu;
+	Menu_t				*defaultMenu;
 	Menu_Variables_t	state;
 }Menu_Context_t;
 
