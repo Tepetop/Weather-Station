@@ -9,7 +9,29 @@
 #define INC_PCD8544_MENU_CONFIG_H_
 
 #include <PCD8544_Menu.h>
+extern void demo_measurement_function(void);
+#define MENU_TEST 0
 
+/*		Definicja struktur 		*/
+Menu_t StronaDomyslna;
+Menu_t Ustawienia;
+Menu_t Wykresy;
+Menu_t StacjePomiarowe;
+Menu_t StatusPomiarow;
+Menu_t WykonajPomiar;
+
+/*   								MENU POMIAROWE						*/
+//					name;  					next;   		  prev;   		   		child;  	parent;		 menuFunction;
+
+Menu_t StronaDomyslna = {"Dane pom.", 		&Ustawienia,      NULL, 				NULL, 		NULL, 		 demo_measurement_function};		//dodać ptr do funckji pokazującej pomiary
+Menu_t Ustawienia = {"Ustawienia", 			NULL,  			  &StronaDomyslna, 		&Wykresy, 	NULL, 		 NULL};
+
+	Menu_t Wykresy = {"Przebiegi", 			&StacjePomiarowe, NULL, 				NULL, 		&Ustawienia, NULL};
+	Menu_t StacjePomiarowe = {"Stacje pom.",&StatusPomiarow,  &Wykresy, 			NULL, 		&Ustawienia, NULL};
+	Menu_t StatusPomiarow = {"Status", 		&WykonajPomiar,   &StacjePomiarowe, 	NULL, 		&Ustawienia, NULL};
+	Menu_t WykonajPomiar = {"Wyk. pomiar",	NULL, 			  &StatusPomiarow,  	NULL, 		&Ustawienia, NULL};
+
+#if MENU_TEST
 /*		Definition of main menu structures		*/
 Menu_t menu1;
 Menu_t menu2;
@@ -34,8 +56,6 @@ Menu_t subMenu8;
 Menu_t subMenu9;
 Menu_t subMenu10;
 
-
-/*				Declaration of menu structures					*/
 //				name;   details;  next;   prev;   child;  parent; menuFunction;
 
 Menu_t menu1 = {"Menu 1", "Opis 1", &menu2, NULL, &subMenu1, NULL, NULL};
@@ -67,6 +87,6 @@ Menu_t menu9 = {"Menu 9", "Opis 9", &menu10, &menu8, &subMenu9, NULL, NULL};
 
 Menu_t menu10 = {"Menu 10", "Opis 10", NULL, &menu9, &subMenu10, NULL, NULL};
 	Menu_t subMenu10 = {"Sub Menu 10", "Opis 10", NULL, NULL, NULL, &menu10, NULL};
-
+#endif
 
 #endif /* INC_PCD8544_MENU_CONFIG_H_ */
