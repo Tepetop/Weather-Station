@@ -15,6 +15,9 @@
  */
 
 #include "PCD8544_Drawing.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 // Pixel aspect ratio correction for Nokia 5110 (PCD8544)
 // Display: 84x48 pixels on ~43x43mm screen
@@ -220,4 +223,266 @@ PCD_Status PCD8544_FillCircle(PCD8544_t *PCD, uint8_t x0, uint8_t y0, uint8_t r)
     }
 
     return PCD_OK;
+}
+
+/**
+ * @brief   Draw a measurement chart with data points and labels
+ *
+ * @details Draws a chart on the PCD8544 display with:
+ *          - First row: MAX value (left) and MIN value (right)
+ *          - Bottom row: oldest timestamp (left) and newest timestamp (right)
+ *          - Data points displayed in the chart area between rows 1-4
+ *
+ * @param   PCD - pointer to PCD8544 structure
+ * @param   chartData - pointer to chart data structure containing measurements
+ *
+ * @return  PCD_Status - PCD_OK on success, error code otherwise
+ */
+PCD_Status PCD8544_DrawChart(PCD8544_t *PCD, PCD8544_ChartData_t *chartData)
+{
+    if (PCD == NULL || chartData == NULL) {
+        return PCD_ERROR;
+    }
+
+    // Get current font dimensions
+    uint8_t fontWidth = PCD->font.font_width;
+    uint8_t fontHeight = PCD->font.font_height;
+    
+    // Use defaults if font not set
+    if (fontWidth == 0) fontWidth = 6;
+    if (fontHeight == 0) fontHeight = 8;
+
+    // Chart layout constants - data points area (rows 1-4, full width)
+    const uint8_t CHART_TOP_ROW = 1;      // First row for data (row 0 is for MAX/MIN labels)
+    const uint8_t CHART_BOTTOM_ROW = 4;   // Last row for data (row 5 is for timestamps)
+    
+    // Calculate chart area in pixels using font height
+    uint8_t chartStartX = 0;
+    uint8_t chartEndX = PCD8544_WIDTH - 1;
+    uint8_t chartStartY = CHART_TOP_ROW * fontHeight;     // Row 1 starts after first text row
+    uint8_t chartEndY = (CHART_BOTTOM_ROW + 1) * fontHeight - 1;  // Row 4 ends before timestamp row
+    
+    uint8_t chartWidth = chartEndX - chartStartX;
+    uint8_t chartHeight = chartEndY - chartStartY;
+
+    // Find min and max values in data
+    int16_t minVal = chartData->dataPoints[0];
+    int16_t maxVal = chartData->dataPoints[0];
+    
+    for (uint8_t i = 1; i < chartData->numPoints; i++) {
+        if (chartData->dataPoints[i] < minVal) {
+            minVal = chartData->dataPoints[i];
+        }
+        if (chartData->dataPoints[i] > maxVal) {
+            maxVal = chartData->dataPoints[i];
+        }
+    }
+
+    // Add some margin to min/max for better visualization
+    int16_t valueRange = maxVal - minVal;
+    if (valueRange == 0) {
+        valueRange = 10; // Avoid division by zero
+        minVal -= 5;
+        maxVal += 5;
+    }
+
+    // Display MAX label and value at row 0, left side (position 0,0)
+    char labelBuf[12];
+    if (chartData->decimalPlaces > 0) {
+        int16_t intPart = maxVal / 10;
+        int16_t decPart = abs(maxVal % 10);
+        snprintf(labelBuf, sizeof(labelBuf), "H:%d.%d", intPart, (int)decPart);
+    } else {
+        snprintf(labelBuf, sizeof(labelBuf), "H:%d", maxVal);
+    }
+    PCD8544_SetCursor(PCD, 0, 0);
+    PCD8544_WriteString(PCD, labelBuf);
+
+    // Display MIN label and value at row 0, right side
+    if (chartData->decimalPlaces > 0) {
+        int16_t intPart = minVal / 10;
+        int16_t decPart = abs(minVal % 10);
+        snprintf(labelBuf, sizeof(labelBuf), "L:%d.%d", intPart, (int)decPart);
+    } else {
+        snprintf(labelBuf, sizeof(labelBuf), "L:%d", minVal);
+    }
+    // Calculate position for right alignment using actual font width
+    uint8_t labelLen = strlen(labelBuf);
+    uint8_t minLabelX = (PCD8544_WIDTH - (labelLen * fontWidth)) / fontWidth;  // Position in characters
+    PCD8544_SetCursor(PCD, minLabelX, 0);
+    PCD8544_WriteString(PCD, labelBuf);
+
+    // Display time markers on bottom row (row 5)
+    if (chartData->numPoints > 0) {
+        // Oldest timestamp (first data point) at left side of row 5
+        snprintf(labelBuf, sizeof(labelBuf), "%02d:%02d", 
+                 chartData->timeStamps[0].hour, 
+                 chartData->timeStamps[0].minute);
+        PCD8544_SetCursor(PCD, 0, 5);
+        PCD8544_WriteString(PCD, labelBuf);
+
+        // Newest timestamp (last data point) at right side of row 5
+        if (chartData->numPoints > 1) {
+            snprintf(labelBuf, sizeof(labelBuf), "%02d:%02d", 
+                     chartData->timeStamps[chartData->numPoints - 1].hour, 
+                     chartData->timeStamps[chartData->numPoints - 1].minute);
+            // "HH:MM" = 5 chars, position at right edge using font width
+            uint8_t timePixels = 5 * fontWidth;
+            uint8_t timeX = (PCD8544_WIDTH - timePixels) / fontWidth;       // Position in characters
+            PCD8544_SetCursor(PCD, timeX, 5);
+            PCD8544_WriteString(PCD, labelBuf);
+        }
+    }
+
+    // Draw data points based on chart type
+    if (chartData->numPoints > 0) {
+        uint8_t prevX = 0, prevY = 0;
+        uint8_t firstPoint = 1;
+
+        // Calculate bar width for bar chart mode
+        uint8_t barWidth = 1;
+        if (chartData->chartType == PCD8544_CHART_BAR && chartData->numPoints > 1) {
+            barWidth = chartWidth / chartData->numPoints;
+            if (barWidth < 1) barWidth = 1;
+            if (barWidth > 5) barWidth = 5;  // Max bar width
+        }
+
+        for (uint8_t i = 0; i < chartData->numPoints; i++) {
+            // Calculate X position for this data point
+            uint8_t pointX;
+            if (chartData->numPoints == 1) {
+                pointX = chartStartX + chartWidth / 2;
+            } else {
+                pointX = chartStartX + ((uint32_t)i * chartWidth) / (chartData->numPoints - 1);
+            }
+
+            // Calculate Y position (invert because Y=0 is at top)
+            // Map data value from [minVal, maxVal] to [chartEndY, chartStartY]
+            int32_t scaledVal = ((int32_t)(chartData->dataPoints[i] - minVal) * chartHeight) / valueRange;
+            uint8_t pointY = chartEndY - (uint8_t)scaledVal;
+
+            // Clamp Y position to chart bounds
+            if (pointY < chartStartY) pointY = chartStartY;
+            if (pointY > chartEndY) pointY = chartEndY;
+
+            if (chartData->chartType == PCD8544_CHART_BAR) {
+                // BAR CHART: Draw filled vertical bar from bottom to data point
+                for (uint8_t y = pointY; y <= chartEndY; y++) {
+                    for (uint8_t bw = 0; bw < barWidth; bw++) {
+                        uint8_t barX = pointX + bw - barWidth / 2;
+                        if (barX < PCD8544_WIDTH) {
+                            PCD8544_DrawPixel(PCD, barX, y);
+                        }
+                    }
+                }
+            } else {
+                // LINE/DOT CHART: Draw the data point (as a small cross or dot)
+                PCD8544_DrawPixel(PCD, pointX, pointY);
+                // Make point more visible with surrounding pixels
+                if (pointX > 0) PCD8544_DrawPixel(PCD, pointX - 1, pointY);
+                if (pointX < PCD8544_WIDTH - 1) PCD8544_DrawPixel(PCD, pointX + 1, pointY);
+                if (pointY > chartStartY) PCD8544_DrawPixel(PCD, pointX, pointY - 1);
+                if (pointY < chartEndY) PCD8544_DrawPixel(PCD, pointX, pointY + 1);
+
+                // // Connect points with a line
+                // if (!firstPoint && chartData->connectPoints) {
+                //     PCD8544_DrawLine(PCD, prevX, prevY, pointX, pointY);
+                // }
+            }
+
+            prevX = pointX;
+            prevY = pointY;
+            firstPoint = 0;
+        }
+    }
+
+    return PCD_OK;
+}
+
+/**
+ * @brief   Initialize a chart data structure with default values
+ *
+ * @param   chartData - pointer to chart data structure to initialize
+ *
+ * @return  none
+ */
+void PCD8544_InitChartData(PCD8544_ChartData_t *chartData)
+{
+    if (chartData == NULL) return;
+    
+    chartData->numPoints = 0;
+    chartData->decimalPlaces = 1;
+    chartData->connectPoints = 1;
+    chartData->chartType = PCD8544_CHART_LINE;  // Default to line chart
+    
+    for (uint8_t i = 0; i < PCD8544_CHART_MAX_POINTS; i++) {
+        chartData->dataPoints[i] = 0;
+        chartData->timeStamps[i].hour = 0;
+        chartData->timeStamps[i].minute = 0;
+    }
+}
+
+/**
+ * @brief   Add a data point to the chart
+ *
+ * @details Adds a new data point with timestamp to the chart. If the chart
+ *          is full, oldest data points are shifted out.
+ *
+ * @param   chartData - pointer to chart data structure
+ * @param   value - measurement value (can be in tenths, e.g., 253 for 25.3)
+ * @param   hour - hour of measurement (0-23)
+ * @param   minute - minute of measurement (0-59)
+ *
+ * @return  none
+ */
+void PCD8544_AddChartPoint(PCD8544_ChartData_t *chartData, int16_t value, uint8_t hour, uint8_t minute)
+{
+    if (chartData == NULL) return;
+    
+    // If full, shift data to make room for new point
+    if (chartData->numPoints >= PCD8544_CHART_MAX_POINTS) {
+        for (uint8_t i = 0; i < PCD8544_CHART_MAX_POINTS - 1; i++) {
+            chartData->dataPoints[i] = chartData->dataPoints[i + 1];
+            chartData->timeStamps[i] = chartData->timeStamps[i + 1];
+        }
+        chartData->numPoints = PCD8544_CHART_MAX_POINTS - 1;
+    }
+    
+    // Add new point at the end
+    chartData->dataPoints[chartData->numPoints] = value;
+    chartData->timeStamps[chartData->numPoints].hour = hour;
+    chartData->timeStamps[chartData->numPoints].minute = minute;
+    chartData->numPoints++;
+}
+
+/**
+ * @brief   Set the chart display type
+ *
+ * @param   chartData - pointer to chart data structure
+ * @param   chartType - chart type (PCD8544_CHART_LINE or PCD8544_CHART_BAR)
+ *
+ * @return  none
+ */
+void PCD8544_SetChartType(PCD8544_ChartData_t *chartData, PCD8544_ChartType_t chartType)
+{
+    if (chartData == NULL) return;
+    chartData->chartType = chartType;
+}
+
+/**
+ * @brief   Toggle chart type between LINE and BAR
+ *
+ * @param   chartData - pointer to chart data structure
+ *
+ * @return  none
+ */
+void PCD8544_ToggleChartType(PCD8544_ChartData_t *chartData)
+{
+    if (chartData == NULL) return;
+    
+    if (chartData->chartType == PCD8544_CHART_LINE) {
+        chartData->chartType = PCD8544_CHART_BAR;
+    } else {
+        chartData->chartType = PCD8544_CHART_LINE;
+    }
 }

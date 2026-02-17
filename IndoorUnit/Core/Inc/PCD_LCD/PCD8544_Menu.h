@@ -39,6 +39,16 @@ typedef enum
 
 /*		Zmienne potrzebne do obsługi biblioteki menu											*/
 
+/**
+ * @brief Chart view type enumeration
+ */
+typedef enum {
+    CHART_VIEW_NONE = 0,
+    CHART_VIEW_TEMPERATURE,
+    CHART_VIEW_HUMIDITY,
+    CHART_VIEW_PRESSURE
+} ChartViewType_t;
+
 typedef struct
 {
     uint8_t		MenuIndex;
@@ -49,6 +59,8 @@ typedef struct
     uint8_t     CurrentDepth;
     uint8_t     InDetailsView;
 	uint8_t     InDefaultMeasurementsView;
+    uint8_t     InChartView;          // Flag indicating chart view is active
+    ChartViewType_t ChartViewType;    // Which chart is being displayed
     // State machine
 	uint8_t 	actionPending;
     Menu_Action_t currentAction;
