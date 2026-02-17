@@ -402,8 +402,8 @@ PCD_Status PCD8544_DrawPixel(PCD8544_t *PCD, uint8_t x, uint8_t y)
 		// out of range
 		return PCD_OutOfBounds;
 	  }
-	PCD->buffer.PCD8544_BUFFER_INDEX = x + (y / PCD8544_CHAR_PIXEL_Y) * PCD8544_WIDTH;
-	PCD->buffer.PCD8544_BUFFER[PCD->buffer.PCD8544_BUFFER_INDEX] |= 1 << (y % PCD8544_CHAR_PIXEL_Y);
+	PCD->buffer.PCD8544_BUFFER_INDEX = x + (y / PCD->font.font_height) * PCD8544_WIDTH;
+	PCD->buffer.PCD8544_BUFFER[PCD->buffer.PCD8544_BUFFER_INDEX] |= 1 << (y % PCD->font.font_height);
 	// success return
 	return PCD_OK;
 }
@@ -613,10 +613,10 @@ PCD_Status PCD8544_InvertSelectedRegion(PCD8544_t *PCD, uint8_t x, uint8_t y, ui
 		NumOfChars = PCD->font.PCD8544_COLS - x;
 	}
     // Calculate starting index in the buffer for the given x, y position
-    uint16_t startIndex = y * PCD8544_WIDTH + (x * PCD8544_CHAR_PIXEL_X);
+    uint16_t startIndex = y * PCD8544_WIDTH + (x * PCD->font.font_width);
 
   // Clear the specified region by setting it to 0x00
-  for (uint8_t i = 0; i < (NumOfChars * PCD8544_CHAR_PIXEL_X); i++)
+  for (uint8_t i = 0; i < (NumOfChars * PCD->font.font_width); i++)
   {
     if (startIndex + i < PCD8544_BUFFER_SIZE)
     {

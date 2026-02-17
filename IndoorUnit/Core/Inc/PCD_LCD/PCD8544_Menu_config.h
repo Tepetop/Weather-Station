@@ -10,6 +10,9 @@
 
 #include <PCD8544_Menu.h>
 extern void demo_measurement_function(void);
+extern void chart_temperature_function(void);
+extern void chart_humidity_function(void);
+extern void chart_pressure_function(void);
 #define MENU_TEST 0
 
 /*		Definicja struktur 		*/
@@ -19,6 +22,9 @@ Menu_t Wykresy;
 Menu_t StacjePomiarowe;
 Menu_t StatusPomiarow;
 Menu_t WykonajPomiar;
+Menu_t tempWykres;
+Menu_t wilgWykres;
+Menu_t cisnWykres;
 
 /*   								MENU POMIAROWE						*/
 //					name;  					next;   		  prev;   		   		child;  	parent;		 menuFunction;
@@ -26,7 +32,11 @@ Menu_t WykonajPomiar;
 Menu_t StronaDomyslna = {"Dane pom.", 		&Ustawienia,      NULL, 				NULL, 		NULL, 		 demo_measurement_function};		//dodać ptr do funckji pokazującej pomiary
 Menu_t Ustawienia = {"Ustawienia", 			NULL,  			  &StronaDomyslna, 		&Wykresy, 	NULL, 		 NULL};
 
-	Menu_t Wykresy = {"Przebiegi", 			&StacjePomiarowe, NULL, 				NULL, 		&Ustawienia, NULL};
+	Menu_t Wykresy = {"Przebiegi", 			&StacjePomiarowe, NULL, 				&tempWykres,&Ustawienia, NULL};
+		Menu_t tempWykres = {"Temperatura", &wilgWykres, 	  NULL, 				NULL, 		&Wykresy, 	 chart_temperature_function};
+		Menu_t wilgWykres = {"Wilgotnosc", 	&cisnWykres, 	  &tempWykres, 			NULL, 		&Wykresy, 	 chart_humidity_function};
+		Menu_t cisnWykres = {"Cisnienie", 	NULL, 	  		  &wilgWykres, 			NULL, 		&Wykresy, 	 chart_pressure_function};
+
 	Menu_t StacjePomiarowe = {"Stacje pom.",&StatusPomiarow,  &Wykresy, 			NULL, 		&Ustawienia, NULL};
 	Menu_t StatusPomiarow = {"Status", 		&WykonajPomiar,   &StacjePomiarowe, 	NULL, 		&Ustawienia, NULL};
 	Menu_t WykonajPomiar = {"Wyk. pomiar",	NULL, 			  &StatusPomiarow,  	NULL, 		&Ustawienia, NULL};

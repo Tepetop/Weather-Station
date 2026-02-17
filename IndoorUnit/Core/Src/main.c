@@ -47,7 +47,9 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define DEFAULT_DEMO 1  // Set to 1 to enable drawing demo instead of menu
 #define DRAWING_DEMO 0
+#define CHART_DEMO   1   // Set to 1 to enable chart demo instead of text measurements
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -65,6 +67,18 @@ Button_t encoderSW;          // Button instance for encoder switch
 char buffer[64];
 uint8_t counter = 1;
 uint32_t softTimer = 0;
+
+// Chart data structures for measurement graphs
+PCD8544_ChartData_t temperatureChart;
+PCD8544_ChartData_t humidityChart;
+PCD8544_ChartData_t pressureChart;
+
+// Simulated measurement values (shared between functions)
+static int16_t g_tempDeciC = 253;   // 25.3C
+static uint8_t g_humidity = 57;     // 57%
+static uint16_t g_pressure = 1013;  // 1013 hPa
+static uint8_t g_hour = 8;
+static uint8_t g_minute = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -73,6 +87,15 @@ void SystemClock_Config(void);
 void EncoderButtonFlag(void);
 
 void demo_measurement_function(void);
+void demo_chart_function(void);
+
+// Chart display functions for menu
+void chart_temperature_function(void);
+void chart_humidity_function(void);
+void chart_pressure_function(void);
+void chart_view_task(void);
+void simulate_measurements(void);
+static void init_all_charts(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -126,7 +149,7 @@ int main(void)
   PCD8544_Init(&LCD, &hspi1, LCD_DC_GPIO_Port, LCD_DC_Pin, LCD_CE_GPIO_Port, LCD_CE_Pin, LCD_RST_GPIO_Port, LCD_RST_Pin);
   PCD8544_ClearScreen(&LCD);
 
-#if DRAWING_DEMO == 0
+#if DEFAULT_DEMO && CHART_DEMO
   /* Initialize menu system with predefined configuration */
   Menu_Init(&StronaDomyslna, &menuContext); 
   // Set font for menu display
@@ -141,6 +164,11 @@ int main(void)
 //  PCD8544_DrawLine(&LCD, 0, 0, 83, 47);
 //  PCD8544_DrawLine(&LCD, 0, 47, 83, 0);
   PCD8544_UpdateScreen(&LCD);  
+
+#elif CHART_DEMO == 1
+  // Chart demo mode - display temperature chart
+  PCD8544_SetFont(&LCD, &Font_6x8);
+  demo_chart_function();
 #endif
 
 
@@ -161,20 +189,34 @@ int main(void)
       softTimer = HAL_GetTick();
     }  
   
-#if DRAWING_DEMO == 0
+#if DEFAULT_DEMO  && CHART_DEMO
     /* Process button state machine*/
     ButtonTask(&encoderSW); 
 
-    /*Call the menu task to handle any pending button actions*/
-    Menu_Task(&LCD, &menuContext);
-    
-    /* Call user-defined encoder task*/
-    Encoder_Task(&encoder, &menuContext);
-
-    if (menuContext.state.InDefaultMeasurementsView)
+    /* Handle chart view mode */
+    if (menuContext.state.InChartView)
     {
-      demo_measurement_function();
+      chart_view_task();
     }
+    else
+    {
+      /*Call the menu task to handle any pending button actions*/
+      Menu_Task(&LCD, &menuContext);
+      
+      /* Call user-defined encoder task*/
+      Encoder_Task(&encoder, &menuContext);
+
+      if (menuContext.state.InDefaultMeasurementsView)
+      {
+        demo_measurement_function();
+      }
+    }
+#elif CHART_DEMO == 1
+    // Chart demo mode - continuously update the chart
+    demo_chart_function();
+
+    /* Process button state machine*/
+    ButtonTask(&encoderSW); 
 #endif
   }
   /* USER CODE END 3 */
@@ -340,6 +382,320 @@ void demo_measurement_function(void)
   PCD8544_SetCursor(&LCD, 0, 4);
   PCD8544_WriteString(&LCD, buffer);
   PCD8544_UpdateScreen(&LCD);
+}
+
+/**
+ * @brief   Demo function to display temperature chart
+ * @details Uses simulated temperature data to demonstrate chart drawing.
+ *          Temperature varies between 21.4°C and 29.9°C over time.
+ *          Press encoder button to toggle between LINE and BAR chart.
+ */
+void demo_chart_function(void)
+{
+  static uint32_t lastUpdate = 0;
+  static uint8_t initialized = 0;
+
+  // Simulated temperature (in 0.1°C units, e.g., 253 = 25.3°C)
+  static int16_t tempDeciC = 253;
+  static int8_t tempStep = 3;
+
+  // Simulated time
+  static uint8_t hour = 8;
+  static uint8_t minute = 0;
+  
+  // Chart type toggle flag
+  static uint8_t needRedraw = 0;
+
+  uint32_t now = HAL_GetTick();
+
+  // Initialize chart data on first run
+  if (!initialized) {
+    PCD8544_InitChartData(&temperatureChart);
+    temperatureChart.decimalPlaces = 1;  // Values are in 0.1°C units
+    temperatureChart.connectPoints = 1;  // Connect data points with lines
+    temperatureChart.chartType = PCD8544_CHART_LINE;  // Start with line chart
+    
+    // Pre-populate with some initial data points
+    PCD8544_AddChartPoint(&temperatureChart, 240, 8, 0);   // 24.0°C at 08:00
+    PCD8544_AddChartPoint(&temperatureChart, 245, 8, 5);   // 24.5°C at 08:05
+    PCD8544_AddChartPoint(&temperatureChart, 252, 8, 10);  // 25.2°C at 08:10
+    PCD8544_AddChartPoint(&temperatureChart, 258, 8, 15);  // 25.8°C at 08:15
+    PCD8544_AddChartPoint(&temperatureChart, 263, 8, 20);  // 26.3°C at 08:20
+    PCD8544_AddChartPoint(&temperatureChart, 268, 8, 25);  // 26.8°C at 08:25
+    PCD8544_AddChartPoint(&temperatureChart, 270, 8, 30);  // 27.0°C at 08:30
+    PCD8544_AddChartPoint(&temperatureChart, 267, 8, 35);  // 26.7°C at 08:35
+    tempDeciC = 267;
+    hour = 8;
+    minute = 40;
+    
+    initialized = 1;
+    lastUpdate = now;
+    
+    // Draw initial chart
+    PCD8544_ClearBuffer(&LCD);
+    PCD8544_DrawChart(&LCD, &temperatureChart);
+    PCD8544_UpdateScreen(&LCD);
+    return;
+  }
+  
+  // Check for button press to toggle chart type
+  if (encoder.ButtonIRQ_Flag) {
+    encoder.ButtonIRQ_Flag = 0;
+    // Toggle chart type using helper function
+    PCD8544_ToggleChartType(&temperatureChart);
+    needRedraw = 1;
+  }
+  
+  // Immediate redraw if chart type changed
+  if (needRedraw) {
+    needRedraw = 0;
+    PCD8544_ClearBuffer(&LCD);
+    PCD8544_DrawChart(&LCD, &temperatureChart);
+    PCD8544_UpdateScreen(&LCD);
+  }
+
+  // Update every 1 second (simulated data)
+  if ((now - lastUpdate) < 1000) {
+    return;
+  }
+  lastUpdate = now;
+
+  // Update simulated temperature
+  tempDeciC += tempStep;
+  if (tempDeciC >= 299 || tempDeciC <= 214) {
+    tempStep = -tempStep;
+    tempDeciC += tempStep;
+  }
+
+  // Update simulated time
+  minute += 5;  // Each update represents 5 minutes
+  if (minute >= 60) {
+    minute = 0;
+    hour++;
+    if (hour >= 24) {
+      hour = 0;
+    }
+  }
+
+  // Add new data point
+  PCD8544_AddChartPoint(&temperatureChart, tempDeciC, hour, minute);
+
+  // Redraw chart
+  PCD8544_ClearBuffer(&LCD);
+  PCD8544_DrawChart(&LCD, &temperatureChart);
+  PCD8544_UpdateScreen(&LCD);
+}
+
+/**
+ * @brief   Simulate measurement data updates
+ * @details Called periodically to update simulated values for temp, humidity, pressure
+ */
+void simulate_measurements(void)
+{
+  static uint32_t lastUpdate = 0;
+  static int8_t tempStep = 3;
+  static int8_t humStep = 1;
+  static int8_t pressStep = 2;
+  
+  uint32_t now = HAL_GetTick();
+  
+  // Update every 1 second
+  if ((now - lastUpdate) < 1000) {
+    return;
+  }
+  lastUpdate = now;
+  
+  // Update temperature
+  g_tempDeciC += tempStep;
+  if (g_tempDeciC >= 299 || g_tempDeciC <= 214) {
+    tempStep = -tempStep;
+    g_tempDeciC += tempStep;
+  }
+  
+  // Update humidity
+  g_humidity += humStep;
+  if (g_humidity >= 75 || g_humidity <= 40) {
+    humStep = -humStep;
+    g_humidity += humStep;
+  }
+  
+  // Update pressure
+  g_pressure += pressStep;
+  if (g_pressure >= 1030 || g_pressure <= 1000) {
+    pressStep = -pressStep;
+    g_pressure += pressStep;
+  }
+  
+  // Update time
+  g_minute += 5;
+  if (g_minute >= 60) {
+    g_minute = 0;
+    g_hour++;
+    if (g_hour >= 24) {
+      g_hour = 0;
+    }
+  }
+  
+  // Add points to all charts
+  PCD8544_AddChartPoint(&temperatureChart, g_tempDeciC, g_hour, g_minute);
+  PCD8544_AddChartPoint(&humidityChart, (int16_t)g_humidity * 10, g_hour, g_minute);  // Store as 0.1% units
+  PCD8544_AddChartPoint(&pressureChart, (int16_t)(g_pressure - 900), g_hour, g_minute);  // Store as offset from 900 hPa
+}
+
+/**
+ * @brief   Initialize chart data for all measurement types
+ */
+static void init_all_charts(void)
+{
+  // Initialize temperature chart
+  PCD8544_InitChartData(&temperatureChart);
+  temperatureChart.decimalPlaces = 1;
+  temperatureChart.connectPoints = 1;
+  temperatureChart.chartType = PCD8544_CHART_LINE;
+  
+  // Initialize humidity chart  
+  PCD8544_InitChartData(&humidityChart);
+  humidityChart.decimalPlaces = 1;
+  humidityChart.connectPoints = 1;
+  humidityChart.chartType = PCD8544_CHART_LINE;
+  
+  // Initialize pressure chart
+  PCD8544_InitChartData(&pressureChart);
+  pressureChart.decimalPlaces = 0;
+  pressureChart.connectPoints = 1;
+  pressureChart.chartType = PCD8544_CHART_BAR;
+  
+  // Pre-populate with some initial data
+  PCD8544_AddChartPoint(&temperatureChart, 240, 8, 0);
+  PCD8544_AddChartPoint(&temperatureChart, 245, 8, 5);
+  PCD8544_AddChartPoint(&temperatureChart, 252, 8, 10);
+  PCD8544_AddChartPoint(&temperatureChart, 258, 8, 15);
+  PCD8544_AddChartPoint(&temperatureChart, 263, 8, 20);
+  
+  PCD8544_AddChartPoint(&humidityChart, 550, 8, 0);
+  PCD8544_AddChartPoint(&humidityChart, 560, 8, 5);
+  PCD8544_AddChartPoint(&humidityChart, 580, 8, 10);
+  PCD8544_AddChartPoint(&humidityChart, 570, 8, 15);
+  PCD8544_AddChartPoint(&humidityChart, 540, 8, 20);
+  
+  PCD8544_AddChartPoint(&pressureChart, 110, 8, 0);
+  PCD8544_AddChartPoint(&pressureChart, 112, 8, 5);
+  PCD8544_AddChartPoint(&pressureChart, 115, 8, 10);
+  PCD8544_AddChartPoint(&pressureChart, 113, 8, 15);
+  PCD8544_AddChartPoint(&pressureChart, 118, 8, 20);
+}
+
+/**
+ * @brief   Chart display function for temperature - called from menu
+ */
+void chart_temperature_function(void)
+{
+  static uint8_t chartsInitialized = 0;
+  
+  if (!chartsInitialized) {
+    init_all_charts();
+    chartsInitialized = 1;
+  }
+  
+  menuContext.state.InChartView = 1;
+  menuContext.state.ChartViewType = CHART_VIEW_TEMPERATURE;
+  
+  // Draw initial chart
+  PCD8544_ClearBuffer(&LCD);
+  PCD8544_DrawChart(&LCD, &temperatureChart);
+  PCD8544_UpdateScreen(&LCD);
+}
+
+/**
+ * @brief   Chart display function for humidity - called from menu
+ */
+void chart_humidity_function(void)
+{
+  static uint8_t chartsInitialized = 0;
+  
+  if (!chartsInitialized) {
+    init_all_charts();
+    chartsInitialized = 1;
+  }
+  
+  menuContext.state.InChartView = 1;
+  menuContext.state.ChartViewType = CHART_VIEW_HUMIDITY;
+  
+  // Draw initial chart
+  PCD8544_ClearBuffer(&LCD);
+  PCD8544_DrawChart(&LCD, &humidityChart);
+  PCD8544_UpdateScreen(&LCD);
+}
+
+/**
+ * @brief   Chart display function for pressure - called from menu
+ */
+void chart_pressure_function(void)
+{
+  static uint8_t chartsInitialized = 0;
+  
+  if (!chartsInitialized) {
+    init_all_charts();
+    chartsInitialized = 1;
+  }
+  
+  menuContext.state.InChartView = 1;
+  menuContext.state.ChartViewType = CHART_VIEW_PRESSURE;
+  
+  // Draw initial chart
+  PCD8544_ClearBuffer(&LCD);
+  PCD8544_DrawChart(&LCD, &pressureChart);
+  PCD8544_UpdateScreen(&LCD);
+}
+
+/**
+ * @brief   Chart view task - handles updating and exiting chart view
+ * @details Called in main loop when InChartView is active
+ */
+void chart_view_task(void)
+{
+  static uint32_t lastRedraw = 0;
+  uint32_t now = HAL_GetTick();
+  
+  // Check for button press to exit chart view
+  if (encoder.ButtonIRQ_Flag) {
+    encoder.ButtonIRQ_Flag = 0;
+    
+    // Exit chart view and return to menu
+    menuContext.state.InChartView = 0;
+    menuContext.state.ChartViewType = CHART_VIEW_NONE;
+    
+    // Just refresh the current menu display (Wykresy submenu showing tempWykres, wilgWykres, cisnWykres)
+    // We don't call Menu_Escape because we didn't actually enter a submenu when viewing charts
+    Menu_RefreshDisplay(&LCD, &menuContext);
+    return;
+  }
+  
+  // Simulate measurements
+  simulate_measurements();
+  
+  // Redraw chart every 500ms
+  if ((now - lastRedraw) >= 500) {
+    lastRedraw = now;
+    
+    PCD8544_ClearBuffer(&LCD);
+    
+    switch (menuContext.state.ChartViewType) {
+      case CHART_VIEW_TEMPERATURE:
+        PCD8544_DrawChart(&LCD, &temperatureChart);
+        break;
+      case CHART_VIEW_HUMIDITY:
+        PCD8544_DrawChart(&LCD, &humidityChart);
+        break;
+      case CHART_VIEW_PRESSURE:
+        PCD8544_DrawChart(&LCD, &pressureChart);
+        break;
+      default:
+        break;
+    }
+    
+    PCD8544_UpdateScreen(&LCD);
+  }
 }
 /* USER CODE END 4 */
 
