@@ -21,6 +21,7 @@
 #include "dma.h"
 #include "i2c.h"
 #include "spi.h"
+#include "stm32f1xx_hal.h"
 #include "tim.h"
 #include "gpio.h"
 
@@ -49,7 +50,7 @@
 /* USER CODE BEGIN PD */
 #define DEFAULT_DEMO 1  // Set to 1 to enable drawing demo instead of menu
 #define DRAWING_DEMO 0
-#define CHART_DEMO   1   // Set to 1 to enable chart demo instead of text measurements
+#define CHART_DEMO   1  // Set to 1 to enable chart demo instead of text measurements
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -67,6 +68,7 @@ Button_t encoderSW;          // Button instance for encoder switch
 char buffer[64];
 uint8_t counter = 1;
 uint32_t softTimer = 0;
+uint32_t softTimer2 = 0;
 
 // Chart data structures for measurement graphs
 PCD8544_ChartData_t temperatureChart;
@@ -117,6 +119,7 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+
   HAL_Init();
 
   /* USER CODE BEGIN Init */
@@ -158,14 +161,8 @@ int main(void)
   Menu_RefreshDisplay(&LCD, &menuContext);
   demo_measurement_function();
 
-#elif DRAWING_DEMO == 1
-  //PCD8544_DrawCircle(&LCD, 42, 24, 12);
-  PCD8544_FillCircle(&LCD, 42, 24, 20);
-//  PCD8544_DrawLine(&LCD, 0, 0, 83, 47);
-//  PCD8544_DrawLine(&LCD, 0, 47, 83, 0);
-  PCD8544_UpdateScreen(&LCD);  
 
-#elif CHART_DEMO == 1
+#elif CHART_DEMO
   // Chart demo mode - display temperature chart
   PCD8544_SetFont(&LCD, &Font_6x8);
   demo_chart_function();
@@ -174,6 +171,7 @@ int main(void)
 
   /*  Soft timer for LED toggle */
   softTimer = HAL_GetTick();
+  softTimer2 = HAL_GetTick();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -188,6 +186,10 @@ int main(void)
       HAL_GPIO_TogglePin(USER_LED_GPIO_Port, USER_LED_Pin);
       softTimer = HAL_GetTick();
     }  
+#if DRAWING_DEMO
+    PCD8544_DrawRectangle(&LCD, 10, 10, 10, 12);
+    PCD8544_UpdateScreen(&LCD);  
+#endif
   
 #if DEFAULT_DEMO  && CHART_DEMO
     /* Process button state machine*/
@@ -403,17 +405,13 @@ void demo_chart_function(void)
   static uint8_t hour = 8;
   static uint8_t minute = 0;
   
-  // Chart type toggle flag
-  static uint8_t needRedraw = 0;
-
   uint32_t now = HAL_GetTick();
 
   // Initialize chart data on first run
   if (!initialized) {
     PCD8544_InitChartData(&temperatureChart);
     temperatureChart.decimalPlaces = 1;  // Values are in 0.1°C units
-    temperatureChart.connectPoints = 1;  // Connect data points with lines
-    temperatureChart.chartType = PCD8544_CHART_LINE;  // Start with line chart
+    temperatureChart.chartType = PCD8544_CHART_DOT_LINE;  // Start with line chart
     
     // Pre-populate with some initial data points
     PCD8544_AddChartPoint(&temperatureChart, 240, 8, 0);   // 24.0°C at 08:00
@@ -436,22 +434,6 @@ void demo_chart_function(void)
     PCD8544_DrawChart(&LCD, &temperatureChart);
     PCD8544_UpdateScreen(&LCD);
     return;
-  }
-  
-  // Check for button press to toggle chart type
-  if (encoder.ButtonIRQ_Flag) {
-    encoder.ButtonIRQ_Flag = 0;
-    // Toggle chart type using helper function
-    PCD8544_ToggleChartType(&temperatureChart);
-    needRedraw = 1;
-  }
-  
-  // Immediate redraw if chart type changed
-  if (needRedraw) {
-    needRedraw = 0;
-    PCD8544_ClearBuffer(&LCD);
-    PCD8544_DrawChart(&LCD, &temperatureChart);
-    PCD8544_UpdateScreen(&LCD);
   }
 
   // Update every 1 second (simulated data)
@@ -550,19 +532,16 @@ static void init_all_charts(void)
   // Initialize temperature chart
   PCD8544_InitChartData(&temperatureChart);
   temperatureChart.decimalPlaces = 1;
-  temperatureChart.connectPoints = 1;
-  temperatureChart.chartType = PCD8544_CHART_LINE;
+  temperatureChart.chartType = PCD8544_CHART_DOT;
   
   // Initialize humidity chart  
   PCD8544_InitChartData(&humidityChart);
   humidityChart.decimalPlaces = 1;
-  humidityChart.connectPoints = 1;
-  humidityChart.chartType = PCD8544_CHART_LINE;
+  humidityChart.chartType = PCD8544_CHART_DOT_LINE;
   
   // Initialize pressure chart
   PCD8544_InitChartData(&pressureChart);
   pressureChart.decimalPlaces = 0;
-  pressureChart.connectPoints = 1;
   pressureChart.chartType = PCD8544_CHART_BAR;
   
   // Pre-populate with some initial data
@@ -675,7 +654,7 @@ void chart_view_task(void)
   simulate_measurements();
   
   // Redraw chart every 500ms
-  if ((now - lastRedraw) >= 500) {
+  if ((now - lastRedraw) >= PCD8544_REFRESH_RATE_MS) {
     lastRedraw = now;
     
     PCD8544_ClearBuffer(&LCD);
