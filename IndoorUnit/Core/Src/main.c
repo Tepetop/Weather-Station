@@ -50,7 +50,6 @@
 /* USER CODE BEGIN PD */
 #define DEFAULT_DEMO 1  // Set to 1 to enable drawing demo instead of menu
 #define DRAWING_DEMO 0
-#define CHART_DEMO   0  // Set to 1 to enable chart demo instead of text measurements
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -92,10 +91,6 @@ void EncoderButtonFlag(void);
 #if DEFAULT_DEMO
 void demo_measurement_function(void);
 void demo_chart_function(void);
-#endif
-
-// Chart display functions for menu
-#if CHART_DEMO
 void chart_temperature_function(void);
 void chart_humidity_function(void);
 void chart_pressure_function(void);
@@ -103,6 +98,7 @@ void chart_view_task(void);
 void simulate_measurements(void);
 static void init_all_charts(void);
 #endif
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -164,12 +160,8 @@ int main(void)
   PCD8544_SetFont(&LCD, &Font_6x8);  
   // Display initial menu and then show default measurement screen
   Menu_RefreshDisplay(&LCD, &menuContext);
+  // Chart demo mode - continuously update the chart
   demo_measurement_function();
-
-
-#elif CHART_DEMO
-  // Chart demo mode - display temperature chart
-  PCD8544_SetFont(&LCD, &Font_6x8);
   demo_chart_function();
 #endif
 
@@ -198,21 +190,28 @@ int main(void)
 #endif
   
 #if DEFAULT_DEMO
-    /* Process button state machine*/
-    ButtonTask(&encoderSW); 
 
+  ButtonTask(&encoderSW); 
+
+  /* Handle chart view mode */
+  if (menuContext.state.InChartView)
+  {
+    chart_view_task();
+  }
+  else
+  {
     /*Call the menu task to handle any pending button actions*/
     Menu_Task(&LCD, &menuContext);
     
     /* Call user-defined encoder task*/
     Encoder_Task(&encoder, &menuContext);
 
-#elif CHART_DEMO == 1
-    // Chart demo mode - continuously update the chart
-    demo_chart_function();
-
-    /* Process button state machine*/
-    ButtonTask(&encoderSW); 
+    if (menuContext.state.InDefaultMeasurementsView)
+    {
+      demo_measurement_function();
+    }
+  }
+  
 #endif
   }
   /* USER CODE END 3 */
@@ -222,8 +221,7 @@ int main(void)
   * @brief System Clock Configuration
   * @retval None
   */
-void SystemClock_Config(void)
-{
+void SystemClock_Config(void){
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
@@ -260,8 +258,7 @@ void SystemClock_Config(void)
 /* USER CODE BEGIN 4 */
 
 /*      Encoder timer handler     */
-void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
-{
+void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim){
   if (htim->Instance == TIM1) // Check if the interrupt is from TIM1
   {
     encoder.IRQ_Flag = 1;
@@ -269,20 +266,19 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
 }
 
 /*      Encoder button IRQ handler      */
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
-{
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
   ButtonIRQHandler(&encoderSW, GPIO_Pin);
 }
 
 /*      Encoder button flag handler      */
 void EncoderButtonFlag(void)
 {
-  encoder.ButtonIRQ_Flag = 1;
+  //encoder.ButtonIRQ_Flag = 1;
+  Menu_SetEnterAction(&menuContext);
 }
 
 /* Simulation of measurements display */
-void demo_measurement_function(void)
-{
+void demo_measurement_function(void){
   static uint32_t lastUpdate = 0;
   static uint8_t initialized = 0;
 
@@ -386,8 +382,7 @@ void demo_measurement_function(void)
  *          Temperature varies between 21.4°C and 29.9°C over time.
  *          Press encoder button to toggle between LINE and BAR chart.
  */
-void demo_chart_function(void)
-{
+void demo_chart_function(void){
   static uint32_t lastUpdate = 0;
   static uint8_t initialized = 0;
 
@@ -466,8 +461,7 @@ void demo_chart_function(void)
  * @brief   Simulate measurement data updates
  * @details Called periodically to update simulated values for temp, humidity, pressure
  */
-void simulate_measurements(void)
-{
+void simulate_measurements(void){
   static uint32_t lastUpdate = 0;
   static int8_t tempStep = 3;
   static int8_t humStep = 1;
@@ -521,8 +515,7 @@ void simulate_measurements(void)
 /**
  * @brief   Initialize chart data for all measurement types
  */
-static void init_all_charts(void)
-{
+static void init_all_charts(void){
   // Initialize temperature chart
   PCD8544_InitChartData(&temperatureChart);
   temperatureChart.decimalPlaces = 1;
@@ -561,8 +554,7 @@ static void init_all_charts(void)
 /**
  * @brief   Chart display function for temperature - called from menu
  */
-void chart_temperature_function(void)
-{
+void chart_temperature_function(void){
   static uint8_t chartsInitialized = 0;
   
   if (!chartsInitialized) {
@@ -582,8 +574,7 @@ void chart_temperature_function(void)
 /**
  * @brief   Chart display function for humidity - called from menu
  */
-void chart_humidity_function(void)
-{
+void chart_humidity_function(void){
   static uint8_t chartsInitialized = 0;
   
   if (!chartsInitialized) {
@@ -603,8 +594,8 @@ void chart_humidity_function(void)
 /**
  * @brief   Chart display function for pressure - called from menu
  */
-void chart_pressure_function(void)
-{
+void chart_pressure_function(void){
+
   static uint8_t chartsInitialized = 0;
   
   if (!chartsInitialized) {
@@ -625,15 +616,12 @@ void chart_pressure_function(void)
  * @brief   Chart view task - handles updating and exiting chart view
  * @details Called in main loop when InChartView is active
  */
-void chart_view_task(void)
-{
+void chart_view_task(void){
   static uint32_t lastRedraw = 0;
   uint32_t now = HAL_GetTick();
   
   // Check for button press to exit chart view
-  if (encoder.ButtonIRQ_Flag) {
-    encoder.ButtonIRQ_Flag = 0;
-    
+  if (encoderSW.InterruptFlag) {        
     // Exit chart view and return to menu
     menuContext.state.InChartView = 0;
     menuContext.state.ChartViewType = CHART_VIEW_NONE;
