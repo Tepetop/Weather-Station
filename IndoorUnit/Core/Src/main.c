@@ -50,7 +50,7 @@
 /* USER CODE BEGIN PD */
 #define DEFAULT_DEMO 1  // Set to 1 to enable drawing demo instead of menu
 #define DRAWING_DEMO 0
-#define CHART_DEMO   1  // Set to 1 to enable chart demo instead of text measurements
+#define CHART_DEMO   0  // Set to 1 to enable chart demo instead of text measurements
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -68,7 +68,7 @@ Button_t encoderSW;          // Button instance for encoder switch
 char buffer[64];
 uint8_t counter = 1;
 uint32_t softTimer = 0;
-uint32_t softTimer2 = 0;
+
 
 // Chart data structures for measurement graphs
 PCD8544_ChartData_t temperatureChart;
@@ -81,6 +81,7 @@ static uint8_t g_humidity = 57;     // 57%
 static uint16_t g_pressure = 1013;  // 1013 hPa
 static uint8_t g_hour = 8;
 static uint8_t g_minute = 0;
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -88,16 +89,20 @@ void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 void EncoderButtonFlag(void);
 
+#if DEFAULT_DEMO
 void demo_measurement_function(void);
 void demo_chart_function(void);
+#endif
 
 // Chart display functions for menu
+#if CHART_DEMO
 void chart_temperature_function(void);
 void chart_humidity_function(void);
 void chart_pressure_function(void);
 void chart_view_task(void);
 void simulate_measurements(void);
 static void init_all_charts(void);
+#endif
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -152,7 +157,7 @@ int main(void)
   PCD8544_Init(&LCD, &hspi1, LCD_DC_GPIO_Port, LCD_DC_Pin, LCD_CE_GPIO_Port, LCD_CE_Pin, LCD_RST_GPIO_Port, LCD_RST_Pin);
   PCD8544_ClearScreen(&LCD);
 
-#if DEFAULT_DEMO && CHART_DEMO
+#if DEFAULT_DEMO
   /* Initialize menu system with predefined configuration */
   Menu_Init(&StronaDomyslna, &menuContext); 
   // Set font for menu display
@@ -171,7 +176,6 @@ int main(void)
 
   /*  Soft timer for LED toggle */
   softTimer = HAL_GetTick();
-  softTimer2 = HAL_GetTick();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -185,34 +189,24 @@ int main(void)
     {
       HAL_GPIO_TogglePin(USER_LED_GPIO_Port, USER_LED_Pin);
       softTimer = HAL_GetTick();
-    }  
+    }
+
+    
 #if DRAWING_DEMO
     PCD8544_DrawRectangle(&LCD, 10, 10, 10, 12);
     PCD8544_UpdateScreen(&LCD);  
 #endif
   
-#if DEFAULT_DEMO  && CHART_DEMO
+#if DEFAULT_DEMO
     /* Process button state machine*/
     ButtonTask(&encoderSW); 
 
-    /* Handle chart view mode */
-    if (menuContext.state.InChartView)
-    {
-      chart_view_task();
-    }
-    else
-    {
-      /*Call the menu task to handle any pending button actions*/
-      Menu_Task(&LCD, &menuContext);
-      
-      /* Call user-defined encoder task*/
-      Encoder_Task(&encoder, &menuContext);
+    /*Call the menu task to handle any pending button actions*/
+    Menu_Task(&LCD, &menuContext);
+    
+    /* Call user-defined encoder task*/
+    Encoder_Task(&encoder, &menuContext);
 
-      if (menuContext.state.InDefaultMeasurementsView)
-      {
-        demo_measurement_function();
-      }
-    }
 #elif CHART_DEMO == 1
     // Chart demo mode - continuously update the chart
     demo_chart_function();

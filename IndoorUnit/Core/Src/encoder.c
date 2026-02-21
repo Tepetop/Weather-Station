@@ -37,25 +37,38 @@ HAL_StatusTypeDef Encoder_Init(Encoder_t *encoder, TIM_HandleTypeDef *timer, uin
  */
 HAL_StatusTypeDef Encoder_Get_Ticks(Encoder_t *encoder)
 {
-	// Get current CNT value from timer and subctract it with tick raw count
-	// Rzutownaie na int16_t zapewnia poprawną obsługę przepełnienia (overflow) dla timerów 16-bit
+	// Get current CNT value and calculate delta against previous raw sample.
+	// Cast to int16_t keeps correct wrap-around behavior for 16-bit timer.
 	uint16_t tempcounter = __HAL_TIM_GET_COUNTER(encoder->EncTim);
-	uint16_t rawCount = encoder->TickRawCount;
-	encoder->TickDiff = (int16_t)(tempcounter - rawCount);
+	int16_t delta = (int16_t)(tempcounter - encoder->TickRawCount);
 
-	/*	Check if TickDiff has changed by +-4	*/
+	if (delta == 0)
+	{
+		return HAL_OK;
+	}
+
+	// Consume current raw sample immediately.
+	encoder->TickRawCount = tempcounter;
+
+	// If direction changed, drop pending partial step from previous direction
+	// to avoid losing the first detent after reversal.
+	if (((encoder->TickDiff > 0) && (delta < 0)) || ((encoder->TickDiff < 0) && (delta > 0)))
+	{
+		encoder->TickDiff = 0;
+	}
+
+	encoder->TickDiff += delta;
+
+	/*	Check if accumulated TickDiff has changed by +-ENC_TICK_PER_TURN	*/
 	if(encoder->TickDiff >= ENC_TICK_PER_TURN  || encoder->TickDiff <= -ENC_TICK_PER_TURN )
 	{
 		// Oblicz ile pełnych kroków wykonano
 		int8_t ticks = encoder->TickDiff / (int)ENC_TICK_PER_TURN;
-		
+
 		encoder->TickCount += ticks;
 
-		// Zmiana: Aktualizuj RawCount o ZUZYTĄ wartość, a nie o aktualny licznik.
-		// To utrzymuje synchronizację z fizycznymi "klikami" enkodera.
-		encoder->TickRawCount += (ticks * ENC_TICK_PER_TURN);
-
-		return HAL_OK;
+		// Keep only remainder that has not formed full step yet.
+		encoder->TickDiff -= (ticks * ENC_TICK_PER_TURN);
 	}
 	return HAL_OK;
 }

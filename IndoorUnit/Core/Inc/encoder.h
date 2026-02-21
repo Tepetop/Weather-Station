@@ -4,7 +4,7 @@
 #include "main.h"
 #include "PCD8544_Menu.h"
 
-#define ENC_TICK_PER_TURN 2			//reosulution of encoder (number of ticks per full turn)
+#define ENC_TICK_PER_TURN 1			//reosulution of encoder (number of ticks per full turn)
 
 
 typedef struct
