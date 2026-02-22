@@ -69,6 +69,17 @@ Menu_Context_t menuContext;   // Menu context for managing menu state
 PCD8544_t LCD;                // LCD instance
 Encoder_t encoder;            // Encoder instance
 Button_t encoderSW;          // Button instance for encoder switch
+DS3231_t rtc;
+DS3231_RTCDateTime_t currentDateTime = {
+  .Year = 2026,
+  .Month = 2, 
+  .Day = 22, 
+  .Hour = 12, 
+  .Minute = 15, 
+  .Second = 0,
+  .DayOfWeek = 7
+};
+
 char buffer[64];
 uint8_t counter = 1;
 uint32_t softTimer = 0;
@@ -138,11 +149,12 @@ int main(void)
 
 #if RTC_DEMO
   /*            Initialize RTC demo        */
-  DS3231_t rtc;
   DS3231_Init(&rtc, &hi2c2, 0x68);
+  DS3231_SetDateTime(&rtc, &currentDateTime);
   PCD8544_SetFont(&LCD, &Font_6x8);
   PCD8544_SetCursor(&LCD, 0, 0);
   PCD8544_WriteString(&LCD, "dzialam");
+  PCD8544_UpdateScreen(&LCD);
 #endif
 
 #if DEFAULT_DEMO
@@ -178,13 +190,15 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    if(HAL_GetTick() - softTimer > 750)
+    if(HAL_GetTick() - softTimer > 1000)
     {
       HAL_GPIO_TogglePin(USER_LED_GPIO_Port, USER_LED_Pin);
       DS3231_GetDateTime(&rtc);
       PCD8544_SetCursor(&LCD, 0, 2);
       sprintf(buffer, "%2d:%2d:%2d", rtc.time.Hour, rtc.time.Minute, rtc.time.Second);
+      PCD8544_ClearBufferLine(&LCD, 2);
       PCD8544_WriteString(&LCD, buffer);
+      PCD8544_UpdateScreen(&LCD);
       softTimer = HAL_GetTick();
     }
 
