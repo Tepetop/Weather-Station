@@ -19,10 +19,9 @@
 // -----------------------------------
 #define PCD8544_WIDTH      			84
 #define PCD8544_HEIGHT				48
-//#define PCD8544_CHAR_PIXEL_X			6 											/* 6 pix in X axis per char (space included) */
-//#define PCD8544_CHAR_PIXEL_Y			8											/* 8 pix in Y axis per char (space included) */
 #define MIN_ROW_COLS				0
-#define PCD8544_BUFFER_SIZE    			(PCD8544_WIDTH * PCD8544_HEIGHT / 8)
+#define PCD8544_BANK_HEIGHT			8
+#define PCD8544_BUFFER_SIZE    			(PCD8544_WIDTH * PCD8544_HEIGHT / PCD8544_BANK_HEIGHT)
 
 
 // Status
@@ -178,7 +177,11 @@ PCD_Status PCD8544_DrawPixel (PCD8544_t *PCD, uint8_t x, uint8_t y);
 
 PCD_Status PCD8544_WriteChar(PCD8544_t *PCD, const char *znak);
 
+PCD_Status PCD8544_WriteCharBig(PCD8544_t *PCD, const char *znak);
+
 PCD_Status PCD8544_WriteString(PCD8544_t *PCD, const char *str);
+
+PCD_Status PCD8544_WriteStringBig(PCD8544_t *PCD, const char *str);
 
 PCD_Status PCD8544_WriteNumberToBuffer(PCD8544_t *PCD, uint8_t x, uint8_t y, int16_t number);
 

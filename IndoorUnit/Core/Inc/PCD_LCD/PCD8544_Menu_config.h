@@ -9,10 +9,7 @@
 #define INC_PCD8544_MENU_CONFIG_H_
 
 #include <PCD8544_Menu.h>
-extern void demo_measurement_function(void);
-extern void chart_temperature_function(void);
-extern void chart_humidity_function(void);
-extern void chart_pressure_function(void);
+#include "demo_tests.h"
 #define MENU_TEST 0
 
 /*		Definicja struktur 		*/

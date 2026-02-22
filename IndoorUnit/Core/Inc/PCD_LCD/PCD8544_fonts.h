@@ -23,8 +23,20 @@ typedef struct
 extern const PCD8544_Font_t Font_6x8;
 #endif
 
-#ifdef SSD1306_INCLUDE_FONT_6x8
-extern const PCD8544_Font_t FontT;
+#ifdef PCD8544_INCLUDE_FONT11x15
+extern const PCD8544_Font_t Font_11x15;
+#endif
+
+#ifdef SSD1306_INCLUDE_FONT_7x10
+extern const PCD8544_Font_t Font_7x10;	
+#endif
+
+#ifdef SSD1306_INCLUDE_FONT_11x18
+extern const PCD8544_Font_t Font_11x18;
+#endif
+
+#ifdef SSD1306_INCLUDE_FONT_16x26
+extern const PCD8544_Font_t Font_16x26;
 #endif
 
 

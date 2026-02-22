@@ -52,6 +52,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/ds3231.c
     Core/Src/encoder.c
     Core/Src/button_debounce.c
+    Core/Src/demo_tests.c
 )
 
 # Add include paths
