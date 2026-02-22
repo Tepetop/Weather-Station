@@ -402,8 +402,9 @@ PCD_Status PCD8544_DrawPixel(PCD8544_t *PCD, uint8_t x, uint8_t y)
 		// out of range
 		return PCD_OutOfBounds;
 	  }
-	PCD->buffer.PCD8544_BUFFER_INDEX = x + (y / PCD->font.font_height) * PCD8544_WIDTH;
-	PCD->buffer.PCD8544_BUFFER[PCD->buffer.PCD8544_BUFFER_INDEX] |= 1 << (y % PCD->font.font_height);
+  /*  Instead of font height, use bank height bcs each bank is 8 pixels high */
+	PCD->buffer.PCD8544_BUFFER_INDEX = x + (y / PCD8544_BANK_HEIGHT) * PCD8544_WIDTH;
+	PCD->buffer.PCD8544_BUFFER[PCD->buffer.PCD8544_BUFFER_INDEX] |= 1 << (y % PCD8544_BANK_HEIGHT);
 	// success return
 	return PCD_OK;
 }
@@ -435,7 +436,7 @@ PCD_Status PCD8544_WriteChar(PCD8544_t *PCD, const char *znak)
     // Draw character pixels using DrawPixel
     for (uint8_t col = 0; col < PCD->font.font_width; col++)
     {
-      uint8_t columnData = PCD->font.font[character * PCD->font.font_width + col];
+      uint16_t columnData = PCD->font.font[character * PCD->font.font_width + col];
 
       for (uint8_t row = 0; row < PCD->font.font_height; row++)
       {
@@ -445,6 +446,57 @@ PCD_Status PCD8544_WriteChar(PCD8544_t *PCD, const char *znak)
               PCD8544_DrawPixel(PCD, PCD->buffer.PCD8544_CurrentX + col, PCD->buffer.PCD8544_CurrentY + row);
           }
       }
+    }
+
+    // Increment X for the next character(its needed for string writing)
+    PCD->buffer.PCD8544_CurrentX += PCD->font.font_width;
+
+    // Check & handle Y-axis wrapping if the character exceeds the screen's width
+    if (PCD->buffer.PCD8544_CurrentX + PCD->font.font_width > PCD8544_WIDTH)
+    {
+      PCD->buffer.PCD8544_CurrentX = 0;  // Reset X to the beginning of the next line
+      PCD->buffer.PCD8544_CurrentY += PCD->font.font_height; // Increment Y with spacing
+    }
+
+    return PCD_OK;
+}
+
+PCD_Status PCD8544_WriteCharBig(PCD8544_t *PCD, const char *znak)
+{
+    if (NULL == znak || NULL == PCD->font.font)
+    {
+      return PCD_ERROR;
+    }
+
+    uint8_t character = *znak - 32;  // Calculate character offset in font array
+
+    // Check if character is within supported range (32 to 127)
+    if (character > (0x7f - 32))
+    {
+      return PCD_OutOfBounds;  // Invalid character
+    }
+
+    uint8_t num_banks = (PCD->font.font_height + 7) / 8;
+
+    // Draw character pixels using DrawPixel
+    for (uint8_t bank = 0; bank < num_banks; bank++)
+    {
+        for (uint8_t col = 0; col < PCD->font.font_width; col++)
+        {
+            uint16_t bankData = PCD->font.font[character * PCD->font.font_width * num_banks + bank * PCD->font.font_width + col];
+
+            for (uint8_t row = 0; row < 8; row++)
+            {
+                uint8_t actual_row = bank * 8 + row;
+                if (actual_row >= PCD->font.font_height) break;
+
+                if (bankData & (1 << row))
+                {
+                    // Draw pixel only if bit is set
+                    PCD8544_DrawPixel(PCD, PCD->buffer.PCD8544_CurrentX + col, PCD->buffer.PCD8544_CurrentY + actual_row);
+                }
+            }
+        }
     }
 
     // Increment X for the next character(its needed for string writing)
@@ -480,6 +532,23 @@ PCD_Status PCD8544_WriteString(PCD8544_t *PCD, const char *str)
     while (*str != '\0')
     {
     	PCD8544_WriteChar(PCD, str);
+    	str++;
+    }
+
+    return PCD_OK;
+}
+
+PCD_Status PCD8544_WriteStringBig(PCD8544_t *PCD, const char *str)
+{
+    // Check if string exists
+    if (NULL == str)
+    {
+      return PCD_ERROR;
+    }
+    // Loop through the characters in the string
+    while (*str != '\0')
+    {
+    	PCD8544_WriteCharBig(PCD, str);
     	str++;
     }
 
