@@ -21,6 +21,7 @@
 #include "dma.h"
 #include "i2c.h"
 #include "spi.h"
+#include "stm32f1xx_hal_gpio.h"
 #include "tim.h"
 #include "gpio.h"
 
@@ -135,6 +136,7 @@ int main(void)
   MX_SPI1_Init();
   MX_I2C2_Init();
   MX_TIM1_Init();
+  
   /* USER CODE BEGIN 2 */
 #if DEFAULT_DEMO
   /*            Initialize encoder        */

@@ -512,6 +512,12 @@ HAL_StatusTypeDef DS3231_Init(DS3231_t *dev, I2C_HandleTypeDef *hi2c, uint8_t ad
         return HAL_ERROR;
     }
 
+    HAL_StatusTypeDef status = HAL_OK;
+    status = DS3231_GetStatusRegister(dev, (uint8_t *)DS3231_REG_STATUS);
+    if(status != HAL_OK)
+    {
+        return status;
+    }
     dev->hi2c = hi2c;
     dev->address = (uint8_t)(address << 1);
     dev->mode = DS3231_BLOKCING_MODE;
@@ -519,6 +525,10 @@ HAL_StatusTypeDef DS3231_Init(DS3231_t *dev, I2C_HandleTypeDef *hi2c, uint8_t ad
     dev->sqw_port = sqw_port;
     dev->sqw_pin = sqw_pin;
 
-    return HAL_OK;
+    status = DS3231_ClearAlarmFlags(dev);
+    status = DS3231_Oscillator(dev, 0); // Enable oscillator
+
+
+    return status;
 }
 
