@@ -66,6 +66,12 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(USER_LED_GPIO_Port, &GPIO_InitStruct);
 
+  /*Configure GPIO pin : RTC_SQW_Pin */
+  GPIO_InitStruct.Pin = RTC_SQW_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
+  HAL_GPIO_Init(RTC_SQW_GPIO_Port, &GPIO_InitStruct);
+
   /*Configure GPIO pin : ENC_BUTTON_Pin */
   GPIO_InitStruct.Pin = ENC_BUTTON_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
