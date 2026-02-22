@@ -18,11 +18,10 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "PCD8544_config.h"
 #include "dma.h"
 #include "i2c.h"
 #include "spi.h"
-#include "stm32f1xx_hal.h"
+#include "stm32f1xx_hal_gpio.h"
 #include "tim.h"
 #include "gpio.h"
 
@@ -69,6 +68,23 @@ Menu_Context_t menuContext;   // Menu context for managing menu state
 PCD8544_t LCD;                // LCD instance
 Encoder_t encoder;            // Encoder instance
 Button_t encoderSW;          // Button instance for encoder switch
+DS3231_t rtc;
+DS3231_RTCDateTime_t currentDateTime = {
+  .Year = 2026,
+  .Month = 2, 
+  .Day = 22, 
+  .Hour = 12, 
+  .Minute = 15, 
+  .Second = 0,
+  .DayOfWeek = 7
+};
+DS3231_RTCAlarmTime alarmTime = {
+  .Day = 0,
+  .Hour = 0,
+  .Minute = 1,
+  .Second = 0
+};
+
 char buffer[64];
 uint8_t counter = 1;
 uint32_t softTimer = 0;
@@ -101,7 +117,6 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-
   HAL_Init();
 
   /* USER CODE BEGIN Init */
@@ -121,6 +136,7 @@ int main(void)
   MX_SPI1_Init();
   MX_I2C2_Init();
   MX_TIM1_Init();
+  
   /* USER CODE BEGIN 2 */
 #if DEFAULT_DEMO
   /*            Initialize encoder        */
@@ -138,11 +154,15 @@ int main(void)
 
 #if RTC_DEMO
   /*            Initialize RTC demo        */
-  DS3231_t rtc;
-  DS3231_Init(&rtc, &hi2c2, 0x68);
+  DS3231_Init(&rtc, &hi2c2, 0x68, GPIOB, GPIO_PIN_0); // Assuming SQW pin is connected to PB10
+  DS3231_SetAlarm(&rtc, &alarmTime, DS3231_ALARM_EVERY_SECOND, 1);
+
+
+  DS3231_SetDateTime(&rtc, &currentDateTime);
   PCD8544_SetFont(&LCD, &Font_6x8);
   PCD8544_SetCursor(&LCD, 0, 0);
   PCD8544_WriteString(&LCD, "dzialam");
+  PCD8544_UpdateScreen(&LCD);
 #endif
 
 #if DEFAULT_DEMO
@@ -178,14 +198,21 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    if(HAL_GetTick() - softTimer > 750)
+    if(HAL_GetTick() - softTimer > 1000)
     {
       HAL_GPIO_TogglePin(USER_LED_GPIO_Port, USER_LED_Pin);
+      softTimer = HAL_GetTick();
+    }
+
+    if(rtc.DS3231_IRQ_Flag)
+    {
+      rtc.DS3231_IRQ_Flag = 0; // Clear the flag
       DS3231_GetDateTime(&rtc);
       PCD8544_SetCursor(&LCD, 0, 2);
       sprintf(buffer, "%2d:%2d:%2d", rtc.time.Hour, rtc.time.Minute, rtc.time.Second);
+      PCD8544_ClearBufferLine(&LCD, 2);
       PCD8544_WriteString(&LCD, buffer);
-      softTimer = HAL_GetTick();
+      PCD8544_UpdateScreen(&LCD);
     }
 
 #if DEFAULT_DEMO
@@ -220,7 +247,8 @@ int main(void)
   * @brief System Clock Configuration
   * @retval None
   */
-void SystemClock_Config(void){
+void SystemClock_Config(void)
+{
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
@@ -265,11 +293,20 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim){
 }
 
 /*      Encoder button IRQ handler      */
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+  /*Encoder button IRQ handler*/
   ButtonIRQHandler(&encoderSW, GPIO_Pin);
+
+  /* RTC SQW/INT pin IRQ handler */
+  if(GPIO_Pin == rtc.sqw_pin)
+  {
+    rtc.DS3231_IRQ_Flag = 1; // Set the flag to indicate an alarm event
+    DS3231_ClearAlarmFlags(&rtc); // Clear alarm flags in DS3231 status register
+  }
 }
 
-/*      Encoder button flag handler      */
+/*      Encoder button function to assign to callback     */
 void EncoderButtonFlag(void)
 {
   //encoder.ButtonIRQ_Flag = 1;
