@@ -41,6 +41,8 @@
 #include <button_debounce.h>
 
 #include <demo_tests.h>
+
+#include "ds3231.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -51,7 +53,8 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 #define DEFAULT_DEMO 0  // Set to 1 to enable drawing demo instead of menu
-#define DRAWING_DEMO 1
+#define DRAWING_DEMO 0
+#define RTC_DEMO 1
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -119,17 +122,28 @@ int main(void)
   MX_I2C2_Init();
   MX_TIM1_Init();
   /* USER CODE BEGIN 2 */
-
+#if DEFAULT_DEMO
   /*            Initialize encoder        */
   Encoder_Init(&encoder, &htim1, TIM_CHANNEL_1, TIM_CHANNEL_2);   
 
   /*             Initialize debounce button        */
   ButtonInitKey(&encoderSW, ENC_BUTTON_GPIO_Port, ENC_BUTTON_Pin, 50, 1000, 500, BUTTON_MODE_INTERRUPT);
   ButtonRegisterPressCallback(&encoderSW, EncoderButtonFlag);
+#endif
 
   /*            Initialize LCD           */
   PCD8544_Init(&LCD, &hspi1, LCD_DC_GPIO_Port, LCD_DC_Pin, LCD_CE_GPIO_Port, LCD_CE_Pin, LCD_RST_GPIO_Port, LCD_RST_Pin);
   PCD8544_ClearScreen(&LCD);
+ 
+
+#if RTC_DEMO
+  /*            Initialize RTC demo        */
+  DS3231_t rtc;
+  DS3231_Init(&rtc, &hi2c2, 0x68);
+  PCD8544_SetFont(&LCD, &Font_6x8);
+  PCD8544_SetCursor(&LCD, 0, 0);
+  PCD8544_WriteString(&LCD, "dzialam");
+#endif
 
 #if DEFAULT_DEMO
   /* Initialize menu system with predefined configuration */
@@ -167,8 +181,12 @@ int main(void)
     if(HAL_GetTick() - softTimer > 750)
     {
       HAL_GPIO_TogglePin(USER_LED_GPIO_Port, USER_LED_Pin);
+      DS3231_GetDateTime(&rtc);
+      PCD8544_SetCursor(&LCD, 0, 2);
+      sprintf(buffer, "%2d:%2d:%2d", rtc.time.Hour, rtc.time.Minute, rtc.time.Second);
+      PCD8544_WriteString(&LCD, buffer);
       softTimer = HAL_GetTick();
-    }  
+    }
 
 #if DEFAULT_DEMO
 
