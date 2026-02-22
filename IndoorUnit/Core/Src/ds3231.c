@@ -1,6 +1,19 @@
 #include "ds3231.h"
 #include "stm32f1xx_hal_def.h"
 
+
+/* Internal functions*/
+static uint8_t DS3231_BcdToDec(uint8_t bcd)
+{
+    return (uint8_t)((((bcd & 0xF0U) >> 4U) * 10U) + (bcd & 0x0FU));
+}
+
+static uint8_t DS3231_DecToBcd(uint8_t dec)
+{
+    return (uint8_t)(((dec / 10U) << 4U) + (dec % 10U));
+}
+
+
 /* Read buffer from a DS3231 register address. */
 static HAL_StatusTypeDef DS3231_Read(DS3231_t *dev, uint8_t reg, uint8_t *buffer, uint16_t length)
 {
@@ -92,10 +105,11 @@ HAL_StatusTypeDef DS3231_ConvertTemperature(DS3231_t *dev)
  * @param dev Pointer to the DS3231 device handle.
  * @param enable 1 to enable, 0 to disable.
  * @return HAL status.
+ * @note EOSC bit is inverted: 0=enabled, 1=disabled
  */
 HAL_StatusTypeDef DS3231_Oscillator(DS3231_t *dev, uint8_t enable)
 {
-    return DS3231_WriteControlBit(dev, DS3231_CTRL_EOSC, enable);
+    return DS3231_WriteControlBit(dev, DS3231_CTRL_EOSC, enable ? 0U : 1U);
 }
 
 /**
@@ -199,35 +213,38 @@ HAL_StatusTypeDef DS3231_SetAlarm(DS3231_t *dev, DS3231_RTCAlarmTime *alarm, DS3
                 break;
 
             case DS3231_ALARM_SECONDS_MATCH:
-                buf[0] = alarm->Second & 0x7F; 
+                buf[0] = DS3231_DecToBcd(alarm->Second) & 0x7F; 
                 buf[1] = 0x80; 
                 buf[2] = 0x80; 
                 buf[3] = 0x80;
                 break;
 
             case DS3231_ALARM_MINUTES_MATCH:
-                buf[0] = alarm->Second & 0x7F; 
-                buf[1] = alarm->Minute & 0x7F; 
+                buf[0] = DS3231_DecToBcd(alarm->Second) & 0x7F; 
+                buf[1] = DS3231_DecToBcd(alarm->Minute) & 0x7F; 
                 buf[2] = 0x80; 
                 buf[3] = 0x80;
                 break;
 
             case DS3231_ALARM_HOURS_MATCH:
-                buf[0] = alarm->Second & 0x7F; buf[1] = alarm->Minute & 0x7F; buf[2] = alarm->Hour & 0x7F; buf[3] = 0x80;
+                buf[0] = DS3231_DecToBcd(alarm->Second) & 0x7F;
+                buf[1] = DS3231_DecToBcd(alarm->Minute) & 0x7F;
+                buf[2] = DS3231_DecToBcd(alarm->Hour) & 0x7F;
+                buf[3] = 0x80;
                 break;
 
             case DS3231_ALARM_DATE_MATCH:   // data miesiąca
-                buf[0] = alarm->Second & 0x7F;
-                buf[1] = alarm->Minute & 0x7F;
-                buf[2] = alarm->Hour   & 0x7F;
-                buf[3] = alarm->Day & 0x7F;                     // A1M4=0, DY/DT=0
+                buf[0] = DS3231_DecToBcd(alarm->Second) & 0x7F;
+                buf[1] = DS3231_DecToBcd(alarm->Minute) & 0x7F;
+                buf[2] = DS3231_DecToBcd(alarm->Hour) & 0x7F;
+                buf[3] = DS3231_DecToBcd(alarm->Day) & 0x7F;    // A1M4=0, DY/DT=0
                 break;
 
             case DS3231_ALARM_DAY_MATCH:    // dzień tygodnia
-                buf[0] = alarm->Second & 0x7F;
-                buf[1] = alarm->Minute & 0x7F;
-                buf[2] = alarm->Hour   & 0x7F;
-                buf[3] = (alarm->Day & 0x7F) | 0x40;             // A1M4=0, DY/DT=1
+                buf[0] = DS3231_DecToBcd(alarm->Second) & 0x7F;
+                buf[1] = DS3231_DecToBcd(alarm->Minute) & 0x7F;
+                buf[2] = DS3231_DecToBcd(alarm->Hour) & 0x7F;
+                buf[3] = (DS3231_DecToBcd(alarm->Day) & 0x7F) | 0x40;  // A1M4=0, DY/DT=1
                 break;
 
             default:
@@ -241,27 +258,33 @@ HAL_StatusTypeDef DS3231_SetAlarm(DS3231_t *dev, DS3231_RTCAlarmTime *alarm, DS3
         switch (alarmMode)
         {
             case DS3231_ALARM_EVERY_MINUTE:
-                buf[0] = 0x80; buf[1] = 0x80; buf[2] = 0x80;
+                buf[0] = 0x80; 
+                buf[1] = 0x80; 
+                buf[2] = 0x80;
                 break;
 
             case DS3231_ALARM_MINUTES_MATCH:
-                buf[0] = alarm->Minute & 0x7F; buf[1] = 0x80; buf[2] = 0x80;
+                buf[0] = DS3231_DecToBcd(alarm->Minute) & 0x7F; 
+                buf[1] = 0x80; 
+                buf[2] = 0x80;
                 break;
 
             case DS3231_ALARM_HOURS_MATCH:
-                buf[0] = alarm->Minute & 0x7F; buf[1] = alarm->Hour & 0x7F; buf[2] = 0x80;
+                buf[0] = DS3231_DecToBcd(alarm->Minute) & 0x7F; 
+                buf[1] = DS3231_DecToBcd(alarm->Hour) & 0x7F; 
+                buf[2] = 0x80;
                 break;
 
             case DS3231_ALARM_DATE_MATCH:
-                buf[0] = alarm->Minute & 0x7F;
-                buf[1] = alarm->Hour   & 0x7F;
-                buf[2] = alarm->Day & 0x7F;
+                buf[0] = DS3231_DecToBcd(alarm->Minute) & 0x7F;
+                buf[1] = DS3231_DecToBcd(alarm->Hour) & 0x7F;
+                buf[2] = DS3231_DecToBcd(alarm->Day) & 0x7F;
                 break;
 
             case DS3231_ALARM_DAY_MATCH:
-                buf[0] = alarm->Minute & 0x7F;
-                buf[1] = alarm->Hour   & 0x7F;
-                buf[2] = (alarm->Day & 0x7F) | 0x40;
+                buf[0] = DS3231_DecToBcd(alarm->Minute) & 0x7F;
+                buf[1] = DS3231_DecToBcd(alarm->Hour) & 0x7F;
+                buf[2] = (DS3231_DecToBcd(alarm->Day) & 0x7F) | 0x40;
                 break;
 
             default:
@@ -365,15 +388,31 @@ HAL_StatusTypeDef DS3231_Enable32kHzOutput(DS3231_t *dev, uint8_t enable)
     return DS3231_SetStatusRegister(dev, statusReg);
 }
 
-static uint8_t DS3231_BcdToDec(uint8_t bcd)
+/**
+ * @brief Clear alarm flags in the DS3231 status register.
+ * @param dev Pointer to the DS3231 device handle.
+ * @return HAL status.
+ */
+HAL_StatusTypeDef DS3231_ClearAlarmFlags(DS3231_t *dev)
 {
-    return (uint8_t)((((bcd & 0xF0U) >> 4U) * 10U) + (bcd & 0x0FU));
+    uint8_t statusReg = 0U;
+    HAL_StatusTypeDef status = HAL_OK;
+
+    if (dev == NULL) {
+        return HAL_ERROR;
+    }
+
+    status = DS3231_GetStatusRegister(dev, &statusReg);
+    if (status != HAL_OK) {
+        return status;
+    }
+
+    // Clear both alarm flags (A1F and A2F)
+    statusReg &= (uint8_t)(~(DS3231_STAT_A1F | DS3231_STAT_A2F));
+
+    return DS3231_SetStatusRegister(dev, statusReg);
 }
 
-static uint8_t DS3231_DecToBcd(uint8_t dec)
-{
-    return (uint8_t)(((dec / 10U) << 4U) + (dec % 10U));
-}
 
 static uint8_t DS3231_DayOfWeek(uint8_t day, uint8_t month, uint16_t year)
 {
@@ -404,7 +443,6 @@ static void DS3231_DecodeDateTime(DS3231_t *dev, const uint8_t *buffer)
 /**
  * @brief Read date/time from the DS3231 into the provided structure.
  * @param dev Pointer to the DS3231 device handle.
- * @param dev->time.ointer to the destination structure.
  * @return HAL status.
  */
 HAL_StatusTypeDef DS3231_GetDateTime(DS3231_t *dev)
@@ -468,7 +506,7 @@ HAL_StatusTypeDef DS3231_SetDateTime(DS3231_t *dev, const DS3231_RTCDateTime_t *
  * @param address 7-bit I2C address (typically 0x68).
  * @return HAL status.
  */
-HAL_StatusTypeDef DS3231_Init(DS3231_t *dev, I2C_HandleTypeDef *hi2c, uint8_t address)
+HAL_StatusTypeDef DS3231_Init(DS3231_t *dev, I2C_HandleTypeDef *hi2c, uint8_t address, GPIO_TypeDef *sqw_port, uint16_t sqw_pin)
 {
     if ((dev == NULL) || (hi2c == NULL)) {
         return HAL_ERROR;
@@ -477,6 +515,9 @@ HAL_StatusTypeDef DS3231_Init(DS3231_t *dev, I2C_HandleTypeDef *hi2c, uint8_t ad
     dev->hi2c = hi2c;
     dev->address = (uint8_t)(address << 1);
     dev->mode = DS3231_BLOKCING_MODE;
+    dev->DS3231_IRQ_Flag = 0;
+    dev->sqw_port = sqw_port;
+    dev->sqw_pin = sqw_pin;
 
     return HAL_OK;
 }

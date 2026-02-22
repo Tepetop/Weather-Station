@@ -77,6 +77,12 @@ DS3231_RTCDateTime_t currentDateTime = {
   .Second = 0,
   .DayOfWeek = 7
 };
+DS3231_RTCAlarmTime alarmTime = {
+  .Day = 0,
+  .Hour = 0,
+  .Minute = 1,
+  .Second = 0
+};
 
 char buffer[64];
 uint8_t counter = 1;
@@ -146,7 +152,10 @@ int main(void)
 
 #if RTC_DEMO
   /*            Initialize RTC demo        */
-  DS3231_Init(&rtc, &hi2c2, 0x68);
+  DS3231_Init(&rtc, &hi2c2, 0x68, GPIOB, GPIO_PIN_0); // Assuming SQW pin is connected to PB10
+  DS3231_SetAlarm(&rtc, &alarmTime, DS3231_ALARM_EVERY_SECOND, 1);
+
+
   DS3231_SetDateTime(&rtc, &currentDateTime);
   PCD8544_SetFont(&LCD, &Font_6x8);
   PCD8544_SetCursor(&LCD, 0, 0);
@@ -190,13 +199,18 @@ int main(void)
     if(HAL_GetTick() - softTimer > 1000)
     {
       HAL_GPIO_TogglePin(USER_LED_GPIO_Port, USER_LED_Pin);
+      softTimer = HAL_GetTick();
+    }
+
+    if(rtc.DS3231_IRQ_Flag)
+    {
+      rtc.DS3231_IRQ_Flag = 0; // Clear the flag
       DS3231_GetDateTime(&rtc);
       PCD8544_SetCursor(&LCD, 0, 2);
       sprintf(buffer, "%2d:%2d:%2d", rtc.time.Hour, rtc.time.Minute, rtc.time.Second);
       PCD8544_ClearBufferLine(&LCD, 2);
       PCD8544_WriteString(&LCD, buffer);
       PCD8544_UpdateScreen(&LCD);
-      softTimer = HAL_GetTick();
     }
 
 #if DEFAULT_DEMO
@@ -277,11 +291,20 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim){
 }
 
 /*      Encoder button IRQ handler      */
-void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+  /*Encoder button IRQ handler*/
   ButtonIRQHandler(&encoderSW, GPIO_Pin);
+
+  /* RTC SQW/INT pin IRQ handler */
+  if(GPIO_Pin == rtc.sqw_pin)
+  {
+    rtc.DS3231_IRQ_Flag = 1; // Set the flag to indicate an alarm event
+    DS3231_ClearAlarmFlags(&rtc); // Clear alarm flags in DS3231 status register
+  }
 }
 
-/*      Encoder button flag handler      */
+/*      Encoder button function to assign to callback     */
 void EncoderButtonFlag(void)
 {
   //encoder.ButtonIRQ_Flag = 1;

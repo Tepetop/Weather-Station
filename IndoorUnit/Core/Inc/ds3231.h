@@ -106,9 +106,12 @@ typedef enum {
  */
 typedef struct {
     I2C_HandleTypeDef *hi2c;
-    uint8_t address;
+    GPIO_TypeDef *sqw_port;
+    uint16_t sqw_pin;
     DS3231_RTCDateTime_t time;
     DS3231_IOMODE_t mode;
+    uint8_t address;
+    uint8_t DS3231_IRQ_Flag; // Flaga przerwania alarmu
 } DS3231_t;
 
 
@@ -119,7 +122,7 @@ typedef struct {
  * @param address 7-bit I2C address (typically 0x68).
  * @return HAL status.
  */
-HAL_StatusTypeDef DS3231_Init(DS3231_t *dev, I2C_HandleTypeDef *hi2c, uint8_t address);
+HAL_StatusTypeDef DS3231_Init(DS3231_t *dev, I2C_HandleTypeDef *hi2c, uint8_t address, GPIO_TypeDef *sqw_port, uint16_t sqw_pin);
 
 /**
  * @brief Read current time/date from the DS3231 into the device handle.
@@ -205,6 +208,13 @@ HAL_StatusTypeDef DS3231_TurnOnOscillator(DS3231_t *dev, uint8_t enable, uint8_t
 HAL_StatusTypeDef DS3231_Enable32kHzOutput(DS3231_t *dev, uint8_t enable);
 
 /**
+ * @brief Clear alarm flags in the DS3231 status register.
+ * @param dev Pointer to the DS3231 device handle.
+ * @return HAL status.
+ */
+HAL_StatusTypeDef DS3231_ClearAlarmFlags(DS3231_t *dev);
+
+/**
  * @brief Read date/time from the DS3231 into the provided structure.
  * @param dev Pointer to the DS3231 device handle.
  * @param dateTime Pointer to the destination structure.
@@ -219,5 +229,7 @@ HAL_StatusTypeDef DS3231_GetDateTime(DS3231_t *dev);
  * @return HAL status.
  */
 HAL_StatusTypeDef DS3231_SetDateTime(DS3231_t *dev, const DS3231_RTCDateTime_t *dateTime);
+
+
 
 #endif // DS3231_H
