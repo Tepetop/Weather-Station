@@ -2,12 +2,6 @@ CompileFlags:
   Add:
     - '-ferror-limit=0'
     - '-Wno-implicit-int'
-    - '--target=arm-none-eabi'
-    - '-isystem'
-    - D:/ST/STM32CubeCLT_1.19.0/GNU-tools-for-STM32/arm-none-eabi/include
-    - '-isystem'
-    - >-
-      D:/ST/STM32CubeCLT_1.19.0/GNU-tools-for-STM32/lib/gcc/arm-none-eabi/13.3.1/include
   CompilationDatabase: build/Debug
 Diagnostics:
   Suppress:
