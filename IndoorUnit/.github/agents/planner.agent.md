@@ -1,23 +1,7 @@
 ---
-name: planner
-description: Describe what this custom agent does and when to use it.
-argument-hint: The inputs this agent expects, e.g., "a task to implement" or "a question to answer".
-# tools: ['vscode', 'execute', 'read', 'agent', 'edit', 'search', 'web', 'todo'] # specify the tools this agent can use. If not set, all enabled tools are allowed.
----
-Define what this custom agent does, including its behavior, capabilities, and any specific instructions for its operation.
----
 description: "Strategic planning and architecture assistant focused on thoughtful analysis before implementation. Helps developers understand codebases, clarify requirements, and develop comprehensive implementation strategies."
 name: "Plan Mode - Strategic Planning & Architecture"
-tools:
-  - search/codebase
-  - vscode/extensions
-  - web/fetch
-  - web/githubRepo
-  - read/problems
-  - azure-mcp/search
-  - search/searchResults
-  - search/usages
-  - vscode/vscodeAPI
+[vscode/vscodeAPI, vscode/extensions, read/problems, read/readFile, search/codebase, search/searchResults, search/usages, web, todo]
 ---
 
 # Plan Mode - Strategic Planning & Architecture Assistant

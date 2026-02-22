@@ -9,6 +9,7 @@
 #define INC_PCD8544_MENU_CONFIG_H_
 
 #include <PCD8544_Menu.h>
+#include <string.h>
 #include "demo_tests.h"
 #define MENU_TEST 0
 
@@ -34,9 +35,10 @@ Menu_t Ustawienia = {"Ustawienia", 			NULL,  			  &StronaDomyslna, 		&Wykresy, 	
 		Menu_t wilgWykres = {"Wilgotnosc", 	&cisnWykres, 	  &tempWykres, 			NULL, 		&Wykresy, 	 chart_humidity_function};
 		Menu_t cisnWykres = {"Cisnienie", 	NULL, 	  		  &wilgWykres, 			NULL, 		&Wykresy, 	 chart_pressure_function};
 
-	Menu_t StacjePomiarowe = {"Stacje pom.",&StatusPomiarow,  &Wykresy, 			NULL, 		&Ustawienia, NULL};
-	Menu_t StatusPomiarow = {"Status", 		&WykonajPomiar,   &StacjePomiarowe, 	NULL, 		&Ustawienia, NULL};
-	Menu_t WykonajPomiar = {"Wyk. pomiar",	NULL, 			  &StatusPomiarow,  	NULL, 		&Ustawienia, NULL};
+	Menu_t StacjePomiarowe = {"Stacje pom.",&WykonajPomiar,  &Wykresy, 				&StatusPomiarow, 		&Ustawienia, NULL};
+		Menu_t StatusPomiarow = {"Status", 	NULL,   	 	 NULL, 					NULL, 		&StacjePomiarowe, NULL};
+		
+	Menu_t WykonajPomiar = {"Wyk. pomiar",	NULL, 			 &StacjePomiarowe,  	NULL, 		&Ustawienia, NULL};
 
 #if MENU_TEST
 /*		Definition of main menu structures		*/
