@@ -12,13 +12,10 @@
 /**
  * @brief Zapisuje jeden bajt do rejestru DS3231.
  */
-static DS3231_Status ds3231_clod_write_reg(DS3231_Handle *hrtc,
-                                       uint8_t reg,
-                                       uint8_t value)
+static DS3231_Status ds3231_clod_write_reg(DS3231_t *hrtc, uint8_t reg, uint8_t value)
 {
     uint8_t buf[2] = { reg, value };
-    if (HAL_I2C_Master_Transmit(hrtc->hi2c, hrtc->i2c_addr,
-                                 buf, 2, DS3231_I2C_TIMEOUT) != HAL_OK) {
+    if (HAL_I2C_Master_Transmit(hrtc->hi2c, hrtc->i2c_addr, buf, 2, DS3231_I2C_TIMEOUT) != HAL_OK) {
         return DS3231_ERR_I2C;
     }
     return DS3231_OK;
@@ -27,9 +24,7 @@ static DS3231_Status ds3231_clod_write_reg(DS3231_Handle *hrtc,
 /**
  * @brief Odczytuje jeden bajt z rejestru DS3231.
  */
-static DS3231_Status ds3231_clod_read_reg(DS3231_Handle *hrtc,
-                                      uint8_t reg,
-                                      uint8_t *value)
+static DS3231_Status ds3231_clod_read_reg(DS3231_t *hrtc,uint8_t reg, uint8_t *value)
 {
     /* Ustaw wskaźnik rejestru */
     if (HAL_I2C_Master_Transmit(hrtc->hi2c, hrtc->i2c_addr,
@@ -47,7 +42,7 @@ static DS3231_Status ds3231_clod_read_reg(DS3231_Handle *hrtc,
 /**
  * @brief Odczytuje wiele kolejnych bajtów zaczynając od podanego rejestru.
  */
-static DS3231_Status ds3231_clod_read_regs(DS3231_Handle *hrtc,
+static DS3231_Status ds3231_clod_read_regs(DS3231_t *hrtc,
                                        uint8_t reg,
                                        uint8_t *buf,
                                        uint8_t len)
@@ -68,10 +63,7 @@ static DS3231_Status ds3231_clod_read_regs(DS3231_Handle *hrtc,
  * @param mask  Maska bitów do modyfikacji (1 = modyfikuj)
  * @param value Nowe wartości bitów (w pozycjach maski)
  */
-static DS3231_Status ds3231_clod_modify_reg(DS3231_Handle *hrtc,
-                                        uint8_t reg,
-                                        uint8_t mask,
-                                        uint8_t value)
+static DS3231_Status ds3231_clod_modify_reg(DS3231_t *hrtc,uint8_t reg, uint8_t mask, uint8_t value)
 {
     uint8_t current;
     DS3231_Status ret;
@@ -130,29 +122,33 @@ static void ds3231_clod_decode_hours(uint8_t reg,
 
 /* --- Inicjalizacja ------------------------------------------------------- */
 
-DS3231_Status DS3231_clod_Init(DS3231_Handle *hrtc, I2C_HandleTypeDef *hi2c, uint16_t i2c_addr, DS3231_HourFormat hour_format)
+DS3231_Status DS3231_clod_Init(DS3231_t *hrtc, I2C_HandleTypeDef *hi2c, uint16_t address, DS3231_HourFormat hour_format)
 {
-    DS3231_Status ret;
-    uint8_t ctrl, status;
+    if (hrtc == NULL || hi2c == NULL){
+        return DS3231_ERR_PARAM;
+    }
 
-    if (hrtc == NULL || hi2c == NULL) return DS3231_ERR_PARAM;
+    DS3231_Status status;
+    uint8_t ctrl;
 
     /* Wypełnienie struktury */
     hrtc->hi2c        = hi2c;
-    hrtc->i2c_addr    = i2c_addr;
+    hrtc->i2c_addr     = address << 1;
     hrtc->hour_format = hour_format;
     hrtc->initialized = false;
+    hrtc->DS3231_IRQ_Flag = 0;
+    hrtc->sqw_port = NULL;
+    hrtc->sqw_pin = 0;
 
     /* Sprawdź komunikację – odczytaj rejestr kontrolny */
-    ret = ds3231_clod_read_reg(hrtc, DS3231_REG_CONTROL, &ctrl);
-    if (ret != DS3231_OK) return ret;
-
-    ret = ds3231_clod_read_reg(hrtc, DS3231_REG_STATUS, &status);
-    if (ret != DS3231_OK) return ret;
+    status = ds3231_clod_read_reg(hrtc, DS3231_REG_CONTROL, &ctrl);
+    if (status != DS3231_OK){
+        return status;
+    }
 
     /*
      * Konfiguracja domyślna przy inicjalizacji:
-     *  - EOSC = 0  → oscylator uruchomiony
+    *  - EOSC = 0  → oscylator uruchomiony
      *  - INTCN = 1 → pin INT/SQW jako wyjście przerwania (POR default)
      *  - A1IE = 0, A2IE = 0 → przerwania alarmów wyłączone
      *  - BBSQW = 0 → SQW wyłączone przy zasilaniu bateryjnym
@@ -162,23 +158,31 @@ DS3231_Status DS3231_clod_Init(DS3231_Handle *hrtc, I2C_HandleTypeDef *hi2c, uin
      * Nie resetujemy czasu – zachowujemy dane jeśli oscylator działał.
      */
     ctrl = DS3231_CTRL_INTCN | DS3231_CTRL_RS2 | DS3231_CTRL_RS1;
-    ret  = ds3231_clod_write_reg(hrtc, DS3231_REG_CONTROL, ctrl);
-    if (ret != DS3231_OK) return ret;
-
-    /* EN32kHz = 1 (wyjście 32kHz domyślnie włączone wg POR) */
-    status = status & ~(DS3231_STAT_A1F | DS3231_STAT_A2F); /* wyczyść flagi alarmów */
-    status |= DS3231_STAT_EN32KHZ;
+    status  = ds3231_clod_write_reg(hrtc, DS3231_REG_CONTROL, ctrl);
+    if (status != DS3231_OK){
+        return status;
+    }
+    
     /* OSF zostawiamy – użytkownik może sprawdzić ręcznie */
-    ret = ds3231_clod_write_reg(hrtc, DS3231_REG_STATUS, status);
-    if (ret != DS3231_OK) return ret;
+    uint8_t status_reg;
+    status = ds3231_clod_read_reg(hrtc, DS3231_REG_STATUS, &status_reg);
+    if (status != DS3231_OK) {
+        return status;
+    }
+    status_reg &= (uint8_t)~(DS3231_STAT_A1F | DS3231_STAT_A2F);
+    status = ds3231_clod_write_reg(hrtc, DS3231_REG_STATUS, status_reg);
 
-    hrtc->initialized = true;
-    return DS3231_OK;
+    if (status == DS3231_ERR_I2C){
+        return status;
+    }
+
+    hrtc->initialized = true;    
+    return status;
 }
 
 /* --- Czas i data --------------------------------------------------------- */
 
-DS3231_Status DS3231_clod_SetDateTime(DS3231_Handle *hrtc, const DS3231_DateTime *dt)
+DS3231_Status DS3231_clod_SetDateTime(DS3231_t *hrtc, const DS3231_DateTime *dt)
 {
     uint8_t buf[8]; /* adres + 7 bajtów danych */
     uint8_t idx = 0;
@@ -212,8 +216,7 @@ DS3231_Status DS3231_clod_SetDateTime(DS3231_Handle *hrtc, const DS3231_DateTime
 
     buf[idx++] = DS3231_DEC2BCD(dt->year);
 
-    if (HAL_I2C_Master_Transmit(hrtc->hi2c, hrtc->i2c_addr,
-                                 buf, idx, DS3231_I2C_TIMEOUT) != HAL_OK) {
+    if (HAL_I2C_Master_Transmit(hrtc->hi2c, hrtc->i2c_addr, buf, idx, DS3231_I2C_TIMEOUT) != HAL_OK) {
         return DS3231_ERR_I2C;
     }
 
@@ -226,7 +229,7 @@ DS3231_Status DS3231_clod_SetDateTime(DS3231_Handle *hrtc, const DS3231_DateTime
     return DS3231_OK;
 }
 
-DS3231_Status DS3231_clod_GetDateTime(DS3231_Handle *hrtc, DS3231_DateTime *dt)
+DS3231_Status DS3231_clod_GetDateTime(DS3231_t *hrtc, DS3231_DateTime *dt)
 {
     uint8_t raw[7];
     DS3231_Status ret;
@@ -255,7 +258,7 @@ DS3231_Status DS3231_clod_GetDateTime(DS3231_Handle *hrtc, DS3231_DateTime *dt)
 
 /* --- Alarmy -------------------------------------------------------------- */
 
-DS3231_Status DS3231_clod_SetAlarm1(DS3231_Handle *hrtc, const DS3231_Alarm1 *alarm)
+DS3231_Status DS3231_clod_SetAlarm1(DS3231_t *hrtc, const DS3231_Alarm1 *alarm)
 {
     uint8_t buf[5];
     uint8_t idx = 0;
@@ -290,10 +293,15 @@ DS3231_Status DS3231_clod_SetAlarm1(DS3231_Handle *hrtc, const DS3231_Alarm1 *al
                                  buf, idx, DS3231_I2C_TIMEOUT) != HAL_OK) {
         return DS3231_ERR_I2C;
     }
-    return DS3231_OK;
+
+    uint8_t status;
+    DS3231_Status ret = ds3231_clod_read_reg(hrtc, DS3231_REG_STATUS, &status);
+    if (ret != DS3231_OK) return ret;
+    status &= (uint8_t)~DS3231_STAT_A1F;
+    return ds3231_clod_write_reg(hrtc, DS3231_REG_STATUS, status);
 }
 
-DS3231_Status DS3231_clod_SetAlarm2(DS3231_Handle *hrtc, const DS3231_Alarm2 *alarm)
+DS3231_Status DS3231_clod_SetAlarm2(DS3231_t *hrtc, const DS3231_Alarm2 *alarm)
 {
     uint8_t buf[4];
     uint8_t idx = 0;
@@ -321,10 +329,15 @@ DS3231_Status DS3231_clod_SetAlarm2(DS3231_Handle *hrtc, const DS3231_Alarm2 *al
                                  buf, idx, DS3231_I2C_TIMEOUT) != HAL_OK) {
         return DS3231_ERR_I2C;
     }
-    return DS3231_OK;
+
+    uint8_t status;
+    DS3231_Status ret = ds3231_clod_read_reg(hrtc, DS3231_REG_STATUS, &status);
+    if (ret != DS3231_OK) return ret;
+    status &= (uint8_t)~DS3231_STAT_A2F;
+    return ds3231_clod_write_reg(hrtc, DS3231_REG_STATUS, status);
 }
 
-DS3231_Status DS3231_clod_GetAlarm1(DS3231_Handle *hrtc, DS3231_Alarm1 *alarm)
+DS3231_Status DS3231_clod_GetAlarm1(DS3231_t *hrtc, DS3231_Alarm1 *alarm)
 {
     uint8_t raw[4];
     DS3231_Status ret;
@@ -352,7 +365,7 @@ DS3231_Status DS3231_clod_GetAlarm1(DS3231_Handle *hrtc, DS3231_Alarm1 *alarm)
     return DS3231_OK;
 }
 
-DS3231_Status DS3231_clod_GetAlarm2(DS3231_Handle *hrtc, DS3231_Alarm2 *alarm)
+DS3231_Status DS3231_clod_GetAlarm2(DS3231_t *hrtc, DS3231_Alarm2 *alarm)
 {
     uint8_t raw[3];
     DS3231_Status ret;
@@ -379,63 +392,68 @@ DS3231_Status DS3231_clod_GetAlarm2(DS3231_Handle *hrtc, DS3231_Alarm2 *alarm)
 
 /* --- Przerwania ---------------------------------------------------------- */
 
-DS3231_Status DS3231_clod_EnableAlarm1Interrupt(DS3231_Handle *hrtc)
+DS3231_Status DS3231_clod_EnableAlarm1Interrupt(DS3231_t *hrtc)
 {
     if (hrtc == NULL || !hrtc->initialized) return DS3231_ERR_PARAM;
     /* INTCN=1 (pin = interrupt), A1IE=1 */
-    return ds3231_clod_modify_reg(hrtc, DS3231_REG_CONTROL,
-                              DS3231_CTRL_INTCN | DS3231_CTRL_A1IE,
-                              DS3231_CTRL_INTCN | DS3231_CTRL_A1IE);
+    return ds3231_clod_modify_reg(hrtc, DS3231_REG_CONTROL, DS3231_CTRL_INTCN | DS3231_CTRL_A1IE, DS3231_CTRL_INTCN | DS3231_CTRL_A1IE);
 }
 
-DS3231_Status DS3231_clod_DisableAlarm1Interrupt(DS3231_Handle *hrtc)
+DS3231_Status DS3231_clod_DisableAlarm1Interrupt(DS3231_t *hrtc)
 {
     if (hrtc == NULL || !hrtc->initialized) return DS3231_ERR_PARAM;
-    return ds3231_clod_modify_reg(hrtc, DS3231_REG_CONTROL,
-                              DS3231_CTRL_A1IE, 0);
+    return ds3231_clod_modify_reg(hrtc, DS3231_REG_CONTROL, DS3231_CTRL_A1IE, 0);
 }
 
-DS3231_Status DS3231_clod_EnableAlarm2Interrupt(DS3231_Handle *hrtc)
+DS3231_Status DS3231_clod_EnableAlarm2Interrupt(DS3231_t *hrtc)
 {
     if (hrtc == NULL || !hrtc->initialized) return DS3231_ERR_PARAM;
-    return ds3231_clod_modify_reg(hrtc, DS3231_REG_CONTROL,
-                              DS3231_CTRL_INTCN | DS3231_CTRL_A2IE,
-                              DS3231_CTRL_INTCN | DS3231_CTRL_A2IE);
+    return ds3231_clod_modify_reg(hrtc, DS3231_REG_CONTROL, DS3231_CTRL_INTCN | DS3231_CTRL_A2IE, DS3231_CTRL_INTCN | DS3231_CTRL_A2IE);
 }
 
-DS3231_Status DS3231_clod_DisableAlarm2Interrupt(DS3231_Handle *hrtc)
+DS3231_Status DS3231_clod_DisableAlarm2Interrupt(DS3231_t *hrtc)
 {
     if (hrtc == NULL || !hrtc->initialized) return DS3231_ERR_PARAM;
-    return ds3231_clod_modify_reg(hrtc, DS3231_REG_CONTROL,
-                              DS3231_CTRL_A2IE, 0);
+    return ds3231_clod_modify_reg(hrtc, DS3231_REG_CONTROL, DS3231_CTRL_A2IE, 0);
 }
 
-DS3231_Status DS3231_clod_CheckAndClearAlarmFlags(DS3231_Handle *hrtc, bool *alarm1_set, bool *alarm2_set)
+DS3231_Status DS3231_clod_CheckAndClearAlarmFlags(DS3231_t *hrtc)
 {
-    uint8_t status;
-    DS3231_Status ret;
+    uint8_t status_reg;
+    DS3231_Status status;
 
-    if (hrtc == NULL || alarm1_set == NULL || alarm2_set == NULL)
+    if (hrtc == NULL){
         return DS3231_ERR_PARAM;
+    }
+
     if (!hrtc->initialized) return DS3231_ERR_PARAM;
 
-    ret = ds3231_clod_read_reg(hrtc, DS3231_REG_STATUS, &status);
-    if (ret != DS3231_OK) return ret;
+    hrtc->DS3231_IRQ_Flag = DS3231_IRQ_NONE;
 
-    *alarm1_set = (status & DS3231_STAT_A1F) ? true : false;
-    *alarm2_set = (status & DS3231_STAT_A2F) ? true : false;
+    status = ds3231_clod_read_reg(hrtc, DS3231_REG_STATUS, &status_reg);
 
-    /* Wyczyść flagi (zapis 0 – bity A1F i A2F można zapisać tylko na 0) */
-    if (*alarm1_set || *alarm2_set) {
-        status &= ~(DS3231_STAT_A1F | DS3231_STAT_A2F);
-        ret = ds3231_clod_write_reg(hrtc, DS3231_REG_STATUS, status);
+    if (status != DS3231_OK){
+        return status;
     }
-    return ret;
+
+    if ((status_reg & DS3231_STAT_A1F) != 0U) {
+        hrtc->DS3231_IRQ_Flag |= DS3231_IRQ_ALARM1;
+    }
+    if ((status_reg & DS3231_STAT_A2F) != 0U) {
+        hrtc->DS3231_IRQ_Flag |= DS3231_IRQ_ALARM2;
+    }
+
+    if (hrtc->DS3231_IRQ_Flag != DS3231_IRQ_NONE) {
+        status_reg &= (uint8_t)~(DS3231_STAT_A1F | DS3231_STAT_A2F);
+        status = ds3231_clod_write_reg(hrtc, DS3231_REG_STATUS, status_reg);
+    }
+
+    return status;
 }
 
 /* --- SQW ----------------------------------------------------------------- */
 
-DS3231_Status DS3231_clod_EnableSQW(DS3231_Handle *hrtc, DS3231_SqwFreq freq)
+DS3231_Status DS3231_clod_EnableSQW(DS3231_t *hrtc, DS3231_SqwFreq freq)
 {
     if (hrtc == NULL || !hrtc->initialized) return DS3231_ERR_PARAM;
 
@@ -445,7 +463,7 @@ DS3231_Status DS3231_clod_EnableSQW(DS3231_Handle *hrtc, DS3231_SqwFreq freq)
     return ds3231_clod_modify_reg(hrtc, DS3231_REG_CONTROL, mask, value);
 }
 
-DS3231_Status DS3231_clod_DisableSQW(DS3231_Handle *hrtc)
+DS3231_Status DS3231_clod_DisableSQW(DS3231_t *hrtc)
 {
     if (hrtc == NULL || !hrtc->initialized) return DS3231_ERR_PARAM;
     /* INTCN=1 → pin przełączony z powrotem na interrupt */
@@ -453,7 +471,7 @@ DS3231_Status DS3231_clod_DisableSQW(DS3231_Handle *hrtc)
                               DS3231_CTRL_INTCN, DS3231_CTRL_INTCN);
 }
 
-DS3231_Status DS3231_clod_SetBatterySQW(DS3231_Handle *hrtc, bool enable)
+DS3231_Status DS3231_clod_SetBatterySQW(DS3231_t *hrtc, bool enable)
 {
     if (hrtc == NULL || !hrtc->initialized) return DS3231_ERR_PARAM;
     uint8_t value = enable ? DS3231_CTRL_BBSQW : 0;
@@ -462,7 +480,7 @@ DS3231_Status DS3231_clod_SetBatterySQW(DS3231_Handle *hrtc, bool enable)
 
 /* --- 32kHz --------------------------------------------------------------- */
 
-DS3231_Status DS3231_clod_Set32kHzOutput(DS3231_Handle *hrtc, bool enable)
+DS3231_Status DS3231_clod_Set32kHzOutput(DS3231_t *hrtc, bool enable)
 {
     if (hrtc == NULL || !hrtc->initialized) return DS3231_ERR_PARAM;
     uint8_t value = enable ? DS3231_STAT_EN32KHZ : 0;
@@ -471,7 +489,7 @@ DS3231_Status DS3231_clod_Set32kHzOutput(DS3231_Handle *hrtc, bool enable)
 
 /* --- Temperatura --------------------------------------------------------- */
 
-DS3231_Status DS3231_clod_GetTemperature(DS3231_Handle *hrtc, float *temp)
+DS3231_Status DS3231_clod_GetTemperature(DS3231_t *hrtc, float *temp)
 {
     uint8_t raw[2];
     DS3231_Status ret;
@@ -495,7 +513,7 @@ DS3231_Status DS3231_clod_GetTemperature(DS3231_Handle *hrtc, float *temp)
     return DS3231_OK;
 }
 
-DS3231_Status DS3231_clod_ForceTemperatureConversion(DS3231_Handle *hrtc)
+DS3231_Status DS3231_clod_ForceTemperatureConversion(DS3231_t *hrtc)
 {
     DS3231_Status ret;
     uint8_t status;
@@ -508,8 +526,7 @@ DS3231_Status DS3231_clod_ForceTemperatureConversion(DS3231_Handle *hrtc)
     if (status & DS3231_STAT_BSY) return DS3231_ERR_BUSY;
 
     /* Ustaw bit CONV */
-    ret = ds3231_clod_modify_reg(hrtc, DS3231_REG_CONTROL,
-                             DS3231_CTRL_CONV, DS3231_CTRL_CONV);
+    ret = ds3231_clod_modify_reg(hrtc, DS3231_REG_CONTROL, DS3231_CTRL_CONV, DS3231_CTRL_CONV);
     if (ret != DS3231_OK) return ret;
 
     /*
@@ -523,7 +540,8 @@ DS3231_Status DS3231_clod_ForceTemperatureConversion(DS3231_Handle *hrtc)
 
         uint8_t ctrl;
         ret = ds3231_clod_read_reg(hrtc, DS3231_REG_CONTROL, &ctrl);
-        if (ret != DS3231_OK) return ret;
+        if (ret == DS3231_ERR_I2C) 
+            return ret;
 
         if (!(ctrl & DS3231_CTRL_CONV)) {
             /* Konwersja zakończona */
@@ -539,13 +557,13 @@ DS3231_Status DS3231_clod_ForceTemperatureConversion(DS3231_Handle *hrtc)
 
 /* --- Aging Offset -------------------------------------------------------- */
 
-DS3231_Status DS3231_clod_SetAgingOffset(DS3231_Handle *hrtc, int8_t offset)
+DS3231_Status DS3231_clod_SetAgingOffset(DS3231_t *hrtc, int8_t offset)
 {
     if (hrtc == NULL || !hrtc->initialized) return DS3231_ERR_PARAM;
     return ds3231_clod_write_reg(hrtc, DS3231_REG_AGING, (uint8_t)offset);
 }
 
-DS3231_Status DS3231_clod_GetAgingOffset(DS3231_Handle *hrtc, int8_t *offset)
+DS3231_Status DS3231_clod_GetAgingOffset(DS3231_t *hrtc, int8_t *offset)
 {
     uint8_t raw;
     DS3231_Status ret;
@@ -562,7 +580,7 @@ DS3231_Status DS3231_clod_GetAgingOffset(DS3231_Handle *hrtc, int8_t *offset)
 
 /* --- Status i diagnostyka ------------------------------------------------ */
 
-DS3231_Status DS3231_clod_GetOscillatorStopFlag(DS3231_Handle *hrtc, bool *osf_set)
+DS3231_Status DS3231_clod_GetOscillatorStopFlag(DS3231_t *hrtc, bool *osf_set)
 {
     uint8_t status;
     DS3231_Status ret;
@@ -577,13 +595,13 @@ DS3231_Status DS3231_clod_GetOscillatorStopFlag(DS3231_Handle *hrtc, bool *osf_s
     return DS3231_OK;
 }
 
-DS3231_Status DS3231_clod_ClearOscillatorStopFlag(DS3231_Handle *hrtc)
+DS3231_Status DS3231_clod_ClearOscillatorStopFlag(DS3231_t *hrtc)
 {
     if (hrtc == NULL || !hrtc->initialized) return DS3231_ERR_PARAM;
     return ds3231_clod_modify_reg(hrtc, DS3231_REG_STATUS, DS3231_STAT_OSF, 0);
 }
 
-DS3231_Status DS3231_clod_SetOscillator(DS3231_Handle *hrtc, bool enable)
+DS3231_Status DS3231_clod_SetOscillator(DS3231_t *hrtc, bool enable)
 {
     if (hrtc == NULL || !hrtc->initialized) return DS3231_ERR_PARAM;
     /*
@@ -594,14 +612,14 @@ DS3231_Status DS3231_clod_SetOscillator(DS3231_Handle *hrtc, bool enable)
     return ds3231_clod_modify_reg(hrtc, DS3231_REG_CONTROL, DS3231_CTRL_EOSC, value);
 }
 
-DS3231_Status DS3231_clod_ReadControlReg(DS3231_Handle *hrtc, uint8_t *value)
+DS3231_Status DS3231_clod_ReadControlReg(DS3231_t *hrtc, uint8_t *value)
 {
     if (hrtc == NULL || value == NULL) return DS3231_ERR_PARAM;
     if (!hrtc->initialized)            return DS3231_ERR_PARAM;
     return ds3231_clod_read_reg(hrtc, DS3231_REG_CONTROL, value);
 }
 
-DS3231_Status DS3231_clod_ReadStatusReg(DS3231_Handle *hrtc, uint8_t *value)
+DS3231_Status DS3231_clod_ReadStatusReg(DS3231_t *hrtc, uint8_t *value)
 {
     if (hrtc == NULL || value == NULL) return DS3231_ERR_PARAM;
     if (!hrtc->initialized)            return DS3231_ERR_PARAM;

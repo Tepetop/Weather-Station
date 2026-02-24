@@ -335,11 +335,8 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 #if RTC_DEMO
   if (GPIO_Pin == GPIO_PIN_0)
   {
-    bool alarm1_set = false;
-    bool alarm2_set = true;
-
-    if (DS3231_clod_CheckAndClearAlarmFlags(&rtc2, &alarm1_set, &alarm2_set) == DS3231_OK) {
-      if (alarm1_set || alarm2_set) {
+    if (DS3231_clod_CheckAndClearAlarmFlags(&rtc2) == DS3231_OK) {
+      if ((rtc2.DS3231_IRQ_Flag & (DS3231_IRQ_ALARM1 | DS3231_IRQ_ALARM2)) != 0U) {
         g_rtc_measurement_request = true;
       }
     }

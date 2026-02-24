@@ -287,16 +287,14 @@ void Example_12HourMode(void)
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
     if (GPIO_Pin == GPIO_PIN_0) {  /* PA0 = INT/SQW DS3231 */
-        bool a1, a2;
-
         /*
          * Odczytaj i wyczyść flagi alarmów.
          * Uwaga: wywołanie I2C w przerwaniu – upewnij się, że I2C
          * nie używa DMA/przerwań w tle lub użyj semafora (RTOS).
          */
-        if (DS3231_clod_CheckAndClearAlarmFlags(&rtc, &a1, &a2) == DS3231_OK) {
-            if (a1) g_alarm1_fired = true;
-            if (a2) g_alarm2_fired = true;
+        if (DS3231_clod_CheckAndClearAlarmFlags(&rtc) == DS3231_OK) {
+            if ((rtc.DS3231_IRQ_Flag & DS3231_IRQ_ALARM1) != 0U) g_alarm1_fired = true;
+            if ((rtc.DS3231_IRQ_Flag & DS3231_IRQ_ALARM2) != 0U) g_alarm2_fired = true;
         }
     }
 }
@@ -322,9 +320,8 @@ void Example_MainLoop_Polling(void)
         }
 
         /* Alternatywnie – polling bez przerwań (gdy INT niepodłączone) */
-        /* bool a1, a2;
-           DS3231_CheckAndClearAlarmFlags(&rtc, &a1, &a2);
-           if (a1) { ... }  */
+          /* DS3231_CheckAndClearAlarmFlags(&rtc);
+              if ((rtc.DS3231_IRQ_Flag & DS3231_IRQ_ALARM1) != 0U) { ... } */
 
         Example_ReadTime();
         HAL_Delay(1000);

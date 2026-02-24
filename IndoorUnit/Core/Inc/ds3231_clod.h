@@ -18,7 +18,7 @@
 /* =========================================================================
  * Adres I2C
  * ========================================================================= */
-#define DS3231_I2C_ADDR         (0x68 << 1)   /**< Adres 7-bit przesunięty dla HAL */
+#define DS3231_I2C_ADDR         0x68   /**< Adres 7-bit przesunięty dla HAL */
 
 /* =========================================================================
  * Adresy rejestrów (zgodnie z dokumentacją, str. 11)
@@ -185,11 +185,21 @@ typedef struct {
  * (różne adresy) lub na różnych magistralach.
  */
 typedef struct {
-    I2C_HandleTypeDef  *hi2c;         /**< Wskaźnik na handle I2C (HAL) */
+    I2C_HandleTypeDef   *hi2c;         /**< Wskaźnik na handle I2C (HAL) */
     uint16_t            i2c_addr;     /**< Adres I2C (domyślnie DS3231_I2C_ADDR) */
+    GPIO_TypeDef        *sqw_port;
+    uint16_t            sqw_pin;
     DS3231_HourFormat   hour_format;  /**< Aktualny format godziny modułu */
     bool                initialized;  /**< Flaga inicjalizacji */
-} DS3231_Handle;
+    uint8_t             DS3231_IRQ_Flag; /**< Flaga przerwania alarmu */
+    
+} DS3231_t;
+
+#define DS3231_IRQ_NONE    0x00U
+#define DS3231_IRQ_ALARM1  (1U << 0)
+#define DS3231_IRQ_ALARM2  (1U << 1)
+
+typedef DS3231_t DS3231_Handle;
 
 /* =========================================================================
  * API – funkcje publiczne
@@ -199,163 +209,172 @@ typedef struct {
 
 /**
  * @brief  Inicjalizuje strukturę i moduł DS3231.
- * @param  hrtc        Wskaźnik na strukturę DS3231_Handle (wypełniana przez funkcję)
+ * @param  hrtc        Wskaźnik na strukturę DS3231_t
+  (wypełniana przez funkcję)
  * @param  hi2c        Wskaźnik na zainicjalizowany I2C_HandleTypeDef
  * @param  i2c_addr    Adres I2C (użyj DS3231_I2C_ADDR dla standardowego adresu)
  * @param  hour_format Preferowany format godziny
  * @return DS3231_OK lub kod błędu
  */
-DS3231_Status DS3231_clod_Init(DS3231_Handle *hrtc, I2C_HandleTypeDef *hi2c, uint16_t i2c_addr, DS3231_HourFormat hour_format);
+DS3231_Status DS3231_clod_Init(DS3231_t *hrtc, I2C_HandleTypeDef *hi2c, uint16_t address, DS3231_HourFormat hour_format);
 
 /* --- Czas i data --------------------------------------------------------- */
 
 /**
  * @brief  Zapisuje datę i godzinę do modułu.
- * @param  hrtc  Wskaźnik na DS3231_Handle
+ * @param  hrtc  Wskaźnik na DS3231_t
+
  * @param  dt    Wskaźnik na strukturę DS3231_DateTime z danymi do zapisu
  * @return DS3231_OK lub kod błędu
  */
-DS3231_Status DS3231_clod_SetDateTime(DS3231_Handle *hrtc, const DS3231_DateTime *dt);
+DS3231_Status DS3231_clod_SetDateTime(DS3231_t *hrtc, const DS3231_DateTime *dt);
 
 /**
  * @brief  Odczytuje aktualną datę i godzinę z modułu.
- * @param  hrtc  Wskaźnik na DS3231_Handle
+ * @param  hrtc  Wskaźnik na DS3231_t
+
  * @param  dt    Wskaźnik na strukturę DS3231_DateTime do wypełnienia
  * @return DS3231_OK lub kod błędu
  */
-DS3231_Status DS3231_clod_GetDateTime(DS3231_Handle *hrtc, DS3231_DateTime *dt);
+DS3231_Status DS3231_clod_GetDateTime(DS3231_t *hrtc, DS3231_DateTime *dt);
 
 /* --- Alarmy -------------------------------------------------------------- */
 
 /**
  * @brief  Ustawia alarm 1.
- * @param  hrtc   Wskaźnik na DS3231_Handle
+ * @param  hrtc   Wskaźnik na DS3231_t
+
  * @param  alarm  Wskaźnik na strukturę DS3231_Alarm1 z konfiguracją alarmu
  * @return DS3231_OK lub kod błędu
  */
-DS3231_Status DS3231_clod_SetAlarm1(DS3231_Handle *hrtc, const DS3231_Alarm1 *alarm);
+DS3231_Status DS3231_clod_SetAlarm1(DS3231_t *hrtc, const DS3231_Alarm1 *alarm);
 
 /**
  * @brief  Ustawia alarm 2.
- * @param  hrtc   Wskaźnik na DS3231_Handle
+ * @param  hrtc   Wskaźnik na DS3231_t
+
  * @param  alarm  Wskaźnik na strukturę DS3231_Alarm2 z konfiguracją alarmu
  * @return DS3231_OK lub kod błędu
  */
-DS3231_Status DS3231_clod_SetAlarm2(DS3231_Handle *hrtc, const DS3231_Alarm2 *alarm);
+DS3231_Status DS3231_clod_SetAlarm2(DS3231_t *hrtc, const DS3231_Alarm2 *alarm);
 
 /**
  * @brief  Odczytuje konfigurację alarmu 1.
- * @param  hrtc   Wskaźnik na DS3231_Handle
+ * @param  hrtc   Wskaźnik na DS3231_t
+
  * @param  alarm  Wskaźnik na strukturę DS3231_Alarm1 do wypełnienia
  * @return DS3231_OK lub kod błędu
  */
-DS3231_Status DS3231_clod_GetAlarm1(DS3231_Handle *hrtc, DS3231_Alarm1 *alarm);
+DS3231_Status DS3231_clod_GetAlarm1(DS3231_t *hrtc, DS3231_Alarm1 *alarm);
 
 /**
  * @brief  Odczytuje konfigurację alarmu 2.
- * @param  hrtc   Wskaźnik na DS3231_Handle
+ * @param  hrtc   Wskaźnik na DS3231_t
+
  * @param  alarm  Wskaźnik na strukturę DS3231_Alarm2 do wypełnienia
  * @return DS3231_OK lub kod błędu
  */
-DS3231_Status DS3231_clod_GetAlarm2(DS3231_Handle *hrtc, DS3231_Alarm2 *alarm);
+DS3231_Status DS3231_clod_GetAlarm2(DS3231_t *hrtc, DS3231_Alarm2 *alarm);
 
 /* --- Przerwania ---------------------------------------------------------- */
 
 /**
  * @brief  Włącza przerwanie od alarmu 1 (pin INT/SQW).
  * @note   Ustawia INTCN=1, A1IE=1. Wyjście SQW jest wyłączone.
- * @param  hrtc  Wskaźnik na DS3231_Handle
+ * @param  hrtc  Wskaźnik na DS3231_t
+
  * @return DS3231_OK lub kod błędu
  */
-DS3231_Status DS3231_clod_EnableAlarm1Interrupt(DS3231_Handle *hrtc);
+DS3231_Status DS3231_clod_EnableAlarm1Interrupt(DS3231_t *hrtc);
 
 /**
  * @brief  Wyłącza przerwanie od alarmu 1.
- * @param  hrtc  Wskaźnik na DS3231_Handle
+ * @param  hrtc  Wskaźnik na DS3231_t
+
  * @return DS3231_OK lub kod błędu
  */
-DS3231_Status DS3231_clod_DisableAlarm1Interrupt(DS3231_Handle *hrtc);
+DS3231_Status DS3231_clod_DisableAlarm1Interrupt(DS3231_t *hrtc);
 
 /**
  * @brief  Włącza przerwanie od alarmu 2 (pin INT/SQW).
  * @note   Ustawia INTCN=1, A2IE=1.
- * @param  hrtc  Wskaźnik na DS3231_Handle
+ * @param  hrtc  Wskaźnik na DS3231_t
+
  * @return DS3231_OK lub kod błędu
  */
-DS3231_Status DS3231_clod_EnableAlarm2Interrupt(DS3231_Handle *hrtc);
+DS3231_Status DS3231_clod_EnableAlarm2Interrupt(DS3231_t *hrtc);
 
 /**
  * @brief  Wyłącza przerwanie od alarmu 2.
- * @param  hrtc  Wskaźnik na DS3231_Handle
+ * @param  hrtc  Wskaźnik na DS3231_t
+
  * @return DS3231_OK lub kod błędu
  */
-DS3231_Status DS3231_clod_DisableAlarm2Interrupt(DS3231_Handle *hrtc);
+DS3231_Status DS3231_clod_DisableAlarm2Interrupt(DS3231_t *hrtc);
 
 /**
  * @brief  Sprawdza i czyści flagi alarmów. Wywoływać w handlerze przerwania.
- * @param  hrtc       Wskaźnik na DS3231_Handle
- * @param  alarm1_set Wskaźnik na bool – ustawiany na true jeśli wyzwolił alarm 1
- * @param  alarm2_set Wskaźnik na bool – ustawiany na true jeśli wyzwolił alarm 2
+ * @param  hrtc       Wskaźnik na DS3231_t
+ * @note   Wynik zapisywany jest do hrtc->DS3231_IRQ_Flag
+ *         (DS3231_IRQ_ALARM1 i/lub DS3231_IRQ_ALARM2).
  * @return DS3231_OK lub kod błędu
  */
-DS3231_Status DS3231_clod_CheckAndClearAlarmFlags(DS3231_Handle *hrtc,
-                                                  bool *alarm1_set,
-                                                  bool *alarm2_set);
+DS3231_Status DS3231_clod_CheckAndClearAlarmFlags(DS3231_t *hrtc);
 
 /* --- Wyjście fali prostokątnej (SQW) ------------------------------------ */
 
 /**
  * @brief  Włącza wyjście fali prostokątnej na pinie INT/SQW.
  * @note   Ustawia INTCN=0. Przerwania alarmów są wyłączone (pin = SQW).
- * @param  hrtc  Wskaźnik na DS3231_Handle
+ * @param  hrtc  Wskaźnik na DS3231_t
  * @param  freq  Żądana częstotliwość
  * @return DS3231_OK lub kod błędu
  */
-DS3231_Status DS3231_clod_EnableSQW(DS3231_Handle *hrtc, DS3231_SqwFreq freq);
+DS3231_Status DS3231_clod_EnableSQW(DS3231_t *hrtc, DS3231_SqwFreq freq);
 
 /**
  * @brief  Wyłącza wyjście fali prostokątnej (przywraca tryb interrupt).
- * @param  hrtc  Wskaźnik na DS3231_Handle
+ * @param  hrtc  Wskaźnik na DS3231_t
  * @return DS3231_OK lub kod błędu
  */
-DS3231_Status DS3231_clod_DisableSQW(DS3231_Handle *hrtc);
+DS3231_Status DS3231_clod_DisableSQW(DS3231_t *hrtc);
 
 /**
  * @brief  Włącza/wyłącza wyjście SQW w trybie zasilania bateryjnego (BBSQW).
- * @param  hrtc   Wskaźnik na DS3231_Handle
+ * @param  hrtc   Wskaźnik na DS3231_t
  * @param  enable true = SQW aktywne gdy VCC < VPF; false = INT/SQW w stanie Hi-Z
  * @return DS3231_OK lub kod błędu
  */
-DS3231_Status DS3231_clod_SetBatterySQW(DS3231_Handle *hrtc, bool enable);
+DS3231_Status DS3231_clod_SetBatterySQW(DS3231_t *hrtc, bool enable);
 
 /* --- Wyjście 32kHz ------------------------------------------------------- */
 
 /**
  * @brief  Włącza/wyłącza wyjście 32kHz.
- * @param  hrtc   Wskaźnik na DS3231_Handle
+ * @param  hrtc   Wskaźnik na DS3231_t
  * @param  enable true = wyjście aktywne
  * @return DS3231_OK lub kod błędu
  */
-DS3231_Status DS3231_clod_Set32kHzOutput(DS3231_Handle *hrtc, bool enable);
+DS3231_Status DS3231_clod_Set32kHzOutput(DS3231_t *hrtc, bool enable);
 
 /* --- Temperatura --------------------------------------------------------- */
 
 /**
  * @brief  Odczytuje temperaturę z wewnętrznego sensora DS3231.
  * @note   Rozdzielczość 0.25°C. Aktualizacja co 64 s lub po konwersji ręcznej.
- * @param  hrtc  Wskaźnik na DS3231_Handle
+ * @param  hrtc  Wskaźnik na DS3231_t
  * @param  temp  Wskaźnik na float, wynik w °C
  * @return DS3231_OK lub kod błędu
  */
-DS3231_Status DS3231_clod_GetTemperature(DS3231_Handle *hrtc, float *temp);
+DS3231_Status DS3231_clod_GetTemperature(DS3231_t *hrtc, float *temp);
 
 /**
  * @brief  Wymusza natychmiastową konwersję temperatury i aktualizację TCXO.
  * @note   Blokuje do momentu zakończenia (~200ms) lub zwraca DS3231_ERR_BUSY.
- * @param  hrtc  Wskaźnik na DS3231_Handle
+ * @param  hrtc  Wskaźnik na DS3231_t
  * @return DS3231_OK lub DS3231_ERR_BUSY / DS3231_ERR_I2C
  */
-DS3231_Status DS3231_clod_ForceTemperatureConversion(DS3231_Handle *hrtc);
+DS3231_Status DS3231_clod_ForceTemperatureConversion(DS3231_t *hrtc);
 
 /* --- Aging Offset -------------------------------------------------------- */
 
@@ -363,62 +382,69 @@ DS3231_Status DS3231_clod_ForceTemperatureConversion(DS3231_Handle *hrtc);
  * @brief  Ustawia rejestr Aging Offset (korekcja częstotliwości oscylatora).
  * @note   Wartość w kodzie U2 (–128 do +127). +1 LSB ≈ +0.1 ppm przy 25°C.
  *         Wartości dodatnie zwalniają oscylator, ujemne przyspieszają.
- * @param  hrtc   Wskaźnik na DS3231_Handle
+ * @param  hrtc   Wskaźnik na DS3231_t
+
  * @param  offset Wartość korekcji (int8_t)
  * @return DS3231_OK lub kod błędu
  */
-DS3231_Status DS3231_clod_SetAgingOffset(DS3231_Handle *hrtc, int8_t offset);
+DS3231_Status DS3231_clod_SetAgingOffset(DS3231_t*hrtc, int8_t offset);
 
 /**
  * @brief  Odczytuje rejestr Aging Offset.
- * @param  hrtc   Wskaźnik na DS3231_Handle
+ * @param  hrtc   Wskaźnik na DS3231_t
+
  * @param  offset Wskaźnik na int8_t do wypełnienia
  * @return DS3231_OK lub kod błędu
  */
-DS3231_Status DS3231_clod_GetAgingOffset(DS3231_Handle *hrtc, int8_t *offset);
+DS3231_Status DS3231_clod_GetAgingOffset(DS3231_t*hrtc, int8_t *offset);
 
 /* --- Status i diagnostyka ------------------------------------------------ */
 
 /**
  * @brief  Sprawdza, czy oscylator był zatrzymany (flaga OSF).
- * @param  hrtc     Wskaźnik na DS3231_Handle
+ * @param  hrtc     Wskaźnik na DS3231_t
+
  * @param  osf_set  Wskaźnik na bool – true jeśli OSF=1 (czas może być nieważny)
  * @return DS3231_OK lub kod błędu
  */
-DS3231_Status DS3231_clod_GetOscillatorStopFlag(DS3231_Handle *hrtc, bool *osf_set);
+DS3231_Status DS3231_clod_GetOscillatorStopFlag(DS3231_t *hrtc, bool *osf_set);
 
 /**
  * @brief  Kasuje flagę OSF.
- * @param  hrtc  Wskaźnik na DS3231_Handle
+ * @param  hrtc  Wskaźnik na DS3231_t
+
  * @return DS3231_OK lub kod błędu
  */
-DS3231_Status DS3231_clod_ClearOscillatorStopFlag(DS3231_Handle *hrtc);
+DS3231_Status DS3231_clod_ClearOscillatorStopFlag(DS3231_t *hrtc);
 
 /**
  * @brief  Włącza/wyłącza oscylator (bit EOSC).
  * @note   EOSC=0 → oscylator uruchomiony (POR default).
  *         EOSC=1 → oscylator zatrzymany gdy działa z VBAT (oszczędzanie baterii).
- * @param  hrtc   Wskaźnik na DS3231_Handle
+ * @param  hrtc   Wskaźnik na DS3231_t
+
  * @param  enable true = oscylator uruchomiony
  * @return DS3231_OK lub kod błędu
  */
-DS3231_Status DS3231_clod_SetOscillator(DS3231_Handle *hrtc, bool enable);
+DS3231_Status DS3231_clod_SetOscillator(DS3231_t *hrtc, bool enable);
 
 /**
  * @brief  Odczytuje bajt rejestru kontrolnego.
- * @param  hrtc   Wskaźnik na DS3231_Handle
+ * @param  hrtc   Wskaźnik na DS3231_t
+
  * @param  value  Wskaźnik na uint8_t do wypełnienia
  * @return DS3231_OK lub kod błędu
  */
-DS3231_Status DS3231_clod_ReadControlReg(DS3231_Handle *hrtc, uint8_t *value);
+DS3231_Status DS3231_clod_ReadControlReg(DS3231_t *hrtc, uint8_t *value);
 
 /**
  * @brief  Odczytuje bajt rejestru statusu.
- * @param  hrtc   Wskaźnik na DS3231_Handle
+ * @param  hrtc   Wskaźnik na DS3231_t
+
  * @param  value  Wskaźnik na uint8_t do wypełnienia
  * @return DS3231_OK lub kod błędu
  */
-DS3231_Status DS3231_clod_ReadStatusReg(DS3231_Handle *hrtc, uint8_t *value);
+DS3231_Status DS3231_clod_ReadStatusReg(DS3231_t *hrtc, uint8_t *value);
 
 /* =========================================================================
  * Pomocnicze makra BCD
