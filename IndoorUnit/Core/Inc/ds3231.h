@@ -101,17 +101,28 @@ typedef enum {
     DS3231_ALARM_DAY_MATCH          // alarm w konkretny dzień tygodnia
 } DS3231_AlarmMode_t;
 
+/** @brief IRQ flag bitmask: no alarm triggered */
+#define DS3231_IRQ_NONE    0x00U
+/** @brief IRQ flag bitmask: Alarm 1 triggered */
+#define DS3231_IRQ_ALARM1  (1U << 0)
+/** @brief IRQ flag bitmask: Alarm 2 triggered */
+#define DS3231_IRQ_ALARM2  (1U << 1)
+
 /**
  * @brief Main DS3231 device handle.
+ *
+ * One instance per physical DS3231 module.
+ * @note DS3231_IRQ_Flag is updated by DS3231_CheckAndClearAlarmFlags().
+ *       Use DS3231_IRQ_ALARM1 / DS3231_IRQ_ALARM2 masks to check which alarm fired.
  */
 typedef struct {
-    I2C_HandleTypeDef *hi2c;
-    GPIO_TypeDef *sqw_port;
-    uint16_t sqw_pin;
-    DS3231_RTCDateTime_t time;
-    DS3231_IOMODE_t mode;
-    uint8_t address;
-    uint8_t DS3231_IRQ_Flag; // Flaga przerwania alarmu
+    I2C_HandleTypeDef *hi2c;       /**< Pointer to HAL I2C handle */
+    GPIO_TypeDef *sqw_port;        /**< SQW/INT pin GPIO port */
+    uint16_t sqw_pin;              /**< SQW/INT pin number */
+    DS3231_RTCDateTime_t time;     /**< Cached date/time */
+    DS3231_IOMODE_t mode;          /**< I/O mode (blocking/IT/DMA) */
+    uint8_t address;               /**< I2C address (7-bit shifted left by 1) */
+    uint8_t DS3231_IRQ_Flag;       /**< Alarm IRQ source flags (DS3231_IRQ_ALARM1 | DS3231_IRQ_ALARM2) */
 } DS3231_t;
 
 
@@ -139,20 +150,34 @@ HAL_StatusTypeDef DS3231_ReadTime(DS3231_t *dev);
 HAL_StatusTypeDef DS3231_ConvertTemperature(DS3231_t *dev);
 
 /**
- * @brief Enable or disable the oscillator.
+ * @brief Enable the oscillator.
+ * @note  EOSC bit is active-low: EOSC=0 means oscillator running.
+ *        EOSC=1 stops the oscillator when running on VBAT only.
  * @param dev Pointer to the DS3231 device handle.
- * @param enable 1 to enable, 0 to disable.
  * @return HAL status.
  */
-HAL_StatusTypeDef DS3231_Oscillator(DS3231_t *dev, uint8_t enable);
+HAL_StatusTypeDef DS3231_EnableOscillator(DS3231_t *dev);
 
 /**
- * @brief Enable or disable battery-backed square wave output.
+ * @brief Disable the oscillator (sets EOSC=1, stops oscillator on VBAT).
  * @param dev Pointer to the DS3231 device handle.
- * @param enable 1 to enable, 0 to disable.
  * @return HAL status.
  */
-HAL_StatusTypeDef DS3231_BatteryBackerSQW(DS3231_t *dev, uint8_t enable);
+HAL_StatusTypeDef DS3231_DisableOscillator(DS3231_t *dev);
+
+/**
+ * @brief Enable battery-backed square wave output.
+ * @param dev Pointer to the DS3231 device handle.
+ * @return HAL status.
+ */
+HAL_StatusTypeDef DS3231_EnableBatteryBackedSQW(DS3231_t *dev);
+
+/**
+ * @brief Disable battery-backed square wave output.
+ * @param dev Pointer to the DS3231 device handle.
+ * @return HAL status.
+ */
+HAL_StatusTypeDef DS3231_DisableBatteryBackedSQW(DS3231_t *dev);
 
 /**
  * @brief Configure the square wave output frequency.
@@ -163,21 +188,37 @@ HAL_StatusTypeDef DS3231_BatteryBackerSQW(DS3231_t *dev, uint8_t enable);
 HAL_StatusTypeDef DS3231_SetSQWRate(DS3231_t *dev, DS3231_SQWRATE_t rate);
 
 /**
- * @brief Enable or disable interrupt output mode (INTCN bit).
+ * @brief Enable interrupt output mode (INTCN=1).
+ * @note  When INTCN=1, the INT/SQW pin outputs alarm interrupts.
+ *        When INTCN=0, the pin outputs a square wave (SQW).
  * @param dev Pointer to the DS3231 device handle.
- * @param enable 1 to enable, 0 to disable.
  * @return HAL status.
  */
-HAL_StatusTypeDef DS3231_EnableInterrupt(DS3231_t *dev, uint8_t enable);
+HAL_StatusTypeDef DS3231_EnableInterrupt(DS3231_t *dev);
 
 /**
- * @brief Enable or disable a selected alarm interrupt.
+ * @brief Disable interrupt output mode (INTCN=0, pin reverts to SQW output).
  * @param dev Pointer to the DS3231 device handle.
- * @param enable 1 to enable, 0 to disable.
+ * @return HAL status.
+ */
+HAL_StatusTypeDef DS3231_DisableInterrupt(DS3231_t *dev);
+
+/**
+ * @brief Enable a selected alarm interrupt.
+ * @note  Also sets INTCN=1 so that the INT/SQW pin works as interrupt output.
+ * @param dev Pointer to the DS3231 device handle.
  * @param alarmNumber Alarm index (1 or 2).
  * @return HAL status.
  */
-HAL_StatusTypeDef DS3231_Alarm_InterruptEnable(DS3231_t *dev, uint8_t enable, uint8_t alarmNumber);
+HAL_StatusTypeDef DS3231_EnableAlarmInterrupt(DS3231_t *dev, uint8_t alarmNumber);
+
+/**
+ * @brief Disable a selected alarm interrupt.
+ * @param dev Pointer to the DS3231 device handle.
+ * @param alarmNumber Alarm index (1 or 2).
+ * @return HAL status.
+ */
+HAL_StatusTypeDef DS3231_DisableAlarmInterrupt(DS3231_t *dev, uint8_t alarmNumber);
 
 /**
  * @brief Program alarm time registers.
@@ -200,19 +241,28 @@ HAL_StatusTypeDef DS3231_SetAlarm(DS3231_t *dev, DS3231_RTCAlarmTime *alarm, DS3
 HAL_StatusTypeDef DS3231_TurnOnOscillator(DS3231_t *dev, uint8_t enable, uint8_t batteryBackedSqw, DS3231_SQWRATE_t frequency);
 
 /**
- * @brief Enable or disable 32 kHz output.
+ * @brief Enable 32 kHz output.
  * @param dev Pointer to the DS3231 device handle.
- * @param enable 1 to enable, 0 to disable.
  * @return HAL status.
  */
-HAL_StatusTypeDef DS3231_Enable32kHzOutput(DS3231_t *dev, uint8_t enable);
+HAL_StatusTypeDef DS3231_Enable32kHzOutput(DS3231_t *dev);
 
 /**
- * @brief Clear alarm flags in the DS3231 status register.
+ * @brief Disable 32 kHz output.
  * @param dev Pointer to the DS3231 device handle.
  * @return HAL status.
  */
-HAL_StatusTypeDef DS3231_ClearAlarmFlags(DS3231_t *dev);
+HAL_StatusTypeDef DS3231_Disable32kHzOutput(DS3231_t *dev);
+
+/**
+ * @brief Check which alarm(s) fired and clear their flags. Call in ISR handler.
+ * @note  After calling, check dev->DS3231_IRQ_Flag with DS3231_IRQ_ALARM1
+ *        and/or DS3231_IRQ_ALARM2 masks to determine the interrupt source.
+ *        Only the flags that were set are cleared — the other alarm flag is preserved.
+ * @param dev Pointer to the DS3231 device handle.
+ * @return HAL status.
+ */
+HAL_StatusTypeDef DS3231_CheckAndClearAlarmFlags(DS3231_t *dev);
 
 /**
  * @brief Read date/time from the DS3231 into the provided structure.

@@ -101,26 +101,45 @@ HAL_StatusTypeDef DS3231_ConvertTemperature(DS3231_t *dev)
 }
 
 /**
- * @brief Enable or disable the oscillator.
+ * @brief Enable the oscillator.
  * @param dev Pointer to the DS3231 device handle.
- * @param enable 1 to enable, 0 to disable.
  * @return HAL status.
  * @note EOSC bit is inverted: 0=enabled, 1=disabled
  */
-HAL_StatusTypeDef DS3231_Oscillator(DS3231_t *dev, uint8_t enable)
+HAL_StatusTypeDef DS3231_EnableOscillator(DS3231_t *dev)
 {
-    return DS3231_WriteControlBit(dev, DS3231_CTRL_EOSC, enable ? 0U : 1U);
+    return DS3231_WriteControlBit(dev, DS3231_CTRL_EOSC, 0U);
 }
 
 /**
- * @brief Enable or disable battery-backed square wave output.
+ * @brief Disable the oscillator.
  * @param dev Pointer to the DS3231 device handle.
- * @param enable 1 to enable, 0 to disable.
+ * @return HAL status.
+ * @note EOSC bit is inverted: 0=enabled, 1=disabled
+ */
+HAL_StatusTypeDef DS3231_DisableOscillator(DS3231_t *dev)
+{
+    return DS3231_WriteControlBit(dev, DS3231_CTRL_EOSC, 1U);
+}
+
+/**
+ * @brief Enable battery-backed square wave output.
+ * @param dev Pointer to the DS3231 device handle.
  * @return HAL status.
  */
-HAL_StatusTypeDef DS3231_BatteryBackerSQW(DS3231_t *dev, uint8_t enable)
+HAL_StatusTypeDef DS3231_EnableBatteryBackedSQW(DS3231_t *dev)
 {
-    return DS3231_WriteControlBit(dev, DS3231_CTRL_BBSQW, enable);
+    return DS3231_WriteControlBit(dev, DS3231_CTRL_BBSQW, 1U);
+}
+
+/**
+ * @brief Disable battery-backed square wave output.
+ * @param dev Pointer to the DS3231 device handle.
+ * @return HAL status.
+ */
+HAL_StatusTypeDef DS3231_DisableBatteryBackedSQW(DS3231_t *dev)
+{
+    return DS3231_WriteControlBit(dev, DS3231_CTRL_BBSQW, 0U);
 }
 
 /**
@@ -136,24 +155,32 @@ HAL_StatusTypeDef DS3231_SetSQWRate(DS3231_t *dev, DS3231_SQWRATE_t rate)
 }
 
 /**
- * @brief Enable or disable interrupt output mode (INTCN bit).
+ * @brief Enable interrupt output mode (INTCN bit).
  * @param dev Pointer to the DS3231 device handle.
- * @param enable 1 to enable, 0 to disable.
  * @return HAL status.
  */
-HAL_StatusTypeDef DS3231_EnableInterrupt(DS3231_t *dev, uint8_t enable)
+HAL_StatusTypeDef DS3231_EnableInterrupt(DS3231_t *dev)
 {
-    return DS3231_WriteControlBit(dev, DS3231_CTRL_INTCN, enable);
+    return DS3231_WriteControlBit(dev, DS3231_CTRL_INTCN, 1U);
 }
 
 /**
- * @brief Enable or disable a selected alarm interrupt.
+ * @brief Disable interrupt output mode (INTCN bit).
  * @param dev Pointer to the DS3231 device handle.
- * @param enable 1 to enable, 0 to disable.
+ * @return HAL status.
+ */
+HAL_StatusTypeDef DS3231_DisableInterrupt(DS3231_t *dev)
+{
+    return DS3231_WriteControlBit(dev, DS3231_CTRL_INTCN, 0U);
+}
+
+/**
+ * @brief Enable a selected alarm interrupt.
+ * @param dev Pointer to the DS3231 device handle.
  * @param alarmNumber Alarm index (1 or 2).
  * @return HAL status.
  */
-HAL_StatusTypeDef DS3231_Alarm_InterruptEnable(DS3231_t *dev, uint8_t enable, uint8_t alarmNumber)
+HAL_StatusTypeDef DS3231_EnableAlarmInterrupt(DS3231_t *dev, uint8_t alarmNumber)
 {
     HAL_StatusTypeDef status = HAL_OK;
 
@@ -161,17 +188,40 @@ HAL_StatusTypeDef DS3231_Alarm_InterruptEnable(DS3231_t *dev, uint8_t enable, ui
         return HAL_ERROR;
     }
 
-    status = DS3231_EnableInterrupt(dev, 1);
+    status = DS3231_EnableInterrupt(dev);
     if (status != HAL_OK) {
         return status;
     }
 
     if (alarmNumber == 1) {
-        return DS3231_WriteControlBit(dev, DS3231_CTRL_A1IE, enable);
+        return DS3231_WriteControlBit(dev, DS3231_CTRL_A1IE, 1U);
     }
 
     if (alarmNumber == 2) {
-        return DS3231_WriteControlBit(dev, DS3231_CTRL_A2IE, enable);
+        return DS3231_WriteControlBit(dev, DS3231_CTRL_A2IE, 1U);
+    }
+
+    return HAL_ERROR;
+}
+
+/**
+ * @brief Disable a selected alarm interrupt.
+ * @param dev Pointer to the DS3231 device handle.
+ * @param alarmNumber Alarm index (1 or 2).
+ * @return HAL status.
+ */
+HAL_StatusTypeDef DS3231_DisableAlarmInterrupt(DS3231_t *dev, uint8_t alarmNumber)
+{
+    if (dev == NULL) {
+        return HAL_ERROR;
+    }
+
+    if (alarmNumber == 1) {
+        return DS3231_WriteControlBit(dev, DS3231_CTRL_A1IE, 0U);
+    }
+
+    if (alarmNumber == 2) {
+        return DS3231_WriteControlBit(dev, DS3231_CTRL_A2IE, 0U);
     }
 
     return HAL_ERROR;
@@ -312,7 +362,7 @@ HAL_StatusTypeDef DS3231_SetAlarm(DS3231_t *dev, DS3231_RTCAlarmTime *alarm, DS3
     }
 
     /* Ustawienie Control Register (0x0E) – włączamy alarm + tryb pinu z dev->mode */
-    status = DS3231_Alarm_InterruptEnable(dev, 1, alarmNumber);
+    status = DS3231_EnableAlarmInterrupt(dev, alarmNumber);
     if (status != HAL_OK) {
         return status;
     }
@@ -336,22 +386,22 @@ HAL_StatusTypeDef DS3231_TurnOnOscillator(DS3231_t *dev, uint8_t enable, uint8_t
         return HAL_ERROR;
     }
 
-    status = DS3231_BatteryBackerSQW(dev, batteryBackedSqw ? 1U : 0U);
+    status = batteryBackedSqw ? DS3231_EnableBatteryBackedSQW(dev) : DS3231_DisableBatteryBackedSQW(dev);
     if (status != HAL_OK) {
         return status;
     }
 
     if (enable != 0U) {
-        status = DS3231_WriteControlBit(dev, DS3231_CTRL_EOSC, 0U);
+        status = DS3231_EnableOscillator(dev);
         if (status != HAL_OK) {
             return status;
         }
-        status = DS3231_EnableInterrupt(dev, 0);
+        status = DS3231_DisableInterrupt(dev);
         if (status != HAL_OK) {
             return status;
         }
     } else {
-        status = DS3231_WriteControlBit(dev, DS3231_CTRL_EOSC, 1U);
+        status = DS3231_DisableOscillator(dev);
         if (status != HAL_OK) {
             return status;
         }
@@ -361,12 +411,35 @@ HAL_StatusTypeDef DS3231_TurnOnOscillator(DS3231_t *dev, uint8_t enable, uint8_t
 }
 
 /**
- * @brief Enable or disable 32 kHz output.
+ * @brief Enable 32 kHz output.
  * @param dev Pointer to the DS3231 device handle.
- * @param enable 1 to enable, 0 to disable.
  * @return HAL status.
  */
-HAL_StatusTypeDef DS3231_Enable32kHzOutput(DS3231_t *dev, uint8_t enable)
+HAL_StatusTypeDef DS3231_Enable32kHzOutput(DS3231_t *dev)
+{
+    uint8_t statusReg = 0U;
+    HAL_StatusTypeDef status = HAL_OK;
+
+    if (dev == NULL) {
+        return HAL_ERROR;
+    }
+
+    status = DS3231_GetStatusRegister(dev, &statusReg);
+    if (status != HAL_OK) {
+        return status;
+    }
+
+    statusReg |= DS3231_STAT_EN32KHZ;
+
+    return DS3231_SetStatusRegister(dev, statusReg);
+}
+
+/**
+ * @brief Disable 32 kHz output.
+ * @param dev Pointer to the DS3231 device handle.
+ * @return HAL status.
+ */
+HAL_StatusTypeDef DS3231_Disable32kHzOutput(DS3231_t *dev)
 {
     uint8_t statusReg = 0U;
     HAL_StatusTypeDef status = HAL_OK;
@@ -381,19 +454,17 @@ HAL_StatusTypeDef DS3231_Enable32kHzOutput(DS3231_t *dev, uint8_t enable)
     }
 
     statusReg &= (uint8_t)(~DS3231_STAT_EN32KHZ);
-    if (enable != 0U) {
-        statusReg |= DS3231_STAT_EN32KHZ;
-    }
 
     return DS3231_SetStatusRegister(dev, statusReg);
 }
 
 /**
- * @brief Clear alarm flags in the DS3231 status register.
+ * @brief Check which alarm(s) fired, store result in dev->DS3231_IRQ_Flag,
+ *        then clear only the triggered alarm flags in the status register.
  * @param dev Pointer to the DS3231 device handle.
  * @return HAL status.
  */
-HAL_StatusTypeDef DS3231_ClearAlarmFlags(DS3231_t *dev)
+HAL_StatusTypeDef DS3231_CheckAndClearAlarmFlags(DS3231_t *dev)
 {
     uint8_t statusReg = 0U;
     HAL_StatusTypeDef status = HAL_OK;
@@ -402,15 +473,29 @@ HAL_StatusTypeDef DS3231_ClearAlarmFlags(DS3231_t *dev)
         return HAL_ERROR;
     }
 
+    /* Reset the software flag */
+    dev->DS3231_IRQ_Flag = DS3231_IRQ_NONE;
+
     status = DS3231_GetStatusRegister(dev, &statusReg);
     if (status != HAL_OK) {
         return status;
     }
 
-    // Clear both alarm flags (A1F and A2F)
-    statusReg &= (uint8_t)(~(DS3231_STAT_A1F | DS3231_STAT_A2F));
+    /* Detect which alarm(s) fired */
+    if ((statusReg & DS3231_STAT_A1F) != 0U) {
+        dev->DS3231_IRQ_Flag |= DS3231_IRQ_ALARM1;
+    }
+    if ((statusReg & DS3231_STAT_A2F) != 0U) {
+        dev->DS3231_IRQ_Flag |= DS3231_IRQ_ALARM2;
+    }
 
-    return DS3231_SetStatusRegister(dev, statusReg);
+    /* Clear only the flags that were set */
+    if (dev->DS3231_IRQ_Flag != DS3231_IRQ_NONE) {
+        statusReg &= (uint8_t)(~(DS3231_STAT_A1F | DS3231_STAT_A2F));
+        status = DS3231_SetStatusRegister(dev, statusReg);
+    }
+
+    return status;
 }
 
 
@@ -512,22 +597,39 @@ HAL_StatusTypeDef DS3231_Init(DS3231_t *dev, I2C_HandleTypeDef *hi2c, uint8_t ad
         return HAL_ERROR;
     }
 
-    HAL_StatusTypeDef status = HAL_OK;
-    status = DS3231_GetStatusRegister(dev, (uint8_t *)DS3231_REG_STATUS);
-    if(status != HAL_OK)
-    {
-        return status;
-    }
+    /* Fill the handle struct BEFORE any I2C communication */
     dev->hi2c = hi2c;
     dev->address = (uint8_t)(address << 1);
     dev->mode = DS3231_BLOKCING_MODE;
-    dev->DS3231_IRQ_Flag = 0;
+    dev->DS3231_IRQ_Flag = DS3231_IRQ_NONE;
     dev->sqw_port = sqw_port;
     dev->sqw_pin = sqw_pin;
 
-    status = DS3231_ClearAlarmFlags(dev);
-    status = DS3231_Oscillator(dev, 0); // Enable oscillator
+    /* Verify I2C communication by reading the control register */
+    uint8_t ctrlReg = 0U;
+    HAL_StatusTypeDef status = DS3231_GetControlRegister(dev, &ctrlReg);
+    if (status != HAL_OK) {
+        return status;
+    }
 
+    /*
+     * Default configuration at init:
+     *  - EOSC  = 0  -> oscillator running
+     *  - INTCN = 1  -> INT/SQW pin as interrupt output (POR default)
+     *  - A1IE  = 0, A2IE = 0 -> alarm interrupts disabled
+     *  - BBSQW = 0  -> SQW disabled on battery
+     *  - RS2=1, RS1=1 -> SQW 8.192 kHz (irrelevant when INTCN=1)
+     *
+     * Time registers are NOT reset — preserved if oscillator was running.
+     */
+    ctrlReg = DS3231_CTRL_INTCN | DS3231_CTRL_RS2 | DS3231_CTRL_RS1;
+    status = DS3231_SetControlRegister(dev, ctrlReg);
+    if (status != HAL_OK) {
+        return status;
+    }
+
+    /* Clear any pending alarm flags */
+    status = DS3231_CheckAndClearAlarmFlags(dev);
 
     return status;
 }
