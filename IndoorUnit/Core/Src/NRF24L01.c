@@ -81,10 +81,11 @@ static HAL_StatusTypeDef write_payload(NRF24_Handle_t *handle, uint8_t cmd, cons
     HAL_StatusTypeDef ret = spi_transfer(handle, &tx, &rx, 1);
 
     if (ret == HAL_OK) {
-        ret = spi_transfer(handle, (uint8_t *)buf, NULL, len);
+        uint8_t dummy[NRF24_MAX_PAYLOAD_SIZE];
+        ret = spi_transfer(handle, (uint8_t *)buf, dummy, len);
     }
     csn_high(handle);
-return ret;
+    return ret;
 }
 
 /**
@@ -146,11 +147,24 @@ HAL_StatusTypeDef NRF24_Init(NRF24_Handle_t *handle, SPI_HandleTypeDef *hspi, GP
     ce_low(handle);
     csn_high(handle);
 
-    // Power on reset delay
-    handle->delay_us(0x05); // 5µs delay
+    // Power on reset delay - datasheet specifies device needs time after VDD ramp
+    handle->delay_us(5000); // 5ms delay for power-on reset
 
-    // Default configuration
+    // Send ACTIVATE command to enable FEATURE, DYNPD, ACK_PAYLOAD, etc.
+    // Required for nRF24L01 (not needed for nRF24L01+ but harmless)
+    NRF24_Activate(handle);
+
+    // Default configuration: CRC enabled (1 byte)
     HAL_StatusTypeDef status = NRF24_WriteReg(handle, NRF24_REG_CONFIG, 0x08); // EN_CRC
+    if (status != HAL_OK) return status;
+
+    // Set auto-acknowledgement for all pipes (datasheet default: 0x3F)
+    status = NRF24_WriteReg(handle, NRF24_REG_EN_AA, 0x3F);
+    if (status != HAL_OK) return status;
+
+    // Set auto retransmit: 500us delay, 3 retransmits
+    // ARD=500us gives enough time for ACK with any payload length
+    status = NRF24_SetAutoRetr(handle, 1, 3); // ARD=500us (1), ARC=3
     if (status != HAL_OK) return status;
 
     status = NRF24_SetAddressWidth(handle, NRF24_AW_5);
@@ -308,7 +322,7 @@ HAL_StatusTypeDef NRF24_SetMode(NRF24_Handle_t *handle, NRF24_Mode_t mode) {
             status = NRF24_WriteReg(handle, NRF24_REG_CONFIG, config);
             if (status != HAL_OK) return status;
             ce_low(handle);
-            handle->delay_us(0x4B0); // Tpd2stby max 1.5ms (1200µs as safe margin)
+            handle->delay_us(1500); // Tpd2stby max 1.5ms = 1500µs
         break;
 
         case NRF24_MODE_RX:
@@ -359,22 +373,21 @@ HAL_StatusTypeDef NRF24_SetDataRate(NRF24_Handle_t *handle, NRF24_DataRate_t rat
     uint8_t rf_setup;
     HAL_StatusTypeDef status = NRF24_ReadReg(handle, NRF24_REG_RF_SETUP, &rf_setup);
     if (status != HAL_OK) return status;
-    rf_setup &= ~(0x28); // Clear RF_DR_LOW and RF_DR_HIGH
+    rf_setup &= ~(0x28); // Clear RF_DR_LOW (bit 5) and RF_DR_HIGH (bit 3)
 
     switch (rate) {
         case NRF24_DR_250KBPS:
-            rf_setup |= 0x20;
-        break;
+            rf_setup |= 0x20; // RF_DR_LOW=1, RF_DR_HIGH=0 (nRF24L01+ only)
+            break;
 
         case NRF24_DR_2MBPS:
-            rf_setup |= 0x08;
-        break;
+            rf_setup |= 0x08; // RF_DR_LOW=0, RF_DR_HIGH=1
+            break;
 
         case NRF24_DR_1MBPS:
-            rf_setup |= 0x08;
         default:
-        // Default is 1Mbps
-        break;
+            // RF_DR_LOW=0, RF_DR_HIGH=0 → 1Mbps (no bits to set)
+            break;
     }
 
     return NRF24_WriteReg(handle, NRF24_REG_RF_SETUP, rf_setup);
@@ -471,17 +484,17 @@ HAL_StatusTypeDef NRF24_EnablePipe(NRF24_Handle_t *handle, uint8_t pipe, uint8_t
 * @return HAL status.
 */
 HAL_StatusTypeDef NRF24_SetRXAddress(NRF24_Handle_t *handle, uint8_t pipe, const uint8_t *addr, uint8_t len) {
-    if (handle == NULL || pipe > 0x05 || len > 0x05) {
+    if (handle == NULL || pipe > 0x05 || len > 0x05 || len == 0) {
         return HAL_ERROR;
     }
 
     if (pipe < 0x02) {
+        // Pipe 0 and 1 support full 3-5 byte addresses
         return NRF24_WriteRegs(handle, NRF24_REG_RX_ADDR_P0 + pipe, (uint8_t *)addr, len);
     } else {
+        // Pipes 2-5 only use LSByte; MSBytes shared with RX_ADDR_P1
         return NRF24_WriteReg(handle, NRF24_REG_RX_ADDR_P0 + pipe, addr[0]);
     }
-
-    return HAL_OK;
 }
 
 /**
@@ -538,12 +551,16 @@ HAL_StatusTypeDef NRF24_EnableDynamicPayload(NRF24_Handle_t *handle, uint8_t pip
     status = NRF24_WriteReg(handle, NRF24_REG_DYNPD, dynpd);
     if (status != HAL_OK) return status;
 
-    // Enable dynamic payload feature
+    // Update EN_DPL in FEATURE register based on whether any pipe uses DPL
     uint8_t feature;
     status = NRF24_ReadReg(handle, NRF24_REG_FEATURE, &feature);
     if (status != HAL_OK) return status;
 
-    feature |= 0x04; // EN_DPL
+    if (dynpd) {
+        feature |= NRF24_FEATURE_EN_DPL;
+    } else {
+        feature &= ~NRF24_FEATURE_EN_DPL;
+    }
 
     return NRF24_WriteReg(handle, NRF24_REG_FEATURE, feature);
 }
@@ -589,10 +606,10 @@ HAL_StatusTypeDef NRF24_ReadPayload(NRF24_Handle_t *handle, uint8_t *buf, uint8_
 * @return HAL status.
 */
 HAL_StatusTypeDef NRF24_WritePayload(NRF24_Handle_t *handle, const uint8_t *buf, uint8_t len) {
-    if(handle == NULL || buf == NULL) {
-        return HAL_ERROR; // Invalid handle
+    if(handle == NULL || buf == NULL || len == 0 || len > NRF24_MAX_PAYLOAD_SIZE) {
+        return HAL_ERROR;
     }
-return write_payload(handle, NRF24_CMD_W_TX_PAYLOAD, buf, len);
+    return write_payload(handle, NRF24_CMD_W_TX_PAYLOAD, buf, len);
 }
 
 /**
@@ -629,26 +646,23 @@ void NRF24_IRQ_Handler(NRF24_Handle_t *handle) {
     }
     uint8_t status = NRF24_GetStatus(handle);
 
-    switch (status) {
-        case NRF24_STATUS_RX_DR:
-            // Data received, user can handle
-        break;
-
-        case NRF24_STATUS_TX_DS:
-            // Data sent
-        break;
-
-        case NRF24_STATUS_MAX_RT:
-            // Max retransmits, flush TX
-            NRF24_FlushTX(handle);
-        break;
-        
-        default:
-
-        break;
+    // Use bitwise checks - multiple IRQ flags can be set simultaneously
+    if (status & NRF24_STATUS_MAX_RT) {
+        // Max retransmits reached - payload is NOT removed from TX FIFO
+        // Per datasheet: MAX_RT must be cleared to enable further communication
+        NRF24_FlushTX(handle);
     }
 
-    NRF24_ClearIRQ(handle, status & 0x70); // Clear flags
+    if (status & NRF24_STATUS_TX_DS) {
+        // Data sent successfully (ACK received if auto-ack enabled)
+    }
+
+    if (status & NRF24_STATUS_RX_DR) {
+        // Data received and ready in RX FIFO
+    }
+
+    // Clear all asserted IRQ flags by writing 1s to them
+    NRF24_ClearIRQ(handle, status & NRF24_STATUS_IRQ_MASK);
 }
 
 /**
@@ -701,9 +715,9 @@ HAL_StatusTypeDef NRF24_EnableDynAck(NRF24_Handle_t *handle, uint8_t enable) {
     if (status != HAL_OK) return status;
 
     if (enable) {
-        feature |= 0x01; // EN_DYN_ACK
+        feature |= NRF24_FEATURE_EN_DYN_ACK;
     } else {
-        feature &= ~0x01;
+        feature &= ~NRF24_FEATURE_EN_DYN_ACK;
     }
 
     return NRF24_WriteReg(handle, NRF24_REG_FEATURE, feature);
@@ -720,10 +734,10 @@ HAL_StatusTypeDef NRF24_EnableAckPay(NRF24_Handle_t *handle, uint8_t enable) {
     HAL_StatusTypeDef status = NRF24_ReadReg(handle, NRF24_REG_FEATURE, &feature);
 
     if (status != HAL_OK) return status;
-        if (enable) {
-    feature |= 0x02; // EN_ACK_PAY
+    if (enable) {
+        feature |= NRF24_FEATURE_EN_ACK_PAY;
     } else {
-     feature &= ~0x02;
+        feature &= ~NRF24_FEATURE_EN_ACK_PAY;
     }
 
     return NRF24_WriteReg(handle, NRF24_REG_FEATURE, feature);
@@ -737,13 +751,12 @@ HAL_StatusTypeDef NRF24_EnableAckPay(NRF24_Handle_t *handle, uint8_t enable) {
 * @return HAL status.
 */
 HAL_StatusTypeDef NRF24_WritePayloadNoAck(NRF24_Handle_t *handle, const uint8_t *buf, uint8_t len) {
-    if(handle == NULL || buf == NULL) {
-        return HAL_ERROR; // Invalid handle
+    if(handle == NULL || buf == NULL || len == 0 || len > NRF24_MAX_PAYLOAD_SIZE) {
+        return HAL_ERROR;
     }
 
-    HAL_StatusTypeDef status = NRF24_EnableDynAck(handle, 1);
-    if (status != HAL_OK) return status;
-    
+    // EN_DYN_ACK in FEATURE register must be set before using this command.
+    // Call NRF24_EnableDynAck(handle, 1) once during setup, not per-packet.
     return write_payload(handle, NRF24_CMD_W_TX_PAYLOAD_NOACK, buf, len);
 }
 
@@ -756,11 +769,141 @@ HAL_StatusTypeDef NRF24_WritePayloadNoAck(NRF24_Handle_t *handle, const uint8_t 
 * @return HAL status.
 */
 HAL_StatusTypeDef NRF24_WriteAckPayload(NRF24_Handle_t *handle, uint8_t pipe, const uint8_t *buf, uint8_t len) {
-    if (pipe > 5 || handle == NULL || buf == NULL){
+    if (pipe > 5 || handle == NULL || buf == NULL || len == 0 || len > NRF24_MAX_PAYLOAD_SIZE){
         return HAL_ERROR;
-    }     
-    HAL_StatusTypeDef status = NRF24_EnableAckPay(handle, 1);
-    if (status != HAL_OK) return status;
-    
+    }
+
+    // EN_ACK_PAY in FEATURE register must be set before using this command.
+    // Call NRF24_EnableAckPay(handle, 1) once during setup, not per-packet.
+    // Also requires DPL enabled on pipe 0 for PTX and PRX per datasheet.
     return write_payload(handle, NRF24_CMD_W_ACK_PAYLOAD | pipe, buf, len);
+}
+
+/**
+* @brief Sends the ACTIVATE command (0x50 + 0x73) to enable FEATURE register features.
+*
+* Per datasheet: "This write command followed by data 0x73 activates the following features:
+* R_RX_PL_WID, W_ACK_PAYLOAD, W_TX_PAYLOAD_NOACK.
+* A new ACTIVATE command with the same data deactivates them again."
+* Required for nRF24L01 (original). On nRF24L01+ this is typically a NOP.
+*
+* @param handle Pointer to the nRF24 handle structure.
+* @return HAL status.
+*/
+HAL_StatusTypeDef NRF24_Activate(NRF24_Handle_t *handle) {
+    if (handle == NULL) return HAL_ERROR;
+
+    uint8_t tx[2] = {NRF24_CMD_ACTIVATE, 0x73};
+    uint8_t rx[2];
+    csn_low(handle);
+    HAL_StatusTypeDef status = spi_transfer(handle, tx, rx, 2);
+    csn_high(handle);
+    return status;
+}
+
+/**
+* @brief Reads the payload width of the top payload in the RX FIFO.
+*
+* Per datasheet: "Read RX-payload width for the top R_RX_PAYLOAD in the RX FIFO."
+* Used with dynamic payload length to determine how many bytes to read.
+* Note: If the returned value is > 32, the RX FIFO should be flushed (corrupted).
+*
+* @param handle Pointer to the nRF24 handle structure.
+* @return Payload width in bytes (0-32), or 0 on error.
+*/
+uint8_t NRF24_ReadDynamicPayloadWidth(NRF24_Handle_t *handle) {
+    if (handle == NULL) return 0;
+
+    uint8_t tx[2] = {NRF24_CMD_R_RX_PL_WID, NRF24_CMD_NOP};
+    uint8_t rx[2];
+    csn_low(handle);
+    HAL_StatusTypeDef status = spi_transfer(handle, tx, rx, 2);
+    csn_high(handle);
+
+    if (status != HAL_OK) return 0;
+
+    uint8_t width = rx[1];
+    if (width > NRF24_MAX_PAYLOAD_SIZE) {
+        // Corrupted data per datasheet - flush RX FIFO
+        NRF24_FlushRX(handle);
+        return 0;
+    }
+    return width;
+}
+
+/**
+* @brief Reads the FIFO_STATUS register.
+* @param handle Pointer to the nRF24 handle structure.
+* @return FIFO status register value, or 0 on error.
+*/
+uint8_t NRF24_GetFIFOStatus(NRF24_Handle_t *handle) {
+    if (handle == NULL) return 0;
+    uint8_t fifo_status;
+    if (NRF24_ReadReg(handle, NRF24_REG_FIFO_STATUS, &fifo_status) != HAL_OK) return 0;
+    return fifo_status;
+}
+
+/**
+* @brief Powers up the nRF24L01+ and waits for Tpd2stby.
+* @param handle Pointer to the nRF24 handle structure.
+* @return HAL status.
+*/
+HAL_StatusTypeDef NRF24_PowerUp(NRF24_Handle_t *handle) {
+    if (handle == NULL) return HAL_ERROR;
+    uint8_t config;
+    HAL_StatusTypeDef status = NRF24_ReadReg(handle, NRF24_REG_CONFIG, &config);
+    if (status != HAL_OK) return status;
+    if (!(config & NRF24_CONFIG_PWR_UP)) {
+        config |= NRF24_CONFIG_PWR_UP;
+        status = NRF24_WriteReg(handle, NRF24_REG_CONFIG, config);
+        if (status != HAL_OK) return status;
+        handle->delay_us(1500); // Tpd2stby = 1.5ms
+    }
+    return HAL_OK;
+}
+
+/**
+* @brief Powers down the nRF24L01+ to minimize current consumption.
+* @param handle Pointer to the nRF24 handle structure.
+* @return HAL status.
+*/
+HAL_StatusTypeDef NRF24_PowerDown(NRF24_Handle_t *handle) {
+    if (handle == NULL) return HAL_ERROR;
+    ce_low(handle);
+    uint8_t config;
+    HAL_StatusTypeDef status = NRF24_ReadReg(handle, NRF24_REG_CONFIG, &config);
+    if (status != HAL_OK) return status;
+    config &= ~NRF24_CONFIG_PWR_UP;
+    return NRF24_WriteReg(handle, NRF24_REG_CONFIG, config);
+}
+
+/**
+* @brief Reads the OBSERVE_TX register.
+*
+* Per datasheet: PLOS_CNT (bits 7:4) = count of lost packets (reset by writing RF_CH).
+* ARC_CNT (bits 3:0) = count of retransmits for current transaction.
+*
+* @param handle Pointer to the nRF24 handle structure.
+* @return OBSERVE_TX register value, or 0 on error.
+*/
+uint8_t NRF24_GetObserveTX(NRF24_Handle_t *handle) {
+    if (handle == NULL) return 0;
+    uint8_t val;
+    if (NRF24_ReadReg(handle, NRF24_REG_OBSERVE_TX, &val) != HAL_OK) return 0;
+    return val;
+}
+
+/**
+* @brief Reads the Carrier Detect (CD) / Received Power Detector (RPD) register.
+*
+* Per datasheet (register 0x09): CD bit indicates carrier detected on the current channel.
+*
+* @param handle Pointer to the nRF24 handle structure.
+* @return 1 if carrier detected, 0 otherwise.
+*/
+uint8_t NRF24_GetCarrierDetect(NRF24_Handle_t *handle) {
+    if (handle == NULL) return 0;
+    uint8_t val;
+    if (NRF24_ReadReg(handle, NRF24_REG_RPD, &val) != HAL_OK) return 0;
+    return val & 0x01;
 }

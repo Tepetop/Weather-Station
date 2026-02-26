@@ -42,6 +42,7 @@ NRF24_CMD_W_TX_PAYLOAD = 0xA0,
 NRF24_CMD_FLUSH_TX = 0xE1,
 NRF24_CMD_FLUSH_RX = 0xE2,
 NRF24_CMD_REUSE_TX_PL = 0xE3,
+NRF24_CMD_ACTIVATE = 0x50,
 NRF24_CMD_R_RX_PL_WID = 0x60,
 NRF24_CMD_W_ACK_PAYLOAD = 0xA8,
 NRF24_CMD_W_TX_PAYLOAD_NOACK = 0xB0,
@@ -62,16 +63,36 @@ NRF24_CONFIG_MASK_RX_DR = 0x40
 // STATUS register bits
 typedef enum {
 NRF24_STATUS_TX_FULL = 0x01,
+NRF24_STATUS_RX_P_NO_MASK = 0x0E, // Bits 3:1 - data pipe number
 NRF24_STATUS_MAX_RT = 0x10,
 NRF24_STATUS_TX_DS = 0x20,
-NRF24_STATUS_RX_DR = 0x40
+NRF24_STATUS_RX_DR = 0x40,
+NRF24_STATUS_IRQ_MASK = 0x70  // All IRQ flags combined
 } NRF24_Status_t;
 
-// Data rates
+// FIFO_STATUS register bits
 typedef enum {
-NRF24_DR_250KBPS = 0x01, //TODO: bledne dane
-NRF24_DR_1MBPS = 0x00,
-NRF24_DR_2MBPS = 0x08
+NRF24_FIFO_RX_EMPTY = 0x01,
+NRF24_FIFO_RX_FULL = 0x02,
+NRF24_FIFO_TX_EMPTY = 0x10,
+NRF24_FIFO_TX_FULL = 0x20,
+NRF24_FIFO_TX_REUSE = 0x40
+} NRF24_FIFO_Status_t;
+
+// FEATURE register bits
+#define NRF24_FEATURE_EN_DYN_ACK 0x01
+#define NRF24_FEATURE_EN_ACK_PAY 0x02
+#define NRF24_FEATURE_EN_DPL     0x04
+
+// Max payload size per datasheet
+#define NRF24_MAX_PAYLOAD_SIZE   32
+
+// Data rates
+// Note: 250kbps only available on nRF24L01+ (not original nRF24L01)
+typedef enum {
+NRF24_DR_250KBPS = 0x20, // RF_DR_LOW=1, RF_DR_HIGH=0 (nRF24L01+ only)
+NRF24_DR_1MBPS = 0x00,  // RF_DR_LOW=0, RF_DR_HIGH=0
+NRF24_DR_2MBPS = 0x08   // RF_DR_LOW=0, RF_DR_HIGH=1
 } NRF24_DataRate_t;
 
 // PA levels
@@ -149,5 +170,12 @@ HAL_StatusTypeDef NRF24_EnableDynAck(NRF24_Handle_t *handle, uint8_t enable);
 HAL_StatusTypeDef NRF24_EnableAckPay(NRF24_Handle_t *handle, uint8_t enable);
 HAL_StatusTypeDef NRF24_WritePayloadNoAck(NRF24_Handle_t *handle, const uint8_t *buf, uint8_t len);
 HAL_StatusTypeDef NRF24_WriteAckPayload(NRF24_Handle_t *handle, uint8_t pipe, const uint8_t *buf, uint8_t len);
+HAL_StatusTypeDef NRF24_Activate(NRF24_Handle_t *handle);
+uint8_t NRF24_ReadDynamicPayloadWidth(NRF24_Handle_t *handle);
+uint8_t NRF24_GetFIFOStatus(NRF24_Handle_t *handle);
+HAL_StatusTypeDef NRF24_PowerUp(NRF24_Handle_t *handle);
+HAL_StatusTypeDef NRF24_PowerDown(NRF24_Handle_t *handle);
+uint8_t NRF24_GetObserveTX(NRF24_Handle_t *handle);
+uint8_t NRF24_GetCarrierDetect(NRF24_Handle_t *handle);
 
 #endif
