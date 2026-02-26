@@ -134,9 +134,13 @@ DS3231_Status DS3231_clod_Init(DS3231_t *hrtc, I2C_HandleTypeDef *hi2c, uint16_t
     /* Wypełnienie struktury */
     hrtc->hi2c        = hi2c;
     hrtc->i2c_addr     = address << 1;
+
     hrtc->hour_format = hour_format;
     hrtc->initialized = false;
-    hrtc->DS3231_IRQ_Flag = 0;
+
+    hrtc->DS3231_IRQ_Alarm = DS3231_IRQ_NONE;
+    hrtc->DS3231_IRQ_Flag = DS3231_IRQ_NONE;
+
     hrtc->sqw_port = NULL;
     hrtc->sqw_pin = 0;
 
@@ -428,7 +432,7 @@ DS3231_Status DS3231_clod_CheckAndClearAlarmFlags(DS3231_t *hrtc)
 
     if (!hrtc->initialized) return DS3231_ERR_PARAM;
 
-    hrtc->DS3231_IRQ_Flag = DS3231_IRQ_NONE;
+    hrtc->DS3231_IRQ_Alarm = DS3231_IRQ_NONE;
 
     status = ds3231_clod_read_reg(hrtc, DS3231_REG_STATUS, &status_reg);
 
@@ -436,15 +440,21 @@ DS3231_Status DS3231_clod_CheckAndClearAlarmFlags(DS3231_t *hrtc)
         return status;
     }
 
+    /* Maska flag do skasowania — tylko te, które są aktywne */
+    uint8_t flags_to_clear = 0;
+
     if ((status_reg & DS3231_STAT_A1F) != 0U) {
-        hrtc->DS3231_IRQ_Flag |= DS3231_IRQ_ALARM1;
+        hrtc->DS3231_IRQ_Alarm |= DS3231_IRQ_ALARM1;
+        flags_to_clear |= DS3231_STAT_A1F;
     }
+    
     if ((status_reg & DS3231_STAT_A2F) != 0U) {
-        hrtc->DS3231_IRQ_Flag |= DS3231_IRQ_ALARM2;
+        hrtc->DS3231_IRQ_Alarm |= DS3231_IRQ_ALARM2;
+        flags_to_clear |= DS3231_STAT_A2F;
     }
 
-    if (hrtc->DS3231_IRQ_Flag != DS3231_IRQ_NONE) {
-        status_reg &= (uint8_t)~(DS3231_STAT_A1F | DS3231_STAT_A2F);
+    if (flags_to_clear != 0) {
+        status_reg &= (uint8_t)~flags_to_clear;  /* kasuj tylko aktywne flagi */
         status = ds3231_clod_write_reg(hrtc, DS3231_REG_STATUS, status_reg);
     }
 

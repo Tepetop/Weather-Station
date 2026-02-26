@@ -18,7 +18,7 @@
 /* =========================================================================
  * Adres I2C
  * ========================================================================= */
-#define DS3231_I2C_ADDR         0x68   /**< Adres 7-bit przesunięty dla HAL */
+#define DS3231_I2C_ADDR         0x68   /**< Adres 7-bit */
 
 /* =========================================================================
  * Adresy rejestrów (zgodnie z dokumentacją, str. 11)
@@ -78,9 +78,10 @@
  */
 typedef enum {
     DS3231_OK           = 0,   /**< Operacja zakończona sukcesem */
-    DS3231_ERR_I2C      = 1,   /**< Błąd komunikacji I2C */
-    DS3231_ERR_PARAM    = 2,   /**< Nieprawidłowy parametr */
-    DS3231_ERR_BUSY     = 3,   /**< Urządzenie zajęte (konwersja temperatury) */
+    DS3231_ERROR        = 1,   /**< Ogólny błąd */
+    DS3231_ERR_I2C      = 2,   /**< Błąd komunikacji I2C */
+    DS3231_ERR_PARAM    = 3,   /**< Nieprawidłowy parametr */
+    DS3231_ERR_BUSY     = 4,   /**< Urządzenie zajęte (konwersja temperatury) */
 } DS3231_Status;
 
 /**
@@ -191,6 +192,7 @@ typedef struct {
     uint16_t            sqw_pin;
     DS3231_HourFormat   hour_format;  /**< Aktualny format godziny modułu */
     bool                initialized;  /**< Flaga inicjalizacji */
+    uint8_t             DS3231_IRQ_Alarm;
     uint8_t             DS3231_IRQ_Flag; /**< Flaga przerwania alarmu */
     
 } DS3231_t;

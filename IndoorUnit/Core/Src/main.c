@@ -34,6 +34,7 @@
 #include <PCD_LCD/PCD8544_Menu_config.h>
 #include <PCD_LCD/PCD8544_Drawing.h>
 
+#include <complex.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -56,6 +57,9 @@
 #define DEFAULT_DEMO 0  // Set to 1 to enable drawing demo instead of menu
 #define DRAWING_DEMO 0
 #define RTC_DEMO 1
+
+#define IRQ_FLAG_SET 1
+#define IRQ_FLAG_CLEAR 0
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -85,7 +89,6 @@ DS3231_DateTime currentDateTime = {
   .century = false
 };
 DS3231_DateTime rtcNow;
-volatile bool g_rtc_measurement_request = false;
 
 char buffer[64];
 uint8_t counter = 1;
@@ -155,25 +158,13 @@ int main(void)
  
 
 #if RTC_DEMO
-  DS3231_Status ret;
-  bool osf;
 
-  ret = DS3231_clod_Init(&rtc2, &hi2c2, DS3231_I2C_ADDR, DS3231_FORMAT_24H);
-  if (ret != DS3231_OK) {
+  if (DS3231_ERROR == DS3231_clod_Init(&rtc2, &hi2c2, DS3231_I2C_ADDR, DS3231_FORMAT_24H)) {
     Error_Handler();
   }
 
-  ret = DS3231_clod_GetOscillatorStopFlag(&rtc2, &osf);
-  if (ret != DS3231_OK) {
+  if (DS3231_ERROR == DS3231_clod_SetDateTime(&rtc2, &currentDateTime)) {
     Error_Handler();
-  }
-
-  if (osf) {
-    ret = DS3231_clod_SetDateTime(&rtc2, &currentDateTime);
-    if (ret != DS3231_OK) {
-      Error_Handler();
-    }
-    DS3231_clod_ClearOscillatorStopFlag(&rtc2);
   }
 
   /*            Initialize RTC demo        */
@@ -181,8 +172,15 @@ int main(void)
     .mode = DS3231_ALM2_EVERY_MINUTE
   };
 
-  DS3231_clod_SetAlarm2(&rtc2, &alm2);
-  DS3231_clod_EnableAlarm2Interrupt(&rtc2);
+   DS3231_Alarm1 alm1 = {
+    .mode = DS3231_ALM1_EVERY_SECOND
+  };
+
+  DS3231_clod_SetAlarm1(&rtc2, &alm1);
+  DS3231_clod_EnableAlarm1Interrupt(&rtc2);
+
+  // DS3231_clod_SetAlarm2(&rtc2, &alm2);
+  // DS3231_clod_EnableAlarm2Interrupt(&rtc2);
 
   DS3231_clod_GetDateTime(&rtc2, &rtcNow);
   
@@ -233,13 +231,25 @@ int main(void)
     }
 
 #if RTC_DEMO
-    if (g_rtc_measurement_request)
+    if (rtc2.DS3231_IRQ_Flag)
     {
-      g_rtc_measurement_request = false;
-
+      if(rtc2.DS3231_IRQ_Alarm & DS3231_IRQ_ALARM2) {
+        // Alarm 2 triggered
+        // Handle alarm event here (e.g., toggle an LED, update display, etc.)
+        // Clear the alarm flag
+      }
+      else if(rtc2.DS3231_IRQ_Alarm & DS3231_IRQ_ALARM1) {
+        // Alarm 1 triggered
+        // Handle alarm event here (e.g., toggle an LED, update display, etc.)
+        // Clear the alarm flag
+        
+      }
+      else {
+      
+      }
+      rtc2.DS3231_IRQ_Flag = 0;
+      DS3231_clod_CheckAndClearAlarmFlags(&rtc2);
       DS3231_clod_GetDateTime(&rtc2, &rtcNow);
-
-
       PCD8544_SetCursor(&LCD, 0, 2);
       sprintf(buffer, "%02d:%02d:%02d", rtcNow.hours, rtcNow.minutes, rtcNow.seconds);
       PCD8544_ClearBufferLine(&LCD, 2);
@@ -321,7 +331,7 @@ void SystemClock_Config(void)
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim){
   if (htim->Instance == TIM1) // Check if the interrupt is from TIM1
   {
-    encoder.IRQ_Flag = 1;
+    encoder.IRQ_Flag = IRQ_FLAG_SET;
   }
 }
 
@@ -335,12 +345,8 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 #if RTC_DEMO
   if (GPIO_Pin == GPIO_PIN_0)
   {
-    if (DS3231_clod_CheckAndClearAlarmFlags(&rtc2) == DS3231_OK) {
-      if ((rtc2.DS3231_IRQ_Flag & (DS3231_IRQ_ALARM1 | DS3231_IRQ_ALARM2)) != 0U) {
-        g_rtc_measurement_request = true;
-      }
-    }
-  }
+    rtc2.DS3231_IRQ_Flag = IRQ_FLAG_SET;
+  }  
 #endif
 }
 
@@ -348,6 +354,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 void EncoderButtonFlag(void)
 {
   //encoder.ButtonIRQ_Flag = 1;
+  encoder.ButtonIRQ_Flag = IRQ_FLAG_SET;
   Menu_SetEnterAction(&menuContext);
 }
 /* USER CODE END 4 */
