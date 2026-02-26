@@ -1,0 +1,240 @@
+[33mtag v0.4[m
+Tagger: migi <remik.pieprzyk@gmail.com>
+Date:   Thu Feb 26 19:57:35 2026 +0100
+
+wersja z dzialajacym RTC
+
+[33mcommit d40e8f57a62deb77edf373a110d20cbef0bbbc41[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;33mtag: [m[1;33mv0.4[m[33m, [m[1;33mtag: [m[1;33mshow[m[33m, [m[1;33mtag: [m[1;33mhelp[m[33m)[m
+Author: migi <remik.pieprzyk@gmail.com>
+Date:   Thu Feb 26 19:56:30 2026 +0100
+
+    Changes inside IRQ flags functions
+
+[1mdiff --git a/IndoorUnit/Core/Inc/ds3231_clod.h b/IndoorUnit/Core/Inc/ds3231_clod.h[m
+[1mindex 3330036..db46c75 100644[m
+[1m--- a/IndoorUnit/Core/Inc/ds3231_clod.h[m
+[1m+++ b/IndoorUnit/Core/Inc/ds3231_clod.h[m
+[36m@@ -18,7 +18,7 @@[m
+ /* =========================================================================[m
+  * Adres I2C[m
+  * ========================================================================= */[m
+[31m-#define DS3231_I2C_ADDR         0x68   /**< Adres 7-bit przesunięty dla HAL */[m
+[32m+[m[32m#define DS3231_I2C_ADDR         0x68   /**< Adres 7-bit */[m
+ [m
+ /* =========================================================================[m
+  * Adresy rejestrów (zgodnie z dokumentacją, str. 11)[m
+[36m@@ -78,9 +78,10 @@[m
+  */[m
+ typedef enum {[m
+     DS3231_OK           = 0,   /**< Operacja zakończona sukcesem */[m
+[31m-    DS3231_ERR_I2C      = 1,   /**< Błąd komunikacji I2C */[m
+[31m-    DS3231_ERR_PARAM    = 2,   /**< Nieprawidłowy parametr */[m
+[31m-    DS3231_ERR_BUSY     = 3,   /**< Urządzenie zajęte (konwersja temperatury) */[m
+[32m+[m[32m    DS3231_ERROR        = 1,   /**< Ogólny błąd */[m
+[32m+[m[32m    DS3231_ERR_I2C      = 2,   /**< Błąd komunikacji I2C */[m
+[32m+[m[32m    DS3231_ERR_PARAM    = 3,   /**< Nieprawidłowy parametr */[m
+[32m+[m[32m    DS3231_ERR_BUSY     = 4,   /**< Urządzenie zajęte (konwersja temperatury) */[m
+ } DS3231_Status;[m
+ [m
+ /**[m
+[36m@@ -191,6 +192,7 @@[m [mtypedef struct {[m
+     uint16_t            sqw_pin;[m
+     DS3231_HourFormat   hour_format;  /**< Aktualny format godziny modułu */[m
+     bool                initialized;  /**< Flaga inicjalizacji */[m
+[32m+[m[32m    uint8_t             DS3231_IRQ_Alarm;[m
+     uint8_t             DS3231_IRQ_Flag; /**< Flaga przerwania alarmu */[m
+     [m
+ } DS3231_t;[m
+[1mdiff --git a/IndoorUnit/Core/Src/ds3231_clod.c b/IndoorUnit/Core/Src/ds3231_clod.c[m
+[1mindex 065555e..8378e57 100644[m
+[1m--- a/IndoorUnit/Core/Src/ds3231_clod.c[m
+[1m+++ b/IndoorUnit/Core/Src/ds3231_clod.c[m
+[36m@@ -134,9 +134,13 @@[m [mDS3231_Status DS3231_clod_Init(DS3231_t *hrtc, I2C_HandleTypeDef *hi2c, uint16_t[m
+     /* Wypełnienie struktury */[m
+     hrtc->hi2c        = hi2c;[m
+     hrtc->i2c_addr     = address << 1;[m
+[32m+[m
+     hrtc->hour_format = hour_format;[m
+     hrtc->initialized = false;[m
+[31m-    hrtc->DS3231_IRQ_Flag = 0;[m
+[32m+[m
+[32m+[m[32m    hrtc->DS3231_IRQ_Alarm = DS3231_IRQ_NONE;[m
+[32m+[m[32m    hrtc->DS3231_IRQ_Flag = DS3231_IRQ_NONE;[m
+[32m+[m
+     hrtc->sqw_port = NULL;[m
+     hrtc->sqw_pin = 0;[m
+ [m
+[36m@@ -428,7 +432,7 @@[m [mDS3231_Status DS3231_clod_CheckAndClearAlarmFlags(DS3231_t *hrtc)[m
+ [m
+     if (!hrtc->initialized) return DS3231_ERR_PARAM;[m
+ [m
+[31m-    hrtc->DS3231_IRQ_Flag = DS3231_IRQ_NONE;[m
+[32m+[m[32m    hrtc->DS3231_IRQ_Alarm = DS3231_IRQ_NONE;[m
+ [m
+     status = ds3231_clod_read_reg(hrtc, DS3231_REG_STATUS, &status_reg);[m
+ [m
+[36m@@ -436,15 +440,21 @@[m [mDS3231_Status DS3231_clod_CheckAndClearAlarmFlags(DS3231_t *hrtc)[m
+         return status;[m
+     }[m
+ [m
+[32m+[m[32m    /* Maska flag do skasowania — tylko te, które są aktywne */[m
+[32m+[m[32m    uint8_t flags_to_clear = 0;[m
+[32m+[m
+     if ((status_reg & DS3231_STAT_A1F) != 0U) {[m
+[31m-        hrtc->DS3231_IRQ_Flag |= DS3231_IRQ_ALARM1;[m
+[32m+[m[32m        hrtc->DS3231_IRQ_Alarm |= DS3231_IRQ_ALARM1;[m
+[32m+[m[32m        flags_to_clear |= DS3231_STAT_A1F;[m
+     }[m
+[32m+[m[41m    [m
+     if ((status_reg & DS3231_STAT_A2F) != 0U) {[m
+[31m-        hrtc->DS3231_IRQ_Flag |= DS3231_IRQ_ALARM2;[m
+[32m+[m[32m        hrtc->DS3231_IRQ_Alarm |= DS3231_IRQ_ALARM2;[m
+[32m+[m[32m        flags_to_clear |= DS3231_STAT_A2F;[m
+     }[m
+ [m
+[31m-    if (hrtc->DS3231_IRQ_Flag != DS3231_IRQ_NONE) {[m
+[31m-        status_reg &= (uint8_t)~(DS3231_STAT_A1F | DS3231_STAT_A2F);[m
+[32m+[m[32m    if (flags_to_clear != 0) {[m
+[32m+[m[32m        status_reg &= (uint8_t)~flags_to_clear;  /* kasuj tylko aktywne flagi */[m
+         status = ds3231_clod_write_reg(hrtc, DS3231_REG_STATUS, status_reg);[m
+     }[m
+ [m
+[1mdiff --git a/IndoorUnit/Core/Src/main.c b/IndoorUnit/Core/Src/main.c[m
+[1mindex 05bf48f..2947c4c 100644[m
+[1m--- a/IndoorUnit/Core/Src/main.c[m
+[1m+++ b/IndoorUnit/Core/Src/main.c[m
+[36m@@ -34,6 +34,7 @@[m
+ #include <PCD_LCD/PCD8544_Menu_config.h>[m
+ #include <PCD_LCD/PCD8544_Drawing.h>[m
+ [m
+[32m+[m[32m#include <complex.h>[m
+ #include <stdbool.h>[m
+ #include <stdint.h>[m
+ #include <stdio.h>[m
+[36m@@ -56,6 +57,9 @@[m
+ #define DEFAULT_DEMO 0  // Set to 1 to enable drawing demo instead of menu[m
+ #define DRAWING_DEMO 0[m
+ #define RTC_DEMO 1[m
+[32m+[m
+[32m+[m[32m#define IRQ_FLAG_SET 1[m
+[32m+[m[32m#define IRQ_FLAG_CLEAR 0[m
+ /* USER CODE END PD */[m
+ [m
+ /* Private macro -------------------------------------------------------------*/[m
+[36m@@ -85,7 +89,6 @@[m [mDS3231_DateTime currentDateTime = {[m
+   .century = false[m
+ };[m
+ DS3231_DateTime rtcNow;[m
+[31m-volatile bool g_rtc_measurement_request = false;[m
+ [m
+ char buffer[64];[m
+ uint8_t counter = 1;[m
+[36m@@ -155,34 +158,29 @@[m [mint main(void)[m
+  [m
+ [m
+ #if RTC_DEMO[m
+[31m-  DS3231_Status ret;[m
+[31m-  bool osf;[m
+ [m
+[31m-  ret = DS3231_clod_Init(&rtc2, &hi2c2, DS3231_I2C_ADDR, DS3231_FORMAT_24H);[m
+[31m-  if (ret != DS3231_OK) {[m
+[32m+[m[32m  if (DS3231_ERROR == DS3231_clod_Init(&rtc2, &hi2c2, DS3231_I2C_ADDR, DS3231_FORMAT_24H)) {[m
+     Error_Handler();[m
+   }[m
+ [m
+[31m-  ret = DS3231_clod_GetOscillatorStopFlag(&rtc2, &osf);[m
+[31m-  if (ret != DS3231_OK) {[m
+[32m+[m[32m  if (DS3231_ERROR == DS3231_clod_SetDateTime(&rtc2, &currentDateTime)) {[m
+     Error_Handler();[m
+   }[m
+ [m
+[31m-  if (osf) {[m
+[31m-    ret = DS3231_clod_SetDateTime(&rtc2, &currentDateTime);[m
+[31m-    if (ret != DS3231_OK) {[m
+[31m-      Error_Handler();[m
+[31m-    }[m
+[31m-    DS3231_clod_ClearOscillatorStopFlag(&rtc2);[m
+[31m-  }[m
+[31m-[m
+   /*            Initialize RTC demo        */[m
+   DS3231_Alarm2 alm2 = {[m
+     .mode = DS3231_ALM2_EVERY_MINUTE[m
+   };[m
+ [m
+[31m-  DS3231_clod_SetAlarm2(&rtc2, &alm2);[m
+[31m-  DS3231_clod_EnableAlarm2Interrupt(&rtc2);[m
+[32m+[m[32m   DS3231_Alarm1 alm1 = {[m
+[32m+[m[32m    .mode = DS3231_ALM1_EVERY_SECOND[m
+[32m+[m[32m  };[m
+[32m+[m
+[32m+[m[32m  DS3231_clod_SetAlarm1(&rtc2, &alm1);[m
+[32m+[m[32m  DS3231_clod_EnableAlarm1Interrupt(&rtc2);[m
+[32m+[m
+[32m+[m[32m  // DS3231_clod_SetAlarm2(&rtc2, &alm2);[m
+[32m+[m[32m  // DS3231_clod_EnableAlarm2Interrupt(&rtc2);[m
+ [m
+   DS3231_clod_GetDateTime(&rtc2, &rtcNow);[m
+   [m
+[36m@@ -233,13 +231,25 @@[m [mint main(void)[m
+     }[m
+ [m
+ #if RTC_DEMO[m
+[31m-    if (g_rtc_measurement_request)[m
+[32m+[m[32m    if (rtc2.DS3231_IRQ_Flag)[m
+     {[m
+[31m-      g_rtc_measurement_request = false;[m
+[31m-[m
+[32m+[m[32m      if(rtc2.DS3231_IRQ_Alarm & DS3231_IRQ_ALARM2) {[m
+[32m+[m[32m        // Alarm 2 triggered[m
+[32m+[m[32m        // Handle alarm event here (e.g., toggle an LED, update display, etc.)[m
+[32m+[m[32m        // Clear the alarm flag[m
+[32m+[m[32m      }[m
+[32m+[m[32m      else if(rtc2.DS3231_IRQ_Alarm & DS3231_IRQ_ALARM1) {[m
+[32m+[m[32m        // Alarm 1 triggered[m
+[32m+[m[32m        // Handle alarm event here (e.g., toggle an LED, update display, etc.)[m
+[32m+[m[32m        // Clear the alarm flag[m
+[32m+[m[41m        [m
+[32m+[m[32m      }[m
+[32m+[m[32m      else {[m
+[32m+[m[41m      [m
+[32m+[m[32m      }[m
+[32m+[m[32m      rtc2.DS3231_IRQ_Flag = 0;[m
+[32m+[m[32m      DS3231_clod_CheckAndClearAlarmFlags(&rtc2);[m
+       DS3231_clod_GetDateTime(&rtc2, &rtcNow);[m
+[31m-[m
+[31m-[m
+       PCD8544_SetCursor(&LCD, 0, 2);[m
+       sprintf(buffer, "%02d:%02d:%02d", rtcNow.hours, rtcNow.minutes, rtcNow.seconds);[m
+       PCD8544_ClearBufferLine(&LCD, 2);[m
+[36m@@ -321,7 +331,7 @@[m [mvoid SystemClock_Config(void)[m
+ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim){[m
+   if (htim->Instance == TIM1) // Check if the interrupt is from TIM1[m
+   {[m
+[31m-    encoder.IRQ_Flag = 1;[m
+[32m+[m[32m    encoder.IRQ_Flag = IRQ_FLAG_SET;[m
+   }[m
+ }[m
+ [m
+[36m@@ -335,12 +345,8 @@[m [mvoid HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)[m
+ #if RTC_DEMO[m
+   if (GPIO_Pin == GPIO_PIN_0)[m
+   {[m
+[31m-    if (DS3231_clod_CheckAndClearAlarmFlags(&rtc2) == DS3231_OK) {[m
+[31m-      if ((rtc2.DS3231_IRQ_Flag & (DS3231_IRQ_ALARM1 | DS3231_IRQ_ALARM2)) != 0U) {[m
+[31m-        g_rtc_measurement_request = true;[m
+[31m-      }[m
+[31m-    }[m
+[31m-  }[m
+[32m+[m[32m    rtc2.DS3231_IRQ_Flag = IRQ_FLAG_SET;[m
+[32m+[m[32m  }[m[41m  [m
+ #endif[m
+ }[m
+ [m
+[36m@@ -348,6 +354,7 @@[m [mvoid HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)[m
+ void EncoderButtonFlag(void)[m
+ {[m
+   //encoder.ButtonIRQ_Flag = 1;[m
+[32m+[m[32m  encoder.ButtonIRQ_Flag = IRQ_FLAG_SET;[m
+   Menu_SetEnterAction(&menuContext);[m
+ }[m
+ /* USER CODE END 4 */[m
