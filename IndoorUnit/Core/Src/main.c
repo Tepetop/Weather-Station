@@ -56,20 +56,13 @@
 #define DEFAULT_DEMO 0  // Set to 1 to enable drawing demo instead of menu
 #define DRAWING_DEMO 0
 #define RTC_DEMO 1
-#define NRF_DEMO 0     // Set to 1 to enable NRF24L01 TX/RX demo
+#define NRF_DEMO 0    // Set to 1 to enable NRF24L01 TX/RX demo
 
 #define IRQ_FLAG_SET 1
 #define IRQ_FLAG_CLEAR 0
 
 /* NRF24L01 demo pin assignments (adjust to your hardware) */
-#if NRF_DEMO
-  #define NRF_CSN_Pin    GPIO_PIN_4
-  #define NRF_CSN_Port   GPIOA
-  #define NRF_CE_Pin     GPIO_PIN_3
-  #define NRF_CE_Port    GPIOA
-  #define NRF_IRQ_Pin    GPIO_PIN_2
-  #define NRF_IRQ_Port   GPIOA
-#endif
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -85,6 +78,7 @@ PCD8544_t LCD;                // LCD instance
 Encoder_t encoder;            // Encoder instance
 Button_t encoderSW;          // Button instance for encoder switch
 
+#if RTC_DEMO
 DS3231_Handle rtc2;
 DS3231_DateTime currentDateTime = {
   .seconds = 0,
@@ -99,6 +93,7 @@ DS3231_DateTime currentDateTime = {
   .century = false
 };
 DS3231_DateTime rtcNow;
+#endif
 
 char buffer[64];
 uint8_t counter = 1;
@@ -121,6 +116,7 @@ static const uint8_t NRF_RX_ADDR[5] = {0xC2, 0xC2, 0xC2, 0xC2, 0xC2};
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 void EncoderButtonFlag(void);
+
 #if NRF_DEMO
 static void NRF_DelayUs(uint32_t us);
 static void NRF_Demo_Transmit(void);
@@ -257,10 +253,10 @@ int main(void)
    * --------------------------------------------------------------- */
 
   /* 1. Initialize the nRF24L01 driver */
-  if (NRF24_Init(&nrf, &hspi1,   /* TODO: replace with nRF SPI handle */
-                 NRF_CSN_Port, NRF_CSN_Pin,
-                 NRF_CE_Port, NRF_CE_Pin,
-                 NRF_IRQ_Port, NRF_IRQ_Pin,
+  if (NRF24_Init(&nrf, &hspi2,   /* TODO: replace with nRF SPI handle */
+                 SPI2_CS_GPIO_Port, SPI2_CS_Pin,
+                 SPI2_CE_GPIO_Port, SPI2_CE_Pin,
+                 SPI2_IRQ_GPIO_Port, SPI2_IRQ_Pin,
                  NRF_DelayUs) != HAL_OK) {
       /* Init failed - display error on LCD */
       PCD8544_SetFont(&LCD, &Font_6x8);
@@ -460,7 +456,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 
 #if NRF_DEMO
   /* NRF24L01 IRQ pin (active low) */
-  if (GPIO_Pin == NRF_IRQ_Pin)
+  if (GPIO_Pin == SPI2_IRQ_Pin)
   {
     nrf_irq_flag = IRQ_FLAG_SET;
   }

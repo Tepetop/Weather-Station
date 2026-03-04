@@ -4,6 +4,9 @@
 /Release/
 /.metadata/
 
+# Generated files
+/docs/
+
 # IDE settings
 .vscode/settings.json
 .vscode/launch.json

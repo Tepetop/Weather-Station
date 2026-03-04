@@ -59,6 +59,13 @@ void Error_Handler(void);
 /* Private defines -----------------------------------------------------------*/
 #define USER_LED_Pin GPIO_PIN_13
 #define USER_LED_GPIO_Port GPIOC
+#define NRF_CS_Pin GPIO_PIN_2
+#define NRF_CS_GPIO_Port GPIOA
+#define NRF_CE_Pin GPIO_PIN_3
+#define NRF_CE_GPIO_Port GPIOA
+#define NRF_IRQ_Pin GPIO_PIN_4
+#define NRF_IRQ_GPIO_Port GPIOA
+#define NRF_IRQ_EXTI_IRQn EXTI4_IRQn
 
 /* USER CODE BEGIN Private defines */
 
