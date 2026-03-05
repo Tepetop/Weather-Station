@@ -17,11 +17,6 @@ set(MX_Include_Dirs
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Drivers/CMSIS/Include
 )
 
-# Sensor library include paths
-set(Sensor_Include_Dirs
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Inc
-)
-
 # STM32CubeMX generated application sources
 set(MX_Application_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/main.c
@@ -35,14 +30,6 @@ set(MX_Application_Src
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/sysmem.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/syscalls.c
     ${CMAKE_CURRENT_SOURCE_DIR}/../../startup_stm32f103xb.s
-)
-
-# Sensor library sources
-set(Sensor_Src
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/si7021.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/TSL2561.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/bmp280.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../Core/Src/measurement.c
 )
 
 # STM32 HAL/LL Drivers
@@ -80,7 +67,7 @@ set(MX_LINK_LIBS
 )
 # Interface library for includes and symbols
 add_library(stm32cubemx INTERFACE)
-target_include_directories(stm32cubemx INTERFACE ${MX_Include_Dirs} ${Sensor_Include_Dirs})
+target_include_directories(stm32cubemx INTERFACE ${MX_Include_Dirs})
 target_compile_definitions(stm32cubemx INTERFACE ${MX_Defines_Syms})
 
 # Create STM32_Drivers static library
@@ -90,7 +77,7 @@ target_link_libraries(STM32_Drivers PUBLIC stm32cubemx)
 
 
 # Add STM32CubeMX generated application sources to the project
-target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${MX_Application_Src} ${Sensor_Src})
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${MX_Application_Src})
 
 # Link directories setup
 target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE ${MX_LINK_DIRS})

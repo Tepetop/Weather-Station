@@ -49,7 +49,10 @@ static HAL_StatusTypeDef bmp280_WriteData(BMP280_t *dev, BMP280_Registers reg, u
  *
  * This function sets up the I2C communication, determines the sensor's I2C address based on the SDO pin state,
  * verifies the chip ID, performs a soft reset, and reads the calibration parameters.
- *
+ * IMPORTANT!!
+ * BMP addres is determined by SDO pin state:
+ * SDO LOW -> 0x76
+ * SDO HIGH -> 0x77
  * @param dev Pointer to the BMP280 handle structure.
  * @param i2c_handle Pointer to the I2C handle.
  * @param sdo_state State of the SDO pin (0 or 1) to determine the I2C address (0x76 or 0x77).

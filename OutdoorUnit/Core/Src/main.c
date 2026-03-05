@@ -149,7 +149,7 @@ int main(void)
 #endif
 
 #if BMP
-  BMP280_Init(&bmp, &hi2c2, 0x76);
+  BMP280_Init(&bmp, &hi2c2, 0x77);
   BMP280_SetCtrlMeas(&bmp, BMP280_OVERSAMPLING_X16, BMP280_MODE_NORMAL);
   BMP280_SetConfig(&bmp, BMP280_STANDBY_500_MS, BMP280_FILTER_16);
 #endif

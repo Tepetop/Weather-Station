@@ -21,8 +21,6 @@
 #include "dma.h"
 #include "i2c.h"
 #include "spi.h"
-#include "stm32f1xx_hal_def.h"
-#include "stm32f1xx_hal_gpio.h"
 #include "tim.h"
 #include "gpio.h"
 
@@ -45,6 +43,7 @@
 #include <demo_tests.h>
 
 #include "ds3231_clod.h"
+#include "NRF24L01.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -57,9 +56,13 @@
 #define DEFAULT_DEMO 0  // Set to 1 to enable drawing demo instead of menu
 #define DRAWING_DEMO 0
 #define RTC_DEMO 1
+#define NRF_DEMO 0    // Set to 1 to enable NRF24L01 TX/RX demo
 
 #define IRQ_FLAG_SET 1
 #define IRQ_FLAG_CLEAR 0
+
+/* NRF24L01 demo pin assignments (adjust to your hardware) */
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -75,6 +78,7 @@ PCD8544_t LCD;                // LCD instance
 Encoder_t encoder;            // Encoder instance
 Button_t encoderSW;          // Button instance for encoder switch
 
+#if RTC_DEMO
 DS3231_Handle rtc2;
 DS3231_DateTime currentDateTime = {
   .seconds = 0,
@@ -89,10 +93,22 @@ DS3231_DateTime currentDateTime = {
   .century = false
 };
 DS3231_DateTime rtcNow;
+#endif
 
 char buffer[64];
 uint8_t counter = 1;
 uint32_t softTimer = 0;
+
+#if NRF_DEMO
+NRF24_Handle_t nrf;
+volatile uint8_t nrf_irq_flag = 0;   // Set in EXTI callback
+
+/* NRF demo configuration */
+static const uint8_t NRF_TX_ADDR[5] = {0xE7, 0xE7, 0xE7, 0xE7, 0xE7};
+static const uint8_t NRF_RX_ADDR[5] = {0xC2, 0xC2, 0xC2, 0xC2, 0xC2};
+#define NRF_CHANNEL      76      // 2476 MHz
+#define NRF_PAYLOAD_SIZE 8
+#endif
 
 /* USER CODE END PV */
 
@@ -101,11 +117,32 @@ void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 void EncoderButtonFlag(void);
 
+#if NRF_DEMO
+static void NRF_DelayUs(uint32_t us);
+static void NRF_Demo_Transmit(void);
+static void NRF_Demo_StartReceive(void);
+static void NRF_Demo_HandleIRQ(void);
+#endif
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+#if NRF_DEMO
+/**
+ * @brief Microsecond delay using DWT cycle counter.
+ *        Requires DWT to be enabled (Cortex-M3 has it).
+ */
+static void NRF_DelayUs(uint32_t us) {
+    /* Enable DWT if not already enabled */
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+    DWT->CYCCNT = 0;
+    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 
+    uint32_t cycles = (SystemCoreClock / 1000000U) * us;
+    uint32_t start = DWT->CYCCNT;
+    while ((DWT->CYCCNT - start) < cycles);
+}
+#endif
 /* USER CODE END 0 */
 
 /**
@@ -141,7 +178,7 @@ int main(void)
   MX_SPI1_Init();
   MX_I2C2_Init();
   MX_TIM1_Init();
-  
+  MX_SPI2_Init();
   /* USER CODE BEGIN 2 */
 #if DEFAULT_DEMO
   /*            Initialize encoder        */
@@ -204,6 +241,66 @@ int main(void)
 #endif
 
 
+#if NRF_DEMO
+  /* ---------------------------------------------------------------
+   * NRF24L01 Demo Initialization
+   * ---------------------------------------------------------------
+   * NOTE: This demo assumes:
+   *   - A SEPARATE full-duplex SPI peripheral (e.g. hspi2) is configured
+   *     for nRF24L01 (SPI1 is TX-only simplex for the LCD).
+   *   - CSN, CE, IRQ GPIO pins are configured in CubeMX.
+   *   - Replace 'hspi1' below with your actual nRF SPI handle.
+   * --------------------------------------------------------------- */
+
+  /* 1. Initialize the nRF24L01 driver */
+  if (NRF24_Init(&nrf, &hspi2,   /* TODO: replace with nRF SPI handle */
+                 SPI2_CS_GPIO_Port, SPI2_CS_Pin,
+                 SPI2_CE_GPIO_Port, SPI2_CE_Pin,
+                 SPI2_IRQ_GPIO_Port, SPI2_IRQ_Pin,
+                 NRF_DelayUs) != HAL_OK) {
+      /* Init failed - display error on LCD */
+      PCD8544_SetFont(&LCD, &Font_6x8);
+      PCD8544_SetCursor(&LCD, 0, 0);
+      PCD8544_WriteString(&LCD, "NRF FAIL");
+      PCD8544_UpdateScreen(&LCD);
+      Error_Handler();
+  }
+
+  /* 2. Configure radio parameters */
+  NRF24_SetChannel(&nrf, NRF_CHANNEL);          // RF channel
+  NRF24_SetDataRate(&nrf, NRF24_DR_1MBPS);      // 1 Mbps
+  NRF24_SetPALevel(&nrf, NRF24_PA_MAX);         // 0 dBm
+  NRF24_SetCRC(&nrf, NRF24_CRC_2B);             // 2-byte CRC
+  NRF24_SetAddressWidth(&nrf, NRF24_AW_5);      // 5-byte address
+  NRF24_SetAutoRetr(&nrf, 1, 10);               // ARD=500us, ARC=10 retries
+
+  /* 3. Configure addresses */
+  NRF24_SetTXAddress(&nrf, NRF_TX_ADDR, 5);
+  NRF24_SetRXAddress(&nrf, 0, NRF_TX_ADDR, 5);  // Pipe 0 = TX_ADDR for auto-ACK
+  NRF24_SetRXAddress(&nrf, 1, NRF_RX_ADDR, 5);  // Pipe 1 for receiving
+
+  /* 4. Configure pipes */
+  NRF24_SetAutoAck(&nrf, 0, 1);                 // Auto-ACK on pipe 0
+  NRF24_SetAutoAck(&nrf, 1, 1);                 // Auto-ACK on pipe 1
+  NRF24_EnablePipe(&nrf, 0, 1);                 // Enable pipe 0
+  NRF24_EnablePipe(&nrf, 1, 1);                 // Enable pipe 1
+  NRF24_SetPayloadSize(&nrf, 0, NRF_PAYLOAD_SIZE);
+  NRF24_SetPayloadSize(&nrf, 1, NRF_PAYLOAD_SIZE);
+
+  /* 5. Display NRF ready status */
+  PCD8544_SetFont(&LCD, &Font_6x8);
+  PCD8544_SetCursor(&LCD, 0, 0);
+  PCD8544_WriteString(&LCD, "NRF OK");
+  PCD8544_UpdateScreen(&LCD);
+  HAL_Delay(500);
+
+  /* 6. Send a test packet (TX mode) */
+  NRF_Demo_Transmit();
+
+  /* 7. Switch to receive mode and wait for data */
+  NRF_Demo_StartReceive();
+#endif
+
   /*  Soft timer for LED toggle */
   softTimer = HAL_GetTick();
 
@@ -229,6 +326,14 @@ int main(void)
       HAL_GPIO_TogglePin(USER_LED_GPIO_Port, USER_LED_Pin);
       softTimer = HAL_GetTick();
     }
+
+#if NRF_DEMO
+    /* --- NRF24 RX polling / IRQ handling --- */
+    if (nrf_irq_flag) {
+        nrf_irq_flag = 0;
+        NRF_Demo_HandleIRQ();
+    }
+#endif
 
 #if RTC_DEMO
     if (rtc2.DS3231_IRQ_Flag)
@@ -348,6 +453,14 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
     rtc2.DS3231_IRQ_Flag = IRQ_FLAG_SET;
   }  
 #endif
+
+#if NRF_DEMO
+  /* NRF24L01 IRQ pin (active low) */
+  if (GPIO_Pin == SPI2_IRQ_Pin)
+  {
+    nrf_irq_flag = IRQ_FLAG_SET;
+  }
+#endif
 }
 
 /*      Encoder button function to assign to callback     */
@@ -357,6 +470,131 @@ void EncoderButtonFlag(void)
   encoder.ButtonIRQ_Flag = IRQ_FLAG_SET;
   Menu_SetEnterAction(&menuContext);
 }
+
+#if NRF_DEMO
+/* ---------------------------------------------------------------
+ * NRF24L01 Demo Functions
+ * --------------------------------------------------------------- */
+
+/**
+ * @brief  Transmit a test packet via nRF24L01.
+ *         Sends an 8-byte payload and displays the result on LCD.
+ */
+static void NRF_Demo_Transmit(void) {
+    uint8_t tx_data[NRF_PAYLOAD_SIZE] = {'H', 'E', 'L', 'L', 'O', ' ', 'N', 'R'};
+
+    /* Load payload into TX FIFO */
+    NRF24_WritePayload(&nrf, tx_data, NRF_PAYLOAD_SIZE);
+
+    /* Trigger transmission (CE pulse) */
+    NRF24_SetMode(&nrf, NRF24_MODE_TX);
+
+    /* Wait for TX_DS or MAX_RT interrupt (with timeout) */
+    uint32_t timeout = HAL_GetTick() + 100; // 100ms timeout
+    while (!nrf_irq_flag && HAL_GetTick() < timeout);
+
+    uint8_t status = NRF24_GetStatus(&nrf);
+
+    PCD8544_ClearScreen(&LCD);
+    PCD8544_SetCursor(&LCD, 0, 0);
+
+    if (status & NRF24_STATUS_TX_DS) {
+        /* Transmission success - ACK received */
+        PCD8544_WriteString(&LCD, "TX: OK");
+        NRF24_ClearIRQ(&nrf, NRF24_STATUS_TX_DS);
+    } else if (status & NRF24_STATUS_MAX_RT) {
+        /* Max retransmits - no ACK received */
+        PCD8544_WriteString(&LCD, "TX: NO ACK");
+        NRF24_ClearIRQ(&nrf, NRF24_STATUS_MAX_RT);
+        NRF24_FlushTX(&nrf);
+    } else {
+        PCD8544_WriteString(&LCD, "TX: TIMEOUT");
+    }
+
+    /* Show OBSERVE_TX diagnostics */
+    uint8_t obs = NRF24_GetObserveTX(&nrf);
+    PCD8544_SetCursor(&LCD, 0, 1);
+    sprintf(buffer, "Lost:%d Rt:%d", (obs >> 4) & 0x0F, obs & 0x0F);
+    PCD8544_WriteString(&LCD, buffer);
+    PCD8544_UpdateScreen(&LCD);
+
+    nrf_irq_flag = 0;
+    HAL_Delay(1000);
+}
+
+/**
+ * @brief  Switch nRF24L01 to RX mode and start listening.
+ */
+static void NRF_Demo_StartReceive(void) {
+    NRF24_FlushRX(&nrf);
+    NRF24_ClearIRQ(&nrf, NRF24_STATUS_IRQ_MASK);
+    NRF24_SetMode(&nrf, NRF24_MODE_RX);
+
+    PCD8544_ClearScreen(&LCD);
+    PCD8544_SetCursor(&LCD, 0, 0);
+    PCD8544_WriteString(&LCD, "RX: Listen..");
+    PCD8544_UpdateScreen(&LCD);
+}
+
+/**
+ * @brief  Handle nRF24L01 IRQ: read received data or handle errors.
+ */
+static void NRF_Demo_HandleIRQ(void) {
+    uint8_t status = NRF24_GetStatus(&nrf);
+
+    if (status & NRF24_STATUS_RX_DR) {
+        /* Data received */
+        uint8_t pipe = (status >> 1) & 0x07;
+        uint8_t rx_data[NRF24_MAX_PAYLOAD_SIZE];
+
+        NRF24_ReadPayload(&nrf, rx_data, NRF_PAYLOAD_SIZE);
+        NRF24_ClearIRQ(&nrf, NRF24_STATUS_RX_DR);
+
+        /* Display received data on LCD */
+        PCD8544_ClearScreen(&LCD);
+        PCD8544_SetCursor(&LCD, 0, 0);
+        sprintf(buffer, "RX P%d:", pipe);
+        PCD8544_WriteString(&LCD, buffer);
+
+        PCD8544_SetCursor(&LCD, 0, 1);
+        /* Display as hex bytes */
+        for (uint8_t i = 0; i < NRF_PAYLOAD_SIZE && i < 8; i++) {
+            sprintf(buffer + (i * 3), "%02X ", rx_data[i]);
+        }
+        buffer[NRF_PAYLOAD_SIZE * 3] = '\0';
+        PCD8544_WriteString(&LCD, buffer);
+
+        PCD8544_SetCursor(&LCD, 0, 3);
+        /* Also display as ASCII (printable chars only) */
+        for (uint8_t i = 0; i < NRF_PAYLOAD_SIZE; i++) {
+            buffer[i] = (rx_data[i] >= 0x20 && rx_data[i] <= 0x7E) ? rx_data[i] : '.';
+        }
+        buffer[NRF_PAYLOAD_SIZE] = '\0';
+        PCD8544_WriteString(&LCD, buffer);
+
+        /* Check if more data in FIFO (per datasheet recommended procedure) */
+        uint8_t fifo = NRF24_GetFIFOStatus(&nrf);
+        PCD8544_SetCursor(&LCD, 0, 5);
+        if (fifo & NRF24_FIFO_RX_EMPTY) {
+            PCD8544_WriteString(&LCD, "FIFO: empty");
+        } else {
+            PCD8544_WriteString(&LCD, "FIFO: more");
+        }
+
+        PCD8544_UpdateScreen(&LCD);
+    }
+
+    if (status & NRF24_STATUS_TX_DS) {
+        /* ACK sent (PRX mode) or ACK received (PTX mode) */
+        NRF24_ClearIRQ(&nrf, NRF24_STATUS_TX_DS);
+    }
+
+    if (status & NRF24_STATUS_MAX_RT) {
+        NRF24_ClearIRQ(&nrf, NRF24_STATUS_MAX_RT);
+        NRF24_FlushTX(&nrf);
+    }
+}
+#endif /* NRF_DEMO */
 /* USER CODE END 4 */
 
 /**
