@@ -321,12 +321,6 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    if(HAL_GetTick() - softTimer > 1000)
-    {
-      HAL_GPIO_TogglePin(USER_LED_GPIO_Port, USER_LED_Pin);
-      softTimer = HAL_GetTick();
-    }
-
 #if NRF_DEMO
     /* --- NRF24 RX polling / IRQ handling --- */
     if (nrf_irq_flag) {
