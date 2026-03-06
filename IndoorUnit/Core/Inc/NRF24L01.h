@@ -62,12 +62,12 @@ NRF24_CONFIG_MASK_RX_DR = 0x40
 
 // STATUS register bits
 typedef enum {
-NRF24_STATUS_TX_FULL = 0x01,
-NRF24_STATUS_RX_P_NO_MASK = 0x0E, // Bits 3:1 - data pipe number
-NRF24_STATUS_MAX_RT = 0x10,
-NRF24_STATUS_TX_DS = 0x20,
-NRF24_STATUS_RX_DR = 0x40,
-NRF24_STATUS_IRQ_MASK = 0x70  // All IRQ flags combined
+NRF24_STATUS_TX_FULL = 0x01,        // TX FIFO full flag
+NRF24_STATUS_RX_P_NO_MASK = 0x0E,   // Bits 3:1 - data pipe number
+NRF24_STATUS_MAX_RT = 0x10,         // Max retransmits
+NRF24_STATUS_TX_DS = 0x20,          // Data sent
+NRF24_STATUS_RX_DR = 0x40,          // Data received
+NRF24_STATUS_IRQ_MASK = 0x70        // All IRQ flags combined
 } NRF24_Status_t;
 
 // FIFO_STATUS register bits

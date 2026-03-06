@@ -410,8 +410,18 @@ void Measurement_GetCSV(char *buffer, uint16_t len) {
     if (buffer == NULL || len == 0) {
         return;
     }
-    snprintf(buffer, len, "Si7021 temp=%.2f C, humidity=%.2f %%\r\nBMP280 temp=%.2f C, pressure=%.2f hPa\r\nTSL2561 lux=%.2f\r\n",
+    snprintf(buffer, len, "%f,%f,%f,%f,%f",             
              devices.data.si7021_temp, devices.data.si7021_hum,
              devices.data.bmp280_temp, devices.data.bmp280_press,
              devices.data.tsl2561_lux);
+}
+
+/**
+ * @brief Gets the latest measurement data directly
+ */
+void Measurement_GetData(Measurement_Data_t *data) {
+    if (data == NULL) {
+        return;
+    }
+    *data = devices.data;
 }
