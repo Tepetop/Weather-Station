@@ -38,12 +38,7 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <encoder.h>
-#include <button_debounce.h>
-
-#include "ds3231_clod.h"
-#include "NRF24L01.h"
-#include "weather_station.h"
+#include "weather_station_config.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -54,16 +49,7 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-#define IRQ_FLAG_SET 1
-#define IRQ_FLAG_CLEAR 0
 
-/* NRF24L01 configuration */
-#define NRF_CHANNEL      76      // 2476 MHz
-#define NRF_PAYLOAD_SIZE 20     // Measurement data payload size
-#define NRF_CMD_SIZE     8      // Command payload size
-#define CMD_MEASURE      0x01   // Command to request measurement
-#define NRF_TX_IRQ_TIMEOUT_MS 80U
-#define WS_NODE_COUNT 1U
 
 /* USER CODE END PD */
 
@@ -75,62 +61,8 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-Menu_Context_t menuContext;   // Menu context for managing menu state
-PCD8544_t LCD;                // LCD instance
-Encoder_t encoder;            // Encoder instance
-Button_t encoderSW;          // Button instance for encoder switch
-
-DS3231_Handle rtc;
-DS3231_DateTime currentDateTime = {
-  .seconds = 0,
-  .minutes = 15,
-  .hours   = 12,
-  .ampm    = DS3231_AM,
-  .format  = DS3231_FORMAT_24H,
-  .day     = 7,
-  .date    = 22,
-  .month   = 2,
-  .year    = 26,
-  .century = false
-};
-
-  DS3231_Alarm1 RTCalarm1 = {
-  .seconds = 1,
-  .minutes = 0,
-  .hours = 0,
-  .ampm = 0,  
-  .format = 0, 
-  .day_date = 0,
-  .mode = DS3231_ALM1_EVERY_SECOND  
-};
-
-DS3231_DateTime rtcNow;
-
-volatile uint8_t alarm1_count= 0;
-volatile uint8_t alarm2_count = 0;
 
 
-char buffer[64];
-uint32_t softTimer = 0;
-
-
-NRF24_Handle_t nrf;
-WS_Manager_t wsCtx = {0};
-WS_RuntimeConfig_t wsRuntime = {0};
-
-/* NRF addresses */
-static const uint8_t WS_NODE_TX_ADDRS[WS_MAX_NODES][5] = {
-  {0xE7, 0xE7, 0xE7, 0xE7, 0xE7},
-  {0xE8, 0xE8, 0xE8, 0xE8, 0xE8},
-  {0xE9, 0xE9, 0xE9, 0xE9, 0xE9},
-  {0xEA, 0xEA, 0xEA, 0xEA, 0xEA}
-};
-static const uint8_t WS_NODE_RX_ADDRS[WS_MAX_NODES][5] = {
-  {0xC2, 0xC2, 0xC2, 0xC2, 0xC2},
-  {0xC3, 0xC3, 0xC3, 0xC3, 0xC3},
-  {0xC4, 0xC4, 0xC4, 0xC4, 0xC4},
-  {0xC5, 0xC5, 0xC5, 0xC5, 0xC5}
-};
 
 
 /* USER CODE END PV */
@@ -142,35 +74,12 @@ void SystemClock_Config(void);
 void EncoderButtonFlag(void);
 static void NRF_DelayUs(uint32_t us);
 void RTC_alarm(void);
+static bool RTC_IsManualSetRequestedAtBoot(void);
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
-
-/**
- * @brief Microsecond delay using DWT cycle counter.
- */
-static void NRF_DelayUs(uint32_t us) 
-{
-  CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
-  DWT->CYCCNT = 0;
-  DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
-
-  uint32_t cycles = (SystemCoreClock / 1000000U) * us;
-  uint32_t start = DWT->CYCCNT;
-  while ((DWT->CYCCNT - start) < cycles);
-}
-
-void RTC_alarm(void)
-{
-  alarm1_count++;
-  if(alarm1_count% 3 == 0) 
-  {
-    alarm1_count= 0;
-    WS_RequestMeasurementForActiveNode(&wsCtx);
-  }
-}
 
 
 /* USER CODE END 0 */
@@ -189,7 +98,7 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
+   HAL_Init();
 
   /* USER CODE BEGIN Init */
 
@@ -210,6 +119,8 @@ int main(void)
   MX_TIM1_Init();
   MX_SPI2_Init();
   /* USER CODE BEGIN 2 */
+  bool rtcManualSetRequested = RTC_IsManualSetRequestedAtBoot();
+
   /*            Initialize encoder        */
   Encoder_Init(&encoder, &htim1, TIM_CHANNEL_1, TIM_CHANNEL_2);   
 
@@ -218,20 +129,44 @@ int main(void)
   ButtonRegisterPressCallback(&encoderSW, EncoderButtonFlag);
 
   /*            Initialize LCD           */
-  PCD8544_Init(&LCD, &hspi1, LCD_DC_GPIO_Port, LCD_DC_Pin, LCD_CE_GPIO_Port, LCD_CE_Pin, LCD_RST_GPIO_Port, LCD_RST_Pin);
-  PCD8544_ClearScreen(&LCD);
+  if(PCD8544_Init(&LCD, &hspi1, LCD_DC_GPIO_Port, LCD_DC_Pin, LCD_CE_GPIO_Port, LCD_CE_Pin, LCD_RST_GPIO_Port, LCD_RST_Pin) != PCD_OK) {
+    Error_Handler();
+  }
+  else {
+  {
+    PCD8544_ClearScreen(&LCD);
+  }
+  }
  
   /*            Initialize RTC        */
-  if (DS3231_ERROR == DS3231_clod_Init(&rtc, &hi2c2, RTC_SQW_GPIO_Port, RTC_SQW_Pin, DS3231_I2C_ADDR, DS3231_FORMAT_24H)) {
+  if (DS3231_Init(&rtc, &hi2c2, RTC_SQW_GPIO_Port, RTC_SQW_Pin, DS3231_I2C_ADDR, DS3231_FORMAT_24H) != DS3231_OK) {
     Error_Handler();
   }
 
-  if (DS3231_ERROR == DS3231_clod_SetDateTime(&rtc, &currentDateTime)) {
+  if (DS3231_GetOscillatorStopFlag(&rtc) != DS3231_OK) {
     Error_Handler();
   }
 
-  DS3231_clod_SetAlarm1(&rtc, &RTCalarm1);
-  DS3231_clod_EnableAlarm1Interrupt(&rtc);
+  if (rtcManualSetRequested || rtc.oscilator_stopped) 
+  {
+    /* Set time once on manual request or after oscillator stop (OSF=1). */
+    if (DS3231_SetDateTime(&rtc, &currentDateTime) != DS3231_OK) {
+      Error_Handler();
+    }
+
+    if (DS3231_ClearOscillatorStopFlag(&rtc) != DS3231_OK) {
+      Error_Handler();
+    }
+
+    rtcNow = currentDateTime;
+  } else {
+    if (DS3231_GetDateTime(&rtc, &rtcNow) != DS3231_OK) {
+      Error_Handler();
+    }
+  }
+
+  DS3231_SetAlarm1(&rtc, &RTCalarm1);
+  DS3231_EnableAlarm1Interrupt(&rtc);
 
 
   /* Initialize menu system with predefined configuration */
@@ -249,7 +184,8 @@ int main(void)
    * --------------------------------------------------------------- */
 
   /* 1. Initialize nRF24L01 driver handle. */
-  if (NRF24_Init(&nrf, &hspi2,SPI2_CS_GPIO_Port, SPI2_CS_Pin, SPI2_CE_GPIO_Port, SPI2_CE_Pin, SPI2_IRQ_GPIO_Port, SPI2_IRQ_Pin, NRF_DelayUs) != HAL_OK) {
+  if (NRF24_Init(&nrf, &hspi2,SPI2_CS_GPIO_Port, SPI2_CS_Pin, SPI2_CE_GPIO_Port, SPI2_CE_Pin, SPI2_IRQ_GPIO_Port, SPI2_IRQ_Pin, NRF_DelayUs) != HAL_OK) 
+  {
     PCD8544_SetFont(&LCD, &Font_6x8);
     PCD8544_SetCursor(&LCD, 0, 0);
     PCD8544_WriteString(&LCD, "NRF FAIL");
@@ -259,11 +195,13 @@ int main(void)
 
   WS_InitManager(&wsCtx, WS_NODE_TX_ADDRS, WS_NODE_RX_ADDRS, WS_NODE_COUNT);
 
+
+  /*  Initialize Weather Station Runtime struct   */  
   wsRuntime.nrf = &nrf;
   wsRuntime.lcd = &LCD;
   wsRuntime.rtc_now = &rtcNow;
-  wsRuntime.text_buffer = buffer;
-  wsRuntime.text_buffer_size = sizeof(buffer);
+  wsRuntime.text_buffer = g_nrf_message;
+  wsRuntime.text_buffer_size = sizeof(g_nrf_message);
   wsRuntime.led_port = USER_LED_GPIO_Port;
   wsRuntime.led_pin = USER_LED_Pin;
   wsRuntime.channel = NRF_CHANNEL;
@@ -282,10 +220,7 @@ int main(void)
   }
 
   /* Initialize UI context for weather station display functions */
-  WS_UI_Init(&WS_UI, &wsCtx, &wsRuntime, &LCD, &menuContext, &rtcNow, buffer, sizeof(buffer));
-
-  /*  Soft timer for LED toggle */
-  softTimer = HAL_GetTick();
+  WS_UI_Init(&WS_UI, &wsCtx, &wsRuntime, &LCD, &menuContext, &rtcNow, g_nrf_message, sizeof(g_nrf_message));
 
   /* USER CODE END 2 */
 
@@ -301,7 +236,7 @@ int main(void)
     WS_ProcessEventHandler(&wsCtx, &wsRuntime, HAL_GetTick());
 
     /*    Process with RTC event     */
-    DS3231_clod_EventHandler(&rtc, &rtcNow, RTC_alarm, NULL);
+    DS3231_EventHandler(&rtc, &rtcNow, RTC_alarm, NULL);
 
     /*    Process with button event routine    */
     ButtonTask(&encoderSW);
@@ -345,8 +280,7 @@ int main(void)
   * @brief System Clock Configuration
   * @retval None
   */
-void SystemClock_Config(void)
-{
+void SystemClock_Config(void){
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
@@ -384,7 +318,8 @@ void SystemClock_Config(void)
 
 /*      Encoder timer handler     */
 void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim){
-  if (htim->Instance == TIM1) // Check if the interrupt is from TIM1
+  /*   Check if the interrupt is from TIM1*/
+  if (htim->Instance == TIM1)
   {
     encoder.IRQ_Flag = IRQ_FLAG_SET;
   }
@@ -397,7 +332,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
   ButtonIRQHandler(&encoderSW, GPIO_Pin);
 
   /* RTC SQW/INT pin IRQ handler */
-  DS3231_clod_IRQHandler(&rtc, GPIO_Pin);
+  DS3231_IRQHandler(&rtc, GPIO_Pin);
 
   /* NRF24L01 IRQ pin (active low) */
   if (GPIO_Pin == SPI2_IRQ_Pin)
@@ -406,11 +341,55 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
   }
 }
 
+
+
+/*                PRIVATE FUNCTIONS                             */
+
+/**
+ * @brief Microsecond delay using DWT cycle counter.
+ */
+static void NRF_DelayUs(uint32_t us) {
+  CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+  DWT->CYCCNT = 0;
+  DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+
+  uint32_t cycles = (SystemCoreClock / 1000000U) * us;
+  uint32_t start = DWT->CYCCNT;
+  while ((DWT->CYCCNT - start) < cycles);
+}
+
+/* RTC alarm function assign to callback */
+void RTC_alarm(void){
+  alarm1_count++;
+  if(alarm1_count% 3 == 0) 
+  {
+    alarm1_count= 0;
+    WS_RequestMeasurementForActiveNode(&wsCtx);
+  }
+}
+
 /*      Encoder button function to assign to callback     */
 void EncoderButtonFlag(void)
 {
   encoder.ButtonIRQ_Flag = IRQ_FLAG_SET;
   Menu_SetEnterAction(&menuContext);
+}
+
+/* Hold encoder button during boot to force one-time manual RTC update. */
+static bool RTC_IsManualSetRequestedAtBoot(void){
+  uint32_t startTick = HAL_GetTick();
+
+  if (HAL_GPIO_ReadPin(ENC_BUTTON_GPIO_Port, ENC_BUTTON_Pin) != GPIO_PIN_RESET) {
+    return false;
+  }
+
+  while ((HAL_GetTick() - startTick) < RTC_MANUAL_SET_HOLD_MS) {
+    if (HAL_GPIO_ReadPin(ENC_BUTTON_GPIO_Port, ENC_BUTTON_Pin) != GPIO_PIN_RESET) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 /* USER CODE END 4 */

@@ -46,7 +46,8 @@ typedef enum {
     CHART_VIEW_NONE = 0,
     CHART_VIEW_TEMPERATURE,
     CHART_VIEW_HUMIDITY,
-    CHART_VIEW_PRESSURE
+    CHART_VIEW_PRESSURE,
+	CHART_VIEW_LUX
 } ChartViewType_t;
 
 typedef struct

@@ -24,7 +24,7 @@ Menu_t WykonajPomiar;
 Menu_t tempWykres;
 Menu_t wilgWykres;
 Menu_t cisnWykres;
-
+Menu_t luxWykres;
 /*   								MENU POMIAROWE						*/
 //					name;  					next;   		  prev;   		   		child;  	parent;		 menuFunction;
 
@@ -34,7 +34,8 @@ Menu_t Ustawienia = {"Ustawienia", 			NULL,  			  &StronaDomyslna, 		&Wykresy, 	
 	Menu_t Wykresy = {"Przebiegi", 			&StacjePomiarowe, NULL, 				&tempWykres,&Ustawienia, NULL};
 		Menu_t tempWykres = {"Temperatura", &wilgWykres, 	  NULL, 				NULL, 		&Wykresy, 	 WS_UI_ChartTemperature};
 		Menu_t wilgWykres = {"Wilgotnosc", 	&cisnWykres, 	  &tempWykres, 			NULL, 		&Wykresy, 	 WS_UI_ChartHumidity};
-		Menu_t cisnWykres = {"Cisnienie", 	NULL, 	  		  &wilgWykres, 			NULL, 		&Wykresy, 	 WS_UI_ChartPressure};
+		Menu_t cisnWykres = {"Cisnienie", 	&luxWykres, 	  &wilgWykres, 			NULL, 		&Wykresy, 	 WS_UI_ChartPressure};
+		Menu_t luxWykres = {"Swiatlo", 		NULL, 	  		  &cisnWykres, 			NULL, 		&Wykresy, 	 WS_UI_ChartLux};
 
 	Menu_t StacjePomiarowe = {"Stacje pom.",&WykonajPomiar,  &Wykresy, 				&StatusPomiarow, 		&Ustawienia, NULL};
 		Menu_t StatusPomiarow = {"Status", 	NULL,   	 	 NULL, 					NULL, 		&StacjePomiarowe, WS_UI_StationsStatus};

@@ -16,7 +16,8 @@
 #include <stdint.h>
 
 #include "NRF24L01.h"
-#include "ds3231_clod.h"
+#include "ds3231.h"
+
 #include <PCD_LCD/PCD8544.h>
 #include <PCD_LCD/PCD8544_Drawing.h>
 #include <PCD_LCD/PCD8544_Menu.h>
@@ -418,6 +419,11 @@ void WS_UI_ChartHumidity(void);
  * @brief Enter pressure chart view (menu function callback)
  */
 void WS_UI_ChartPressure(void);
+
+/**
+ * @brief Enter light intensivity chart view (menu function callback)
+ */
+void WS_UI_ChartLux(void);
 
 /**
  * @brief Chart view main task - update and redraw chart while in view

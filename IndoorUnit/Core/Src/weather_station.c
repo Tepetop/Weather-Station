@@ -11,6 +11,7 @@
 
 #include <PCD_LCD/PCD8544_fonts.h>
 
+#include <stdint.h>
 #include <string.h>
 #include <stdio.h>
 
@@ -887,6 +888,7 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
 PCD8544_ChartData_t WS_TemperatureChart;
 PCD8544_ChartData_t WS_HumidityChart;
 PCD8544_ChartData_t WS_PressureChart;
+PCD8544_ChartData_t WS_LuxChart;
 
 /** @brief Global UI context */
 WS_UIContext_t WS_UI = {0};
@@ -925,7 +927,12 @@ void WS_UI_InitCharts(void) {
   /* Pressure chart - integer hPa */
   PCD8544_InitChartData(&WS_PressureChart);
   WS_PressureChart.decimalPlaces = 0;
-  WS_PressureChart.chartType = PCD8544_CHART_BAR;
+  WS_PressureChart.chartType = PCD8544_CHART_DOT_LINE;
+
+  /* Light intensity chart - integer lux */
+  PCD8544_InitChartData(&WS_LuxChart);
+  WS_LuxChart.decimalPlaces = 0;
+  WS_LuxChart.chartType = PCD8544_CHART_DOT_LINE;
 }
 
 /**
@@ -938,10 +945,12 @@ void WS_UI_AddMeasurementToCharts(const WS_MeasurementData_t *data, uint8_t hour
   int16_t tempVal = (int16_t)(data->si7021_temp * 10.0f);  /* tenths of C */
   int16_t humVal = (int16_t)(data->si7021_hum * 10.0f);    /* tenths of % */
   int16_t pressVal = (int16_t)(data->bmp280_press);        /* hPa integer */
+  int16_t luxVal = (int16_t)(data->tsl2561_lux);             /* lux integer */
   
   PCD8544_AddChartPoint(&WS_TemperatureChart, tempVal, hour, minute);
   PCD8544_AddChartPoint(&WS_HumidityChart, humVal, hour, minute);
   PCD8544_AddChartPoint(&WS_PressureChart, pressVal, hour, minute);
+  PCD8544_AddChartPoint(&WS_LuxChart, luxVal, hour, minute);
 }
 
 /**
@@ -1059,6 +1068,20 @@ void WS_UI_ChartPressure(void) {
 }
 
 /**
+ * @brief Enter light intensity chart view (menu callback)
+ */
+void WS_UI_ChartLux(void) {
+  if (WS_UI.menu_ctx == NULL || WS_UI.lcd == NULL) return;
+
+  WS_UI.menu_ctx->state.InChartView = 1;
+  WS_UI.menu_ctx->state.ChartViewType = CHART_VIEW_LUX;
+
+  PCD8544_ClearBuffer(WS_UI.lcd);
+  PCD8544_DrawChart(WS_UI.lcd, &WS_LuxChart);
+  PCD8544_UpdateScreen(WS_UI.lcd);
+}
+
+/**
  * @brief Chart view main task - call in main loop when InChartView == 1
  */
 void WS_UI_ChartViewTask(void) {
@@ -1085,6 +1108,10 @@ void WS_UI_ChartViewTask(void) {
       case CHART_VIEW_PRESSURE:
         PCD8544_DrawChart(WS_UI.lcd, &WS_PressureChart);
         break;
+      case CHART_VIEW_LUX:
+        PCD8544_DrawChart(WS_UI.lcd, &WS_LuxChart);
+        break;
+
       default:
         break;
     }
