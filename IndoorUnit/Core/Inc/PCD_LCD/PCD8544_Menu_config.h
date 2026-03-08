@@ -10,7 +10,8 @@
 
 #include <PCD8544_Menu.h>
 #include <string.h>
-#include "demo_tests.h"
+#include "weather_station.h"
+
 #define MENU_TEST 0
 
 /*		Definicja struktur 		*/
@@ -27,18 +28,18 @@ Menu_t cisnWykres;
 /*   								MENU POMIAROWE						*/
 //					name;  					next;   		  prev;   		   		child;  	parent;		 menuFunction;
 
-Menu_t StronaDomyslna = {"Dane pom.", 		&Ustawienia,      NULL, 				NULL, 		NULL, 		 demo_measurement_function};		//dodać ptr do funckji pokazującej pomiary
+Menu_t StronaDomyslna = {"Dane pom.", 		&Ustawienia,      NULL, 				NULL, 		NULL, 		 WS_UI_MeasurementDisplay};
 Menu_t Ustawienia = {"Ustawienia", 			NULL,  			  &StronaDomyslna, 		&Wykresy, 	NULL, 		 NULL};
 
 	Menu_t Wykresy = {"Przebiegi", 			&StacjePomiarowe, NULL, 				&tempWykres,&Ustawienia, NULL};
-		Menu_t tempWykres = {"Temperatura", &wilgWykres, 	  NULL, 				NULL, 		&Wykresy, 	 chart_temperature_function};
-		Menu_t wilgWykres = {"Wilgotnosc", 	&cisnWykres, 	  &tempWykres, 			NULL, 		&Wykresy, 	 chart_humidity_function};
-		Menu_t cisnWykres = {"Cisnienie", 	NULL, 	  		  &wilgWykres, 			NULL, 		&Wykresy, 	 chart_pressure_function};
+		Menu_t tempWykres = {"Temperatura", &wilgWykres, 	  NULL, 				NULL, 		&Wykresy, 	 WS_UI_ChartTemperature};
+		Menu_t wilgWykres = {"Wilgotnosc", 	&cisnWykres, 	  &tempWykres, 			NULL, 		&Wykresy, 	 WS_UI_ChartHumidity};
+		Menu_t cisnWykres = {"Cisnienie", 	NULL, 	  		  &wilgWykres, 			NULL, 		&Wykresy, 	 WS_UI_ChartPressure};
 
 	Menu_t StacjePomiarowe = {"Stacje pom.",&WykonajPomiar,  &Wykresy, 				&StatusPomiarow, 		&Ustawienia, NULL};
-		Menu_t StatusPomiarow = {"Status", 	NULL,   	 	 NULL, 					NULL, 		&StacjePomiarowe, NULL};
+		Menu_t StatusPomiarow = {"Status", 	NULL,   	 	 NULL, 					NULL, 		&StacjePomiarowe, WS_UI_StationsStatus};
 		
-	Menu_t WykonajPomiar = {"Wyk. pomiar",	NULL, 			 &StacjePomiarowe,  	NULL, 		&Ustawienia, NULL};
+	Menu_t WykonajPomiar = {"Wyk. pomiar",	NULL, 			 &StacjePomiarowe,  	NULL, 		&Ustawienia, WS_UI_TakeMeasurement};
 
 #if MENU_TEST
 /*		Definition of main menu structures		*/

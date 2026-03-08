@@ -122,7 +122,7 @@ static void ds3231_clod_decode_hours(uint8_t reg,
 
 /* --- Inicjalizacja ------------------------------------------------------- */
 
-DS3231_Status DS3231_clod_Init(DS3231_t *hrtc, I2C_HandleTypeDef *hi2c, uint16_t address, DS3231_HourFormat hour_format)
+DS3231_Status DS3231_clod_Init(DS3231_t *hrtc, I2C_HandleTypeDef *hi2c, GPIO_TypeDef *sqw_port, uint16_t sqw_pin, uint16_t address, DS3231_HourFormat hour_format)
 {
     if (hrtc == NULL || hi2c == NULL){
         return DS3231_ERR_PARAM;
@@ -141,8 +141,8 @@ DS3231_Status DS3231_clod_Init(DS3231_t *hrtc, I2C_HandleTypeDef *hi2c, uint16_t
     hrtc->DS3231_IRQ_Alarm = DS3231_IRQ_NONE;
     hrtc->DS3231_IRQ_Flag = DS3231_IRQ_NONE;
 
-    hrtc->sqw_port = NULL;
-    hrtc->sqw_pin = 0;
+    hrtc->sqw_port = sqw_port;
+    hrtc->sqw_pin = sqw_pin;
 
     /* Sprawdź komunikację – odczytaj rejestr kontrolny */
     status = ds3231_clod_read_reg(hrtc, DS3231_REG_CONTROL, &ctrl);
@@ -586,6 +586,46 @@ DS3231_Status DS3231_clod_GetAgingOffset(DS3231_t *hrtc, int8_t *offset)
 
     *offset = (int8_t)raw;
     return DS3231_OK;
+}
+
+/*  --      IRQ handler             */
+
+DS3231_Status DS3231_clod_EventHandler(DS3231_t *hrtc, DS3231_DateTime *rtcNow, void (*alarm1)(void), void (*alarm2)(void))
+{
+    if (hrtc == NULL || !hrtc->initialized) 
+        return DS3231_ERR_PARAM;
+
+    if (rtcNow == NULL)
+        return DS3231_ERR_PARAM;
+
+    if (hrtc->DS3231_IRQ_Flag)
+        {
+            DS3231_clod_CheckAndClearAlarmFlags(hrtc);
+            DS3231_clod_GetDateTime(hrtc, rtcNow);
+            if((hrtc->DS3231_IRQ_Alarm & DS3231_IRQ_ALARM1) && (alarm1 != NULL)) // Alarm 1 triggered
+            {
+                alarm1();
+            }
+            else if((hrtc->DS3231_IRQ_Alarm & DS3231_IRQ_ALARM2) && (alarm2 != NULL)) // Alarm 2 triggered
+            {
+                alarm2();
+            }
+            hrtc->DS3231_IRQ_Flag = 0;
+        }
+    return DS3231_OK;
+}
+
+DS3231_Status DS3231_clod_IRQHandler(DS3231_t *hrtc, uint16_t GPIO_Pin)
+{
+    if (hrtc == NULL || !hrtc->initialized) 
+        return DS3231_ERR_PARAM;
+
+    if (GPIO_Pin == hrtc->sqw_pin)
+        {
+            hrtc->DS3231_IRQ_Flag = 1;
+        }
+
+      return DS3231_OK;
 }
 
 /* --- Status i diagnostyka ------------------------------------------------ */

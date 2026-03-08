@@ -651,6 +651,17 @@ PCD_Status PCD8544_DrawChart(PCD8544_t *PCD, PCD8544_ChartData_t *chartData)
     if (fontWidth == 0) fontWidth = 6;
     if (fontHeight == 0) fontHeight = 8;
 
+    // Handle empty chart case
+    if (chartData->numPoints == 0) {
+        PCD8544_SetCursor(PCD, 0, 0);
+        PCD8544_WriteString(PCD, "No data");
+        PCD8544_SetCursor(PCD, 0, 2);
+        PCD8544_WriteString(PCD, "Waiting for");
+        PCD8544_SetCursor(PCD, 0, 3);
+        PCD8544_WriteString(PCD, "measurements...");
+        return PCD_OK;
+    }
+
     // Chart layout constants - data points area (rows 1-4, full width)
     const uint8_t CHART_TOP_ROW = 1;      // First row for data (row 0 is for MAX/MIN labels)
     const uint8_t CHART_BOTTOM_ROW = 4;   // Last row for data (row 5 is for timestamps)

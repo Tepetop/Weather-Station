@@ -218,7 +218,7 @@ typedef DS3231_t DS3231_Handle;
  * @param  hour_format Preferowany format godziny
  * @return DS3231_OK lub kod błędu
  */
-DS3231_Status DS3231_clod_Init(DS3231_t *hrtc, I2C_HandleTypeDef *hi2c, uint16_t address, DS3231_HourFormat hour_format);
+DS3231_Status DS3231_clod_Init(DS3231_t *hrtc, I2C_HandleTypeDef *hi2c, GPIO_TypeDef *sqw_port, uint16_t sqw_pin, uint16_t address, DS3231_HourFormat hour_format);
 
 /* --- Czas i data --------------------------------------------------------- */
 
@@ -399,6 +399,15 @@ DS3231_Status DS3231_clod_SetAgingOffset(DS3231_t*hrtc, int8_t offset);
  * @return DS3231_OK lub kod błędu
  */
 DS3231_Status DS3231_clod_GetAgingOffset(DS3231_t*hrtc, int8_t *offset);
+
+
+
+
+DS3231_Status DS3231_clod_EventHandler(DS3231_t *hrtc, DS3231_DateTime *rtcNow, void (*alarm1)(void), void (*alarm2)(void));
+
+DS3231_Status DS3231_clod_IRQHandler(DS3231_t *hrtc, uint16_t GPIO_Pin);
+
+
 
 /* --- Status i diagnostyka ------------------------------------------------ */
 
