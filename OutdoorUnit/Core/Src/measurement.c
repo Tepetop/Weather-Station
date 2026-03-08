@@ -8,12 +8,25 @@ static BMP280_t hbmp280;
 static TSL2561_t htsl2561;
 static I2C_HandleTypeDef *measurement_hi2c;
 static Groupe_State_t devices;
+static uint32_t measurementWakeupTick;
 
 /* Sensor initialization flags */
 #define SENSOR_SI7021_INIT  (1 << 0)
 #define SENSOR_BMP280_INIT  (1 << 1)
 #define SENSOR_TSL2561_INIT (1 << 2)
 #define ALL_SENSORS_INIT    (SENSOR_SI7021_INIT | SENSOR_BMP280_INIT | SENSOR_TSL2561_INIT)
+
+static uint32_t Measurement_GetTSL2561IntegrationDelayMs(void) {
+    switch (htsl2561.timing_ms) {
+        case TSL2561_INTEG_13MS:
+            return 14U;
+        case TSL2561_INTEG_101MS:
+            return 101U;
+        case TSL2561_INTEG_402MS:
+        default:
+            return 402U;
+    }
+}
 
 /**
  * @brief Initializes the measurement module
@@ -29,6 +42,7 @@ void Measurement_Init(I2C_HandleTypeDef *hi2c) {
     devices.sensorErrorCode = ERROR_NONE;
     devices.initRetryCount = 0;
     devices.sensorsInitialized = 0;
+    measurementWakeupTick = 0U;
     memset(&devices.data, 0, sizeof(Measurement_Data_t));
 }
 
@@ -39,6 +53,7 @@ void Measurement_Start(void) {
     if (devices.state == MEAS_IDLE || devices.state == MEAS_SLEEP) {
         // Clear error codes from previous measurement
         devices.sensorErrorCode = ERROR_NONE;
+        measurementWakeupTick = 0U;
         // Wake up sensors first if they were sleeping
         if (devices.state == MEAS_SLEEP) {
             devices.state = MEAS_WAKEUP;
@@ -281,8 +296,6 @@ void Measurement_WakeupSensors(void) {
     // TSL2561 - power on
     if (devices.sensorsInitialized & SENSOR_TSL2561_INIT) {
         TSL2561_PowerOn(&htsl2561);
-        // Allow sensor to stabilize after power on
-        HAL_Delay(5);
     }
 }
 
@@ -312,9 +325,16 @@ void Measurement_Process(void)
             break;
         
         case MEAS_WAKEUP:
-            // Wake up sensors from sleep mode
-            Measurement_WakeupSensors();
-            devices.state = MEAS_MEASURE;
+            if (measurementWakeupTick == 0U) {
+                Measurement_WakeupSensors();
+                measurementWakeupTick = HAL_GetTick();
+                break;
+            }
+
+            if ((HAL_GetTick() - measurementWakeupTick) >= Measurement_GetTSL2561IntegrationDelayMs()) {
+                measurementWakeupTick = 0U;
+                devices.state = MEAS_MEASURE;
+            }
             break;
         
         case MEAS_MEASURE:
@@ -329,12 +349,14 @@ void Measurement_Process(void)
         case MEAS_DONE:
             // Measurement cycle finished, put sensors to sleep
             Measurement_SleepSensors();
+            measurementWakeupTick = 0U;
             devices.state = MEAS_SLEEP;
             break;
 
         case MEAS_ERROR:
             // Critical error - attempt recovery
             Measurement_HandleError();
+            measurementWakeupTick = 0U;
             // If at least one sensor is now working, go to sleep state
             if (devices.sensorsInitialized != 0) {
                 devices.state = MEAS_SLEEP;

@@ -114,6 +114,7 @@ typedef struct {
 typedef struct {
   uint8_t tx_addr[5];                  /**< Transmit address for this node */
   uint8_t rx_addr[5];                  /**< Receive address for this node */
+  uint8_t rx_pipe;                     /**< RX pipe number on central (1-5) */
   volatile uint8_t measurement_pending;/**< Flag: measurement request pending */
   volatile uint8_t awaiting_response;  /**< Flag: waiting for data response */
   volatile uint8_t tx_in_progress;     /**< Flag: transmission in progress */
