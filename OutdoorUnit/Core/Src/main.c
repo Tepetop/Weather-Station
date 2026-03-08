@@ -33,10 +33,29 @@
 #include "TSL2561.h"
 #include "bmp280.h"
 #include "measurement.h"
+#include "NRF24L01.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+
+typedef enum {
+  OUT_LINK_IDLE = 0,
+  OUT_LINK_CMD_PENDING,
+  OUT_LINK_TX_IN_PROGRESS,
+  OUT_LINK_ERROR
+} OutdoorLinkStateEnum_t;
+
+typedef struct {
+  volatile uint8_t irq_flag;
+  volatile uint8_t cmd_received;
+  volatile uint8_t tx_in_progress;
+  volatile uint8_t tx_done;
+  volatile uint8_t tx_ok;
+  uint32_t tx_start_tick;
+  uint8_t last_status;
+  OutdoorLinkStateEnum_t state;
+} OutdoorLinkContext_t;
 
 /* USER CODE END PTD */
 
@@ -48,6 +67,14 @@
 #define BMP 0
 #define BMP_DMA 0 
 #define CHECK 0
+
+/* NRF24L01 configuration */
+#define NRF_ENABLED 1
+#define NRF_CHANNEL      76      // 2476 MHz - same as IndoorUnit
+#define NRF_PAYLOAD_SIZE 20     // Payload size for measurement data
+#define NRF_CMD_SIZE     8      // Command payload size
+#define CMD_MEASURE      0x01   // Command to request measurement
+#define NRF_TX_TIMEOUT_MS 120U
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -84,6 +111,16 @@ TSL2561_t tsl;
 Si7021_t sio;
 BMP280_t bmp;
 #endif
+
+#if NRF_ENABLED
+NRF24_Handle_t nrf;
+OutdoorLinkContext_t outLink = {0};
+
+/* NRF addresses - must match IndoorUnit but swapped (TX<->RX) */
+static const uint8_t NRF_TX_ADDR[5] = {0xC2, 0xC2, 0xC2, 0xC2, 0xC2}; // Send to Indoor's RX addr
+static const uint8_t NRF_RX_ADDR[5] = {0xE7, 0xE7, 0xE7, 0xE7, 0xE7}; // Receive from Indoor's TX addr
+
+#endif
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -93,11 +130,43 @@ void SystemClock_Config(void);
 void UartLog(char *msg);
 HAL_StatusTypeDef I2C_CheckAddress(I2C_HandleTypeDef *i2c);
 
+#if NRF_ENABLED
+static void NRF_DelayUs(uint32_t us);
+static void Outdoor_LedOn(void);
+static void Outdoor_LedOff(void);
+static void NRF_StartReceive(void);
+static void NRF_HandleIRQ(void);
+static void NRF_SendMeasurementData(void);
+#endif
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+#if NRF_ENABLED
+/**
+ * @brief Microsecond delay using DWT cycle counter.
+ *        Requires DWT to be enabled (Cortex-M3 has it).
+ */
+static void NRF_DelayUs(uint32_t us) {
+    /* Enable DWT if not already enabled */
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+    DWT->CYCCNT = 0;
+    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 
+    uint32_t cycles = (SystemCoreClock / 1000000U) * us;
+    uint32_t start = DWT->CYCCNT;
+    while ((DWT->CYCCNT - start) < cycles);
+}
+
+  static void Outdoor_LedOn(void) {
+    HAL_GPIO_WritePin(USER_LED_GPIO_Port, USER_LED_Pin, GPIO_PIN_RESET);
+  }
+
+  static void Outdoor_LedOff(void) {
+    HAL_GPIO_WritePin(USER_LED_GPIO_Port, USER_LED_Pin, GPIO_PIN_SET);
+  }
+#endif
 /* USER CODE END 0 */
 
 /**
@@ -164,6 +233,55 @@ int main(void)
 	I2C_CheckAddress(&hi2c2);
 #endif
 
+#if NRF_ENABLED
+  /* ---------------------------------------------------------------
+   * NRF24L01 Initialization - OutdoorUnit as RX (slave)
+   * --------------------------------------------------------------- */
+
+  /* 1. Initialize the nRF24L01 driver */
+  if (NRF24_Init(&nrf, &hspi1,NRF_CS_GPIO_Port, NRF_CS_Pin,NRF_CE_GPIO_Port, NRF_CE_Pin, NRF_IRQ_GPIO_Port, NRF_IRQ_Pin, NRF_DelayUs) != HAL_OK) 
+    {
+      UartLog("NRF24 Init FAILED!\r\n");
+      Error_Handler();
+    }
+
+  /* 2. Configure radio parameters - MUST match IndoorUnit */
+  NRF24_SetChannel(&nrf, NRF_CHANNEL);          // RF channel 76
+  NRF24_SetDataRate(&nrf, NRF24_DR_1MBPS);      // 1 Mbps
+  NRF24_SetPALevel(&nrf, NRF24_PA_MAX);         // 0 dBm
+  NRF24_SetCRC(&nrf, NRF24_CRC_2B);             // 2-byte CRC
+  NRF24_SetAddressWidth(&nrf, NRF24_AW_5);      // 5-byte address
+  NRF24_SetAutoRetr(&nrf, 1, 10);               // ARD=500us, ARC=10 retries
+
+  /* 3. Configure addresses - swapped from IndoorUnit */
+  NRF24_SetTXAddress(&nrf, NRF_TX_ADDR, 5);     // TX to Indoor's RX addr
+  NRF24_SetRXAddress(&nrf, 0, NRF_TX_ADDR, 5);  // Pipe 0 = TX_ADDR for auto-ACK
+  NRF24_SetRXAddress(&nrf, 1, NRF_RX_ADDR, 5);  // Pipe 1 = receive commands from Indoor
+
+  /* 4. Configure pipes */
+  NRF24_SetAutoAck(&nrf, 0, 1);                 // Auto-ACK on pipe 0
+  NRF24_SetAutoAck(&nrf, 1, 1);                 // Auto-ACK on pipe 1
+  NRF24_EnablePipe(&nrf, 0, 1);                 // Enable pipe 0
+  NRF24_EnablePipe(&nrf, 1, 1);                 // Enable pipe 1
+  NRF24_SetPayloadSize(&nrf, 0, NRF_PAYLOAD_SIZE);
+  NRF24_SetPayloadSize(&nrf, 1, NRF_CMD_SIZE);  // Pipe 1 for commands
+
+  outLink.irq_flag = 0U;
+  outLink.cmd_received = 0U;
+  outLink.tx_in_progress = 0U;
+  outLink.tx_done = 0U;
+  outLink.tx_ok = 0U;
+  outLink.last_status = 0U;
+  outLink.state = OUT_LINK_IDLE;
+
+  UartLog("NRF24 Init OK - Listening for commands...\r\n");
+  Outdoor_LedOff();
+
+  /* 5. Start in RX mode, waiting for commands */
+  NRF24_FlushRX(&nrf);
+  NRF_StartReceive();
+#endif
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -173,6 +291,79 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+#if NRF_ENABLED
+  /* Minimal fallback if EXTI edge is missed while waiting for NRF events. */
+  if (!outLink.irq_flag && (outLink.tx_in_progress || outLink.cmd_received)) {
+    uint8_t st = NRF24_GetStatus(&nrf);
+    if (st & (NRF24_STATUS_RX_DR | NRF24_STATUS_TX_DS | NRF24_STATUS_MAX_RT)) {
+      outLink.irq_flag = 1U;
+    }
+  }
+
+    /* --- NRF24 RX polling / IRQ handling --- */
+  if (outLink.irq_flag) {
+    outLink.irq_flag = 0;
+        NRF_HandleIRQ();
+    }
+
+  /* --- TX completion handling --- */
+  if (outLink.tx_done) {
+    outLink.tx_done = 0;
+    outLink.tx_in_progress = 0;
+
+    if (outLink.tx_ok) {
+      UartLog("TX: Data sent OK\r\n");
+      outLink.state = OUT_LINK_IDLE;
+    } else {
+      UartLog("TX: FAILED - no ACK\r\n");
+      outLink.state = OUT_LINK_ERROR;
+    }
+
+    Outdoor_LedOff();
+    NRF_StartReceive();
+  }
+
+  if (outLink.tx_in_progress && ((HAL_GetTick() - outLink.tx_start_tick) > NRF_TX_TIMEOUT_MS)) {
+    uint8_t st = NRF24_GetStatus(&nrf);
+    if (st & (NRF24_STATUS_TX_DS | NRF24_STATUS_MAX_RT)) {
+      outLink.irq_flag = 1U;
+      NRF_HandleIRQ();
+    }
+  }
+
+  if (outLink.tx_in_progress && !outLink.tx_done && ((HAL_GetTick() - outLink.tx_start_tick) > NRF_TX_TIMEOUT_MS)) {
+    outLink.tx_in_progress = 0;
+    outLink.tx_ok = 0;
+    outLink.state = OUT_LINK_ERROR;
+    UartLog("TX: IRQ TIMEOUT\r\n");
+    Outdoor_LedOff();
+    NRF_StartReceive();
+  }
+    
+    /* --- Command received: perform measurement and send data back --- */
+  if (outLink.cmd_received && !outLink.tx_in_progress) {
+    outLink.cmd_received = 0;
+    outLink.state = OUT_LINK_CMD_PENDING;
+
+    Outdoor_LedOn();
+        
+        /* Perform measurement cycle */
+        Measurement_WakeupSensors();
+        Measurement_Start();
+        
+        /* Wait for measurement to complete */
+        uint32_t timeout = HAL_GetTick() + 1000; // 1 second timeout
+        while (Measurement_GetState() != MEAS_SLEEP && HAL_GetTick() < timeout) {
+            Measurement_Process();
+        }
+        
+        /* Send measurement data via NRF */
+        NRF_SendMeasurementData();
+
+        sprintf(Message, "Measurement sent\r\n");
+        UartLog(Message);
+    }
+#else
 #if SI7021
 	 Si7021_ReadHumidityAndTemperature(&sio);
 	 sprintf(Message,"Si7021 Temp = %.2f, Si7021 Hum = %.2f\n\r",sio.data.temperature, sio.data.humidity);
@@ -239,8 +430,8 @@ int main(void)
        UartLog(Message);
    }
 #endif
-   HAL_GPIO_TogglePin(USER_LED_GPIO_Port, USER_LED_Pin);
-	 HAL_Delay(500);
+#endif /* NRF_ENABLED else block */
+  HAL_Delay(10);
   }
   /* USER CODE END 3 */
 }
@@ -329,6 +520,98 @@ void HAL_I2C_MemRxCpltCallback(I2C_HandleTypeDef *hi2c)
   }
 }
 #endif
+
+#if NRF_ENABLED
+/* ---------------------------------------------------------------
+ * NRF24L01 Functions - OutdoorUnit (Slave/Receiver)
+ * --------------------------------------------------------------- */
+
+/**
+ * @brief  Switch nRF24L01 to RX mode and start listening for commands.
+ */
+static void NRF_StartReceive(void) {
+  NRF24_SetMode(&nrf, NRF24_MODE_STANDBY);
+    NRF24_ClearIRQ(&nrf, NRF24_STATUS_IRQ_MASK);
+    NRF24_SetMode(&nrf, NRF24_MODE_RX);
+}
+
+/**
+ * @brief  Handle nRF24L01 IRQ: receive command from IndoorUnit.
+ */
+static void NRF_HandleIRQ(void) {
+    uint8_t status = NRF24_GetStatus(&nrf);
+  outLink.last_status = status;
+
+    if (status & NRF24_STATUS_RX_DR) {
+        /* Data received - check if it's a measurement command */
+        uint8_t rx_data[NRF_CMD_SIZE];
+        NRF24_ReadPayload(&nrf, rx_data, NRF_CMD_SIZE);
+        NRF24_ClearIRQ(&nrf, NRF24_STATUS_RX_DR);
+
+        /* Check command byte */
+        if (rx_data[0] == CMD_MEASURE) {
+            outLink.cmd_received = 1;
+            outLink.state = OUT_LINK_CMD_PENDING;
+            UartLog("CMD: Measure request received\r\n");
+        }
+    }
+
+    if (status & NRF24_STATUS_TX_DS) {
+        /* ACK sent (PRX mode) or TX complete (PTX mode) */
+        NRF24_ClearIRQ(&nrf, NRF24_STATUS_TX_DS);
+      outLink.tx_ok = 1;
+      outLink.tx_done = 1;
+    }
+
+    if (status & NRF24_STATUS_MAX_RT) {
+        NRF24_ClearIRQ(&nrf, NRF24_STATUS_MAX_RT);
+        NRF24_FlushTX(&nrf);
+      outLink.tx_ok = 0;
+      outLink.tx_done = 1;
+    }
+}
+
+/**
+ * @brief  Send measurement data to IndoorUnit via nRF24L01.
+ */
+static void NRF_SendMeasurementData(void) {
+    Measurement_Data_t txData;
+
+    if (outLink.tx_in_progress) {
+      return;
+    }
+
+    /* Get measurement data directly */
+    Measurement_GetData(&txData);
+
+    outLink.irq_flag = 0;
+    outLink.tx_done = 0;
+    outLink.tx_ok = 0;
+    outLink.tx_in_progress = 1;
+    outLink.tx_start_tick = HAL_GetTick();
+    outLink.state = OUT_LINK_TX_IN_PROGRESS;
+
+    NRF24_SetMode(&nrf, NRF24_MODE_STANDBY);
+    NRF24_FlushTX(&nrf);
+    NRF24_ClearIRQ(&nrf, NRF24_STATUS_IRQ_MASK);
+
+    /* Load payload into TX FIFO */
+    NRF24_WritePayload(&nrf, (uint8_t*)&txData, sizeof(Measurement_Data_t));
+
+    /* Trigger transmission (CE pulse) */
+    NRF24_SetMode(&nrf, NRF24_MODE_TX);
+}
+
+/**
+ * @brief  GPIO EXTI callback for NRF24L01 IRQ pin.
+ */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+    if (GPIO_Pin == NRF_IRQ_Pin) {
+    outLink.irq_flag = 1;
+    }
+}
+#endif /* NRF_ENABLED */
 
 /* USER CODE END 4 */
 

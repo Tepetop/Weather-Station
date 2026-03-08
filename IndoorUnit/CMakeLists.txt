@@ -49,11 +49,11 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/PCD_LCD/PCD8544_Menu.c
     Core/Src/PCD_LCD/PCD8544_fonts.c
     Core/Src/PCD_LCD/PCD8544_Drawing.c
-    Core/Src/ds3231_clod.c
+    Core/Src/ds3231.c
     Core/Src/encoder.c
     Core/Src/button_debounce.c
-    Core/Src/demo_tests.c
     Core/Src/NRF24L01.c
+    Core/Src/weather_station.c
 )
 
 # Add include paths

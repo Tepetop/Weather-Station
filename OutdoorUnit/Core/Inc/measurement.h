@@ -109,4 +109,10 @@ void Measurement_WakeupSensors(void);
  */
 void Measurement_GetCSV(char *buffer, uint16_t len);
 
+/**
+ * @brief Gets the latest measurement data directly
+ * @param data Pointer to Measurement_Data_t structure to fill
+ */
+void Measurement_GetData(Measurement_Data_t *data);
+
 #endif /* MEASUREMENT_H */

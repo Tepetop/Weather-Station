@@ -1,285 +1,467 @@
-#ifndef DS3231_H
-#define DS3231_H
-
-#include <main.h>
-#include <stdint.h>
-
-typedef enum {
-    DS3231_BLOKCING_MODE = 0,
-    DS3231_IT_MODE,
-    DS3231_DMA_MODE
-} DS3231_IOMODE_t;
-
 /**
- * @brief DS3231 register addresses. Time and calendar data are in BCD format.
- */
-typedef enum {
-    DS3231_REG_SECONDS     = 0x00,
-    DS3231_REG_MINUTES     = 0x01,
-    DS3231_REG_HOURS       = 0x02,
-    DS3231_REG_DAY         = 0x03,
-    DS3231_REG_DATE        = 0x04,
-    DS3231_REG_MONTH       = 0x05,
-    DS3231_REG_YEAR        = 0x06,
-    DS3231_REG_ALARM1_SEC  = 0x07,
-    DS3231_REG_ALARM1_MIN  = 0x08,
-    DS3231_REG_ALARM1_HOUR = 0x09,
-    DS3231_REG_ALARM1_DAY  = 0x0A,
-    DS3231_REG_ALARM2_MIN  = 0x0B,
-    DS3231_REG_ALARM2_HOUR = 0x0C,
-    DS3231_REG_ALARM2_DAY  = 0x0D,
-    DS3231_REG_CONTROL     = 0x0E,
-    DS3231_REG_STATUS      = 0x0F,
-    DS3231_REG_AGING       = 0x10,
-    DS3231_REG_TEMP_MSB    = 0x11,
-    DS3231_REG_TEMP_LSB    = 0x12
-} DS3231_Registers_t;
-
-/**
- * @brief Control register bits (0x0E).
- */
-typedef enum {
-    DS3231_CTRL_A1IE  = (1 << 0),
-    DS3231_CTRL_A2IE  = (1 << 1),
-    DS3231_CTRL_INTCN = (1 << 2),
-    DS3231_CTRL_RS1   = (1 << 3),
-    DS3231_CTRL_RS2   = (1 << 4),
-    DS3231_CTRL_CONV  = (1 << 5),
-    DS3231_CTRL_BBSQW = (1 << 6),
-    DS3231_CTRL_EOSC  = (1 << 7)
-} DS3231_Control_t;
-
-/**
- * @brief Status register bits (0x0F).
- */
-typedef enum {
-    DS3231_STAT_A1F     = (1 << 0),
-    DS3231_STAT_A2F     = (1 << 1),
-    DS3231_STAT_BSY     = (1 << 2),
-    DS3231_STAT_EN32KHZ = (1 << 3),
-    DS3231_STAT_OSF     = (1 << 7)
-} DS3231_Status_t;
-
-typedef enum {
-    DS3231_SQW_RATE_1HZ = 0,
-    DS3231_SQW_RATE_1024HZ = 1,
-    DS3231_SQW_RATE_4096HZ = 2,
-    DS3231_SQW_RATE_8192HZ = 3
-} DS3231_SQWRATE_t;
-
-/**
- * @brief Time and date structure.
- */
-typedef struct {
-    uint16_t Year;
-    uint8_t Month;
-    uint8_t Day;
-    uint8_t Hour;
-    uint8_t Minute;
-    uint8_t Second;
-    uint8_t DayOfWeek;
-} DS3231_RTCDateTime_t;
-
-/**
- * @brief Alarm time structure.
- */
-typedef struct {
-    uint8_t Day;
-    uint8_t Hour;
-    uint8_t Minute;
-    uint8_t Second;
-} DS3231_RTCAlarmTime;
-
-/* Tryby alarmu (możesz używać różnych enumów dla Alarm1 i Alarm2) */
-typedef enum {
-    DS3231_ALARM_EVERY_SECOND,      // tylko Alarm1
-    DS3231_ALARM_EVERY_MINUTE,      // tylko Alarm2
-    DS3231_ALARM_SECONDS_MATCH,     // Alarm1
-    DS3231_ALARM_MINUTES_MATCH,
-    DS3231_ALARM_HOURS_MATCH,
-    DS3231_ALARM_DATE_MATCH,        // alarm w konkretny dzień miesiąca
-    DS3231_ALARM_DAY_MATCH          // alarm w konkretny dzień tygodnia
-} DS3231_AlarmMode_t;
-
-/** @brief IRQ flag bitmask: no alarm triggered */
-#define DS3231_IRQ_NONE    0x00U
-/** @brief IRQ flag bitmask: Alarm 1 triggered */
-#define DS3231_IRQ_ALARM1  (1U << 0)
-/** @brief IRQ flag bitmask: Alarm 2 triggered */
-#define DS3231_IRQ_ALARM2  (1U << 1)
-
-/**
- * @brief Main DS3231 device handle.
+ * @file    ds3231.h
+ * @brief   Biblioteka obsługi modułu RTC DS3231 dla STM32 (HAL)
+ * @details Obsługuje: odczyt/zapis czasu i daty, alarmy, przerwania,
+ *          wyjście fali prostokątnej, sensor temperatury, aging offset.
  *
- * One instance per physical DS3231 module.
- * @note DS3231_IRQ_Flag is updated by DS3231_CheckAndClearAlarmFlags().
- *       Use DS3231_IRQ_ALARM1 / DS3231_IRQ_ALARM2 masks to check which alarm fired.
+ * Platforma: STM32F103C8T6 + HAL
+ * Interfejs: I2C (adres 0x68, 7-bit)
+ */
+
+#ifndef ds3231_H
+#define ds3231_H
+
+#include "main.h"
+#include <stdint.h>
+#include <stdbool.h>
+
+/* =========================================================================
+ * Adres I2C
+ * ========================================================================= */
+#define DS3231_I2C_ADDR         0x68   /**< Adres 7-bit */
+
+/* =========================================================================
+ * Adresy rejestrów (zgodnie z dokumentacją, str. 11)
+ * ========================================================================= */
+#define DS3231_REG_SECONDS      0x00
+#define DS3231_REG_MINUTES      0x01
+#define DS3231_REG_HOURS        0x02
+#define DS3231_REG_DAY          0x03
+#define DS3231_REG_DATE         0x04
+#define DS3231_REG_MONTH        0x05
+#define DS3231_REG_YEAR         0x06
+#define DS3231_REG_ALM1_SEC     0x07
+#define DS3231_REG_ALM1_MIN     0x08
+#define DS3231_REG_ALM1_HOUR    0x09
+#define DS3231_REG_ALM1_DAY     0x0A
+#define DS3231_REG_ALM2_MIN     0x0B
+#define DS3231_REG_ALM2_HOUR    0x0C
+#define DS3231_REG_ALM2_DAY     0x0D
+#define DS3231_REG_CONTROL      0x0E
+#define DS3231_REG_STATUS       0x0F
+#define DS3231_REG_AGING        0x10
+#define DS3231_REG_TEMP_MSB     0x11
+#define DS3231_REG_TEMP_LSB     0x12
+
+/* =========================================================================
+ * Bity rejestru Control (0x0E)
+ * ========================================================================= */
+#define DS3231_CTRL_EOSC        (1 << 7)  /**< Enable Oscillator (aktywny LOW) */
+#define DS3231_CTRL_BBSQW       (1 << 6)  /**< Battery-Backed Square-Wave Enable */
+#define DS3231_CTRL_CONV        (1 << 5)  /**< Convert Temperature */
+#define DS3231_CTRL_RS2         (1 << 4)  /**< Rate Select bit 2 */
+#define DS3231_CTRL_RS1         (1 << 3)  /**< Rate Select bit 1 */
+#define DS3231_CTRL_INTCN       (1 << 2)  /**< Interrupt Control */
+#define DS3231_CTRL_A2IE        (1 << 1)  /**< Alarm 2 Interrupt Enable */
+#define DS3231_CTRL_A1IE        (1 << 0)  /**< Alarm 1 Interrupt Enable */
+
+/* =========================================================================
+ * Bity rejestru Status (0x0F)
+ * ========================================================================= */
+#define DS3231_STAT_OSF         (1 << 7)  /**< Oscillator Stop Flag */
+#define DS3231_STAT_EN32KHZ     (1 << 3)  /**< Enable 32kHz Output */
+#define DS3231_STAT_BSY         (1 << 2)  /**< Busy */
+#define DS3231_STAT_A2F         (1 << 1)  /**< Alarm 2 Flag */
+#define DS3231_STAT_A1F         (1 << 0)  /**< Alarm 1 Flag */
+
+/* =========================================================================
+ * Timeout I2C (ms)
+ * ========================================================================= */
+#define DS3231_I2C_TIMEOUT      100
+
+/* =========================================================================
+ * Typy wyliczeniowe
+ * ========================================================================= */
+
+/**
+ * @brief Kody błędów biblioteki
+ */
+typedef enum {
+    DS3231_OK           = 0,   /**< Operacja zakończona sukcesem */
+    DS3231_ERROR        = 1,   /**< Ogólny błąd */
+    DS3231_ERR_I2C      = 2,   /**< Błąd komunikacji I2C */
+    DS3231_ERR_PARAM    = 3,   /**< Nieprawidłowy parametr */
+    DS3231_ERR_BUSY     = 4,   /**< Urządzenie zajęte (konwersja temperatury) */
+} DS3231_Status;
+
+/**
+ * @brief Format godziny
+ */
+typedef enum {
+    DS3231_FORMAT_24H = 0,     /**< Format 24-godzinny */
+    DS3231_FORMAT_12H = 1,     /**< Format 12-godzinny (AM/PM) */
+} DS3231_HourFormat;
+
+/**
+ * @brief AM / PM (tylko w trybie 12h)
+ */
+typedef enum {
+    DS3231_AM = 0,
+    DS3231_PM = 1,
+} DS3231_AmPm;
+
+/**
+ * @brief Częstotliwość wyjścia fali prostokątnej (SQW)
+ */
+typedef enum {
+    DS3231_SQW_1HZ      = 0x00,  /**< 1 Hz     (RS2=0, RS1=0) */
+    DS3231_SQW_1024HZ   = 0x08,  /**< 1.024 kHz (RS2=0, RS1=1) */
+    DS3231_SQW_4096HZ   = 0x10,  /**< 4.096 kHz (RS2=1, RS1=0) */
+    DS3231_SQW_8192HZ   = 0x18,  /**< 8.192 kHz (RS2=1, RS1=1) – POR default */
+} DS3231_SqwFreq;
+
+/**
+ * @brief Tryb alarmu 1 (tabela 2 z dokumentacji)
+ */
+typedef enum {
+    DS3231_ALM1_EVERY_SECOND        = 0x0F, /**< Co sekundę */
+    DS3231_ALM1_MATCH_SECONDS       = 0x0E, /**< Zgodność sekund */
+    DS3231_ALM1_MATCH_MIN_SEC       = 0x0C, /**< Zgodność minut i sekund */
+    DS3231_ALM1_MATCH_HR_MIN_SEC    = 0x08, /**< Zgodność godz, min, sek */
+    DS3231_ALM1_MATCH_DATE          = 0x00, /**< Zgodność daty, godz, min, sek */
+    DS3231_ALM1_MATCH_DAY           = 0x10, /**< Zgodność dnia tyg, godz, min, sek */
+} DS3231_Alarm1Mode;
+
+/**
+ * @brief Tryb alarmu 2 (tabela 2 z dokumentacji)
+ */
+typedef enum {
+    DS3231_ALM2_EVERY_MINUTE        = 0x07, /**< Co minutę (przy :00 sek) */
+    DS3231_ALM2_MATCH_MINUTES       = 0x06, /**< Zgodność minut */
+    DS3231_ALM2_MATCH_HR_MIN        = 0x04, /**< Zgodność godz i min */
+    DS3231_ALM2_MATCH_DATE          = 0x00, /**< Zgodność daty, godz, min */
+    DS3231_ALM2_MATCH_DAY           = 0x08, /**< Zgodność dnia tyg, godz, min */
+} DS3231_Alarm2Mode;
+
+/* =========================================================================
+ * Struktury danych
+ * ========================================================================= */
+
+/**
+ * @brief Struktura czasu i daty
  */
 typedef struct {
-    I2C_HandleTypeDef *hi2c;       /**< Pointer to HAL I2C handle */
-    GPIO_TypeDef *sqw_port;        /**< SQW/INT pin GPIO port */
-    uint16_t sqw_pin;              /**< SQW/INT pin number */
-    DS3231_RTCDateTime_t time;     /**< Cached date/time */
-    DS3231_IOMODE_t mode;          /**< I/O mode (blocking/IT/DMA) */
-    uint8_t address;               /**< I2C address (7-bit shifted left by 1) */
-    uint8_t DS3231_IRQ_Flag;       /**< Alarm IRQ source flags (DS3231_IRQ_ALARM1 | DS3231_IRQ_ALARM2) */
+    uint8_t         seconds;    /**< Sekundy: 0–59 */
+    uint8_t         minutes;    /**< Minuty:  0–59 */
+    uint8_t         hours;      /**< Godziny: 0–23 (24h) lub 1–12 (12h) */
+    DS3231_AmPm     ampm;       /**< AM/PM (tylko tryb 12h) */
+    DS3231_HourFormat format;   /**< Format godziny */
+    uint8_t         day;        /**< Dzień tygodnia: 1–7 (definicja zależna od użytkownika) */
+    uint8_t         date;       /**< Dzień miesiąca: 1–31 */
+    uint8_t         month;      /**< Miesiąc: 1–12 */
+    uint8_t         year;       /**< Rok (ostatnie 2 cyfry): 0–99 */
+    bool            century;    /**< Bit stulecia (bit 7 rejestru miesiąca) */
+} DS3231_DateTime;
+
+/**
+ * @brief Struktura alarmu 1
+ */
+typedef struct {
+    uint8_t             seconds;  /**< Sekundy: 0–59 */
+    uint8_t             minutes;  /**< Minuty:  0–59 */
+    uint8_t             hours;    /**< Godziny: 0–23 lub 1–12 */
+    DS3231_AmPm         ampm;     /**< AM/PM (tylko tryb 12h) */
+    DS3231_HourFormat   format;   /**< Format godziny */
+    uint8_t             day_date; /**< Dzień tygodnia (1–7) lub data (1–31) */
+    DS3231_Alarm1Mode   mode;     /**< Tryb alarmu */
+} DS3231_Alarm1;
+
+/**
+ * @brief Struktura alarmu 2
+ */
+typedef struct {
+    uint8_t             minutes;  /**< Minuty:  0–59 */
+    uint8_t             hours;    /**< Godziny: 0–23 lub 1–12 */
+    DS3231_AmPm         ampm;     /**< AM/PM (tylko tryb 12h) */
+    DS3231_HourFormat   format;   /**< Format godziny */
+    uint8_t             day_date; /**< Dzień tygodnia (1–7) lub data (1–31) */
+    DS3231_Alarm2Mode   mode;     /**< Tryb alarmu */
+} DS3231_Alarm2;
+
+/**
+ * @brief Główna struktura opisująca moduł DS3231
+ *
+ * Jedna instancja = jeden fizyczny moduł.
+ * Dzięki temu można obsługiwać wiele DS3231 na jednej magistrali I2C
+ * (różne adresy) lub na różnych magistralach.
+ */
+typedef struct {
+    I2C_HandleTypeDef   *hi2c;         /**< Wskaźnik na handle I2C (HAL) */
+    uint16_t            i2c_addr;     /**< Adres I2C (domyślnie DS3231_I2C_ADDR) */
+    GPIO_TypeDef        *sqw_port;
+    uint16_t            sqw_pin;
+    DS3231_HourFormat   hour_format;  /**< Aktualny format godziny modułu */
+    bool                initialized;  /**< Flaga inicjalizacji */
+    uint8_t             DS3231_IRQ_Alarm;
+    uint8_t             DS3231_IRQ_Flag; /**< Flaga przerwania alarmu */
+    uint8_t             oscilator_stopped; /**< Flaga zatrzymania oscylatora (OSF) */
+    
 } DS3231_t;
 
+#define DS3231_IRQ_NONE    0x00U
+#define DS3231_IRQ_ALARM1  (1U << 0)
+#define DS3231_IRQ_ALARM2  (1U << 1)
+
+typedef DS3231_t DS3231_Handle;
+
+/* =========================================================================
+ * API – funkcje publiczne
+ * ========================================================================= */
+
+/* --- Inicjalizacja ------------------------------------------------------- */
 
 /**
- * @brief Initialize the DS3231 device handle.
- * @param dev Pointer to the DS3231 device handle.
- * @param hi2c Pointer to HAL I2C handle.
- * @param address 7-bit I2C address (typically 0x68).
- * @return HAL status.
+ * @brief  Inicjalizuje strukturę i moduł DS3231.
+ * @param  hrtc        Wskaźnik na strukturę DS3231_t
+  (wypełniana przez funkcję)
+ * @param  hi2c        Wskaźnik na zainicjalizowany I2C_HandleTypeDef
+ * @param  i2c_addr    Adres I2C (użyj DS3231_I2C_ADDR dla standardowego adresu)
+ * @param  hour_format Preferowany format godziny
+ * @return DS3231_OK lub kod błędu
  */
-HAL_StatusTypeDef DS3231_Init(DS3231_t *dev, I2C_HandleTypeDef *hi2c, uint8_t address, GPIO_TypeDef *sqw_port, uint16_t sqw_pin);
+DS3231_Status DS3231_Init(DS3231_t *hrtc, I2C_HandleTypeDef *hi2c, GPIO_TypeDef *sqw_port, uint16_t sqw_pin, uint16_t address, DS3231_HourFormat hour_format);
+
+/* --- Czas i data --------------------------------------------------------- */
 
 /**
- * @brief Read current time/date from the DS3231 into the device handle.
- * @param dev Pointer to the DS3231 device handle.
- * @return HAL status.
+ * @brief  Zapisuje datę i godzinę do modułu.
+ * @param  hrtc  Wskaźnik na DS3231_t
+
+ * @param  dt    Wskaźnik na strukturę DS3231_DateTime z danymi do zapisu
+ * @return DS3231_OK lub kod błędu
  */
-HAL_StatusTypeDef DS3231_ReadTime(DS3231_t *dev);
+DS3231_Status DS3231_SetDateTime(DS3231_t *hrtc, const DS3231_DateTime *dt);
 
 /**
- * @brief Trigger a temperature conversion.
- * @param dev Pointer to the DS3231 device handle.
- * @return HAL status.
+ * @brief  Odczytuje aktualną datę i godzinę z modułu.
+ * @param  hrtc  Wskaźnik na DS3231_t
+
+ * @param  dt    Wskaźnik na strukturę DS3231_DateTime do wypełnienia
+ * @return DS3231_OK lub kod błędu
  */
-HAL_StatusTypeDef DS3231_ConvertTemperature(DS3231_t *dev);
+DS3231_Status DS3231_GetDateTime(DS3231_t *hrtc, DS3231_DateTime *dt);
+
+/* --- Alarmy -------------------------------------------------------------- */
 
 /**
- * @brief Enable the oscillator.
- * @note  EOSC bit is active-low: EOSC=0 means oscillator running.
- *        EOSC=1 stops the oscillator when running on VBAT only.
- * @param dev Pointer to the DS3231 device handle.
- * @return HAL status.
+ * @brief  Ustawia alarm 1.
+ * @param  hrtc   Wskaźnik na DS3231_t
+
+ * @param  alarm  Wskaźnik na strukturę DS3231_Alarm1 z konfiguracją alarmu
+ * @return DS3231_OK lub kod błędu
  */
-HAL_StatusTypeDef DS3231_EnableOscillator(DS3231_t *dev);
+DS3231_Status DS3231_SetAlarm1(DS3231_t *hrtc, const DS3231_Alarm1 *alarm);
 
 /**
- * @brief Disable the oscillator (sets EOSC=1, stops oscillator on VBAT).
- * @param dev Pointer to the DS3231 device handle.
- * @return HAL status.
+ * @brief  Ustawia alarm 2.
+ * @param  hrtc   Wskaźnik na DS3231_t
+
+ * @param  alarm  Wskaźnik na strukturę DS3231_Alarm2 z konfiguracją alarmu
+ * @return DS3231_OK lub kod błędu
  */
-HAL_StatusTypeDef DS3231_DisableOscillator(DS3231_t *dev);
+DS3231_Status DS3231_SetAlarm2(DS3231_t *hrtc, const DS3231_Alarm2 *alarm);
 
 /**
- * @brief Enable battery-backed square wave output.
- * @param dev Pointer to the DS3231 device handle.
- * @return HAL status.
+ * @brief  Odczytuje konfigurację alarmu 1.
+ * @param  hrtc   Wskaźnik na DS3231_t
+
+ * @param  alarm  Wskaźnik na strukturę DS3231_Alarm1 do wypełnienia
+ * @return DS3231_OK lub kod błędu
  */
-HAL_StatusTypeDef DS3231_EnableBatteryBackedSQW(DS3231_t *dev);
+DS3231_Status DS3231_GetAlarm1(DS3231_t *hrtc, DS3231_Alarm1 *alarm);
 
 /**
- * @brief Disable battery-backed square wave output.
- * @param dev Pointer to the DS3231 device handle.
- * @return HAL status.
+ * @brief  Odczytuje konfigurację alarmu 2.
+ * @param  hrtc   Wskaźnik na DS3231_t
+
+ * @param  alarm  Wskaźnik na strukturę DS3231_Alarm2 do wypełnienia
+ * @return DS3231_OK lub kod błędu
  */
-HAL_StatusTypeDef DS3231_DisableBatteryBackedSQW(DS3231_t *dev);
+DS3231_Status DS3231_GetAlarm2(DS3231_t *hrtc, DS3231_Alarm2 *alarm);
+
+/* --- Przerwania ---------------------------------------------------------- */
 
 /**
- * @brief Configure the square wave output frequency.
- * @param dev Pointer to the DS3231 device handle.
- * @param rate Desired square wave frequency.
- * @return HAL status.
+ * @brief  Włącza przerwanie od alarmu 1 (pin INT/SQW).
+ * @note   Ustawia INTCN=1, A1IE=1. Wyjście SQW jest wyłączone.
+ * @param  hrtc  Wskaźnik na DS3231_t
+
+ * @return DS3231_OK lub kod błędu
  */
-HAL_StatusTypeDef DS3231_SetSQWRate(DS3231_t *dev, DS3231_SQWRATE_t rate);
+DS3231_Status DS3231_EnableAlarm1Interrupt(DS3231_t *hrtc);
 
 /**
- * @brief Enable interrupt output mode (INTCN=1).
- * @note  When INTCN=1, the INT/SQW pin outputs alarm interrupts.
- *        When INTCN=0, the pin outputs a square wave (SQW).
- * @param dev Pointer to the DS3231 device handle.
- * @return HAL status.
+ * @brief  Wyłącza przerwanie od alarmu 1.
+ * @param  hrtc  Wskaźnik na DS3231_t
+
+ * @return DS3231_OK lub kod błędu
  */
-HAL_StatusTypeDef DS3231_EnableInterrupt(DS3231_t *dev);
+DS3231_Status DS3231_DisableAlarm1Interrupt(DS3231_t *hrtc);
 
 /**
- * @brief Disable interrupt output mode (INTCN=0, pin reverts to SQW output).
- * @param dev Pointer to the DS3231 device handle.
- * @return HAL status.
+ * @brief  Włącza przerwanie od alarmu 2 (pin INT/SQW).
+ * @note   Ustawia INTCN=1, A2IE=1.
+ * @param  hrtc  Wskaźnik na DS3231_t
+
+ * @return DS3231_OK lub kod błędu
  */
-HAL_StatusTypeDef DS3231_DisableInterrupt(DS3231_t *dev);
+DS3231_Status DS3231_EnableAlarm2Interrupt(DS3231_t *hrtc);
 
 /**
- * @brief Enable a selected alarm interrupt.
- * @note  Also sets INTCN=1 so that the INT/SQW pin works as interrupt output.
- * @param dev Pointer to the DS3231 device handle.
- * @param alarmNumber Alarm index (1 or 2).
- * @return HAL status.
+ * @brief  Wyłącza przerwanie od alarmu 2.
+ * @param  hrtc  Wskaźnik na DS3231_t
+
+ * @return DS3231_OK lub kod błędu
  */
-HAL_StatusTypeDef DS3231_EnableAlarmInterrupt(DS3231_t *dev, uint8_t alarmNumber);
+DS3231_Status DS3231_DisableAlarm2Interrupt(DS3231_t *hrtc);
 
 /**
- * @brief Disable a selected alarm interrupt.
- * @param dev Pointer to the DS3231 device handle.
- * @param alarmNumber Alarm index (1 or 2).
- * @return HAL status.
+ * @brief  Sprawdza i czyści flagi alarmów. Wywoływać w handlerze przerwania.
+ * @param  hrtc       Wskaźnik na DS3231_t
+ * @note   Wynik zapisywany jest do hrtc->DS3231_IRQ_Flag
+ *         (DS3231_IRQ_ALARM1 i/lub DS3231_IRQ_ALARM2).
+ * @return DS3231_OK lub kod błędu
  */
-HAL_StatusTypeDef DS3231_DisableAlarmInterrupt(DS3231_t *dev, uint8_t alarmNumber);
+DS3231_Status DS3231_CheckAndClearAlarmFlags(DS3231_t *hrtc);
+
+/* --- Wyjście fali prostokątnej (SQW) ------------------------------------ */
 
 /**
- * @brief Program alarm time registers.
- * @param dev Pointer to the DS3231 device handle.
- * @param alarm Pointer to alarm time structure.
- * @param alarmMode Alarm match mode.
- * @param alarmNumber Alarm index (1 or 2).
- * @return HAL status.
+ * @brief  Włącza wyjście fali prostokątnej na pinie INT/SQW.
+ * @note   Ustawia INTCN=0. Przerwania alarmów są wyłączone (pin = SQW).
+ * @param  hrtc  Wskaźnik na DS3231_t
+ * @param  freq  Żądana częstotliwość
+ * @return DS3231_OK lub kod błędu
  */
-HAL_StatusTypeDef DS3231_SetAlarm(DS3231_t *dev, DS3231_RTCAlarmTime *alarm, DS3231_AlarmMode_t alarmMode, uint8_t alarmNumber);
+DS3231_Status DS3231_EnableSQW(DS3231_t *hrtc, DS3231_SqwFreq freq);
 
 /**
- * @brief Configure oscillator and square wave settings.
- * @param dev Pointer to the DS3231 device handle.
- * @param enable 1 to enable oscillator, 0 to disable.
- * @param batteryBackedSqw 1 to enable battery-backed SQW, 0 to disable.
- * @param frequency Desired SQW output frequency.
- * @return HAL status.
+ * @brief  Wyłącza wyjście fali prostokątnej (przywraca tryb interrupt).
+ * @param  hrtc  Wskaźnik na DS3231_t
+ * @return DS3231_OK lub kod błędu
  */
-HAL_StatusTypeDef DS3231_TurnOnOscillator(DS3231_t *dev, uint8_t enable, uint8_t batteryBackedSqw, DS3231_SQWRATE_t frequency);
+DS3231_Status DS3231_DisableSQW(DS3231_t *hrtc);
 
 /**
- * @brief Enable 32 kHz output.
- * @param dev Pointer to the DS3231 device handle.
- * @return HAL status.
+ * @brief  Włącza/wyłącza wyjście SQW w trybie zasilania bateryjnego (BBSQW).
+ * @param  hrtc   Wskaźnik na DS3231_t
+ * @param  enable true = SQW aktywne gdy VCC < VPF; false = INT/SQW w stanie Hi-Z
+ * @return DS3231_OK lub kod błędu
  */
-HAL_StatusTypeDef DS3231_Enable32kHzOutput(DS3231_t *dev);
+DS3231_Status DS3231_SetBatterySQW(DS3231_t *hrtc, bool enable);
+
+/* --- Wyjście 32kHz ------------------------------------------------------- */
 
 /**
- * @brief Disable 32 kHz output.
- * @param dev Pointer to the DS3231 device handle.
- * @return HAL status.
+ * @brief  Włącza/wyłącza wyjście 32kHz.
+ * @param  hrtc   Wskaźnik na DS3231_t
+ * @param  enable true = wyjście aktywne
+ * @return DS3231_OK lub kod błędu
  */
-HAL_StatusTypeDef DS3231_Disable32kHzOutput(DS3231_t *dev);
+DS3231_Status DS3231_Set32kHzOutput(DS3231_t *hrtc, bool enable);
+
+/* --- Temperatura --------------------------------------------------------- */
 
 /**
- * @brief Check which alarm(s) fired and clear their flags. Call in ISR handler.
- * @note  After calling, check dev->DS3231_IRQ_Flag with DS3231_IRQ_ALARM1
- *        and/or DS3231_IRQ_ALARM2 masks to determine the interrupt source.
- *        Only the flags that were set are cleared — the other alarm flag is preserved.
- * @param dev Pointer to the DS3231 device handle.
- * @return HAL status.
+ * @brief  Odczytuje temperaturę z wewnętrznego sensora DS3231.
+ * @note   Rozdzielczość 0.25°C. Aktualizacja co 64 s lub po konwersji ręcznej.
+ * @param  hrtc  Wskaźnik na DS3231_t
+ * @param  temp  Wskaźnik na float, wynik w °C
+ * @return DS3231_OK lub kod błędu
  */
-HAL_StatusTypeDef DS3231_CheckAndClearAlarmFlags(DS3231_t *dev);
+DS3231_Status DS3231_GetTemperature(DS3231_t *hrtc, float *temp);
 
 /**
- * @brief Read date/time from the DS3231 into the provided structure.
- * @param dev Pointer to the DS3231 device handle.
- * @param dateTime Pointer to the destination structure.
- * @return HAL status.
+ * @brief  Wymusza natychmiastową konwersję temperatury i aktualizację TCXO.
+ * @note   Blokuje do momentu zakończenia (~200ms) lub zwraca DS3231_ERR_BUSY.
+ * @param  hrtc  Wskaźnik na DS3231_t
+ * @return DS3231_OK lub DS3231_ERR_BUSY / DS3231_ERR_I2C
  */
-HAL_StatusTypeDef DS3231_GetDateTime(DS3231_t *dev);
+DS3231_Status DS3231_ForceTemperatureConversion(DS3231_t *hrtc);
+
+/* --- Aging Offset -------------------------------------------------------- */
 
 /**
- * @brief Write date/time to the DS3231 from the provided structure.
- * @param dev Pointer to the DS3231 device handle.
- * @param dateTime Pointer to the source structure.
- * @return HAL status.
+ * @brief  Ustawia rejestr Aging Offset (korekcja częstotliwości oscylatora).
+ * @note   Wartość w kodzie U2 (–128 do +127). +1 LSB ≈ +0.1 ppm przy 25°C.
+ *         Wartości dodatnie zwalniają oscylator, ujemne przyspieszają.
+ * @param  hrtc   Wskaźnik na DS3231_t
+
+ * @param  offset Wartość korekcji (int8_t)
+ * @return DS3231_OK lub kod błędu
  */
-HAL_StatusTypeDef DS3231_SetDateTime(DS3231_t *dev, const DS3231_RTCDateTime_t *dateTime);
+DS3231_Status DS3231_SetAgingOffset(DS3231_t*hrtc, int8_t offset);
+
+/**
+ * @brief  Odczytuje rejestr Aging Offset.
+ * @param  hrtc   Wskaźnik na DS3231_t
+
+ * @param  offset Wskaźnik na int8_t do wypełnienia
+ * @return DS3231_OK lub kod błędu
+ */
+DS3231_Status DS3231_GetAgingOffset(DS3231_t*hrtc, int8_t *offset);
 
 
 
-#endif // DS3231_H
+
+DS3231_Status DS3231_EventHandler(DS3231_t *hrtc, DS3231_DateTime *rtcNow, void (*alarm1)(void), void (*alarm2)(void));
+
+DS3231_Status DS3231_IRQHandler(DS3231_t *hrtc, uint16_t GPIO_Pin);
+
+
+
+/* --- Status i diagnostyka ------------------------------------------------ */
+
+/**
+ * @brief  Sprawdza, czy oscylator był zatrzymany (flaga OSF).
+ * @param  hrtc     Wskaźnik na DS3231_t
+
+ * @param  osf_set  Wskaźnik na bool – true jeśli OSF=1 (czas może być nieważny)
+ * @return DS3231_OK lub kod błędu
+ */
+DS3231_Status DS3231_GetOscillatorStopFlag(DS3231_t *hrtc);
+
+/**
+ * @brief  Kasuje flagę OSF.
+ * @param  hrtc  Wskaźnik na DS3231_t
+
+ * @return DS3231_OK lub kod błędu
+ */
+DS3231_Status DS3231_ClearOscillatorStopFlag(DS3231_t *hrtc);
+
+/**
+ * @brief  Włącza/wyłącza oscylator (bit EOSC).
+ * @note   EOSC=0 → oscylator uruchomiony (POR default).
+ *         EOSC=1 → oscylator zatrzymany gdy działa z VBAT (oszczędzanie baterii).
+ * @param  hrtc   Wskaźnik na DS3231_t
+
+ * @param  enable true = oscylator uruchomiony
+ * @return DS3231_OK lub kod błędu
+ */
+DS3231_Status DS3231_SetOscillator(DS3231_t *hrtc, bool enable);
+
+/**
+ * @brief  Odczytuje bajt rejestru kontrolnego.
+ * @param  hrtc   Wskaźnik na DS3231_t
+
+ * @param  value  Wskaźnik na uint8_t do wypełnienia
+ * @return DS3231_OK lub kod błędu
+ */
+DS3231_Status DS3231_ReadControlReg(DS3231_t *hrtc, uint8_t *value);
+
+/**
+ * @brief  Odczytuje bajt rejestru statusu.
+ * @param  hrtc   Wskaźnik na DS3231_t
+
+ * @param  value  Wskaźnik na uint8_t do wypełnienia
+ * @return DS3231_OK lub kod błędu
+ */
+DS3231_Status DS3231_ReadStatusReg(DS3231_t *hrtc, uint8_t *value);
+
+/* =========================================================================
+ * Pomocnicze makra BCD
+ * ========================================================================= */
+#define DS3231_BCD2DEC(bcd)   ((((bcd) >> 4) * 10) + ((bcd) & 0x0F))
+#define DS3231_DEC2BCD(dec)   ((((dec) / 10) << 4) | ((dec) % 10))
+
+#endif /* DS3231_H */
