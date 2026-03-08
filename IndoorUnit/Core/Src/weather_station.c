@@ -56,12 +56,12 @@ static void ws_set_led(const WS_RuntimeConfig_t *cfg, GPIO_PinState state) {
  * ========================================================================== */
 
 /**
- * @brief Applies the active node's addresses to the nRF24L01+ transceiver
+ * @brief Applies the active node's TX address and Pipe 0 (ACK) address
  * @param[in,out] ctx Weather station manager context
  * @param[in] cfg Runtime configuration containing nRF24 handle
- * @details Configures TX address and both RX pipes (0 for ACK, 1 for data)
- *          using the currently active node's address pair. Must be called
- *          before each communication session with a specific node.
+ * @details Sets TX_ADDR and RX_ADDR_P0 (for auto-ACK) to the active node's
+ *          transmit address. RX data pipes (1-4) are statically configured
+ *          during radio init and do not need to be changed per node.
  */
 static void ws_apply_active_node_address(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg) {
   const WS_NodeState_t *node = WS_GetActiveNodeConst(ctx);
@@ -71,7 +71,6 @@ static void ws_apply_active_node_address(WS_Manager_t *ctx, const WS_RuntimeConf
 
   NRF24_SetTXAddress(cfg->nrf, node->tx_addr, 5U);
   NRF24_SetRXAddress(cfg->nrf, 0U, node->tx_addr, 5U);
-  NRF24_SetRXAddress(cfg->nrf, 1U, node->rx_addr, 5U);
 }
 
 /* ============================================================================
@@ -136,19 +135,18 @@ static void ws_format_fixed(char *dst, size_t dst_size, float value, uint8_t dec
 }
 
 /**
- * @brief Configures nRF24L01+ to enter receive mode for the active node
+ * @brief Configures nRF24L01+ to enter receive mode
  * @param[in,out] ctx Weather station manager context
  * @param[in] cfg Runtime configuration containing nRF24 handle
- * @details Applies active node addresses, clears interrupts, and switches
- *          radio to RX mode. Must be called after TX operations or when
- *          switching between nodes.
+ * @details Clears interrupts and switches radio to RX mode.
+ *          RX pipe addresses are statically configured during init
+ *          and do not need to be reconfigured between nodes.
  */
 static void ws_start_receive(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg) {
   if ((ctx == NULL) || (cfg == NULL) || (cfg->nrf == NULL)) {
     return;
   }
 
-  ws_apply_active_node_address(ctx, cfg);
   NRF24_SetMode(cfg->nrf, NRF24_MODE_STANDBY);
   NRF24_ClearIRQ(cfg->nrf, NRF24_STATUS_IRQ_MASK);
   NRF24_SetMode(cfg->nrf, NRF24_MODE_RX);
@@ -287,18 +285,24 @@ static void ws_handle_irq(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg) {
     NRF24_ReadPayload(cfg->nrf, rx_data, payload_len);
     NRF24_ClearIRQ(cfg->nrf, NRF24_STATUS_RX_DR);
 
-    if ((pipe == 1U) && (payload_len >= sizeof(WS_MeasurementData_t))) {
+    /* Map pipe to node index: pipe 1 → node 0, pipe 2 → node 1, etc. */
+    uint8_t node_idx = pipe - 1U;
+    if ((pipe >= 1U) && (node_idx < ctx->node_count) &&
+        (payload_len >= sizeof(WS_MeasurementData_t))) {
       WS_MeasurementData_t measurement;
       memcpy(&measurement, rx_data, sizeof(WS_MeasurementData_t));
-      WS_MarkActiveDataReceived(ctx, &measurement, status);
+
+      WS_NodeState_t *rx_node = &ctx->nodes[node_idx];
+      memcpy(&rx_node->data, &measurement, sizeof(measurement));
+      rx_node->awaiting_response = 0U;
+      rx_node->data_received = 1U;
+      rx_node->last_status = status;
+      rx_node->state = WS_NODE_DATA_READY;
+
+      memcpy(&ctx->latest_data, &measurement, sizeof(ctx->latest_data));
+      ctx->latest_data_valid = 1U;
+
       ws_set_led(cfg, GPIO_PIN_RESET);
-      
-    } else if ((cfg->lcd != NULL) && (cfg->text_buffer != NULL) && (cfg->text_buffer_size != 0U)) {
-    //   PCD8544_SetCursor(cfg->lcd, 0, 5);
-    //   PCD8544_ClearBufferLine(cfg->lcd, 5);
-    //   snprintf(cfg->text_buffer, cfg->text_buffer_size, "RX P%u L%u", pipe, payload_len);
-    //   PCD8544_WriteString(cfg->lcd, cfg->text_buffer);
-    //   PCD8544_UpdateScreen(cfg->lcd);
     }
   }
 
@@ -365,6 +369,7 @@ void WS_InitManager(WS_Manager_t *ctx, const uint8_t tx_addrs[][5], const uint8_
     if (rx_addrs != NULL) {
       memcpy(ctx->nodes[i].rx_addr, rx_addrs[i], 5U);
     }
+    ctx->nodes[i].rx_pipe = i + 1U;
     ctx->nodes[i].state = WS_NODE_IDLE;
   }
 }
@@ -737,7 +742,7 @@ bool WS_GetLatestMeasurement(const WS_Manager_t *ctx, WS_MeasurementData_t *out_
  * ========================================================================== */
 
 /**
- * @brief Initializes and configures the nRF24L01+ transceiver
+ * @brief Initializes and configures the nRF24L01+ transceiver (multiceiver)
  * @param[in,out] ctx Manager context
  * @param[in] cfg Runtime configuration containing nRF24 parameters
  * @return HAL_OK on success, HAL_ERROR on failure
@@ -745,9 +750,9 @@ bool WS_GetLatestMeasurement(const WS_Manager_t *ctx, WS_MeasurementData_t *out_
  *          - RF channel, data rate (1Mbps), power (max)
  *          - CRC (2-byte), address width (5 bytes)
  *          - Auto-retransmit (10 retries, 1500us delay)
- *          - Pipes 0 (ACK) and 1 (data)
- *          Flushes RX FIFO and enters receive mode. Must be called after
- *          WS_InitManager() and before measurement operations.
+ *          - Pipe 0 for auto-ACK (dynamic, follows TX_ADDR)
+ *          - Pipes 1-N statically mapped to outdoor nodes (multiceiver)
+ *          Flushes FIFOs and enters receive mode.
  */
 HAL_StatusTypeDef WS_InitRadioAndStart(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg) {
   if ((ctx == NULL) || (cfg == NULL) || (cfg->nrf == NULL)) {
@@ -761,15 +766,27 @@ HAL_StatusTypeDef WS_InitRadioAndStart(WS_Manager_t *ctx, const WS_RuntimeConfig
   NRF24_SetAddressWidth(cfg->nrf, NRF24_AW_5);
   NRF24_SetAutoRetr(cfg->nrf, 1U, 10U);
 
+  /* Pipe 0: auto-ACK (set to active node TX address) */
   ws_apply_active_node_address(ctx, cfg);
-
-  NRF24_SetAutoAck(cfg->nrf, 0U, 1U);
-  NRF24_SetAutoAck(cfg->nrf, 1U, 1U);
   NRF24_EnablePipe(cfg->nrf, 0U, 1U);
-  NRF24_EnablePipe(cfg->nrf, 1U, 1U);
+  NRF24_SetAutoAck(cfg->nrf, 0U, 1U);
   NRF24_SetPayloadSize(cfg->nrf, 0U, cfg->cmd_size);
-  NRF24_SetPayloadSize(cfg->nrf, 1U, cfg->payload_size);
 
+  /* Pipes 1-N: static RX addresses for each outdoor node (multiceiver) */
+  for (uint8_t i = 0U; i < ctx->node_count; i++) {
+    uint8_t pipe = ctx->nodes[i].rx_pipe;
+    NRF24_SetRXAddress(cfg->nrf, pipe, ctx->nodes[i].rx_addr, 5U);
+    NRF24_EnablePipe(cfg->nrf, pipe, 1U);
+    NRF24_SetAutoAck(cfg->nrf, pipe, 1U);
+    NRF24_SetPayloadSize(cfg->nrf, pipe, cfg->payload_size);
+  }
+
+  /* Disable unused pipes */
+  for (uint8_t p = ctx->node_count + 1U; p <= 5U; p++) {
+    NRF24_EnablePipe(cfg->nrf, p, 0U);
+  }
+
+  NRF24_FlushTX(cfg->nrf);
   NRF24_FlushRX(cfg->nrf);
   ws_start_receive(ctx, cfg);
   ws_set_led(cfg, GPIO_PIN_SET);
@@ -829,7 +846,6 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
     ws_start_receive(ctx, cfg);
    // ws_show_status_line(cfg, "TX FAIL  ");
     WS_ScheduleNextNode(ctx);
-    ws_apply_active_node_address(ctx, cfg);
     ctx->app_state = WS_APP_ERROR_RECOVERY;
   }
 
@@ -846,7 +862,6 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
     ws_start_receive(ctx, cfg);
    // ws_show_status_line(cfg, "TX IRQ TO");
     WS_ScheduleNextNode(ctx);
-    ws_apply_active_node_address(ctx, cfg);
     ctx->app_state = WS_APP_ERROR_RECOVERY;
   }
 
@@ -861,7 +876,6 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
     //ws_show_status_line(cfg, "RX TIMEOUT");
     ws_start_receive(ctx, cfg);
     WS_ScheduleNextNode(ctx);
-    ws_apply_active_node_address(ctx, cfg);
     ctx->app_state = WS_APP_ERROR_RECOVERY;
   }
 
@@ -875,7 +889,6 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
     }
 
     WS_ScheduleNextNode(ctx);
-    ws_apply_active_node_address(ctx, cfg);
     ctx->app_state = WS_APP_DATA_READY;
   }
 }
@@ -946,7 +959,7 @@ void WS_UI_AddMeasurementToCharts(const WS_MeasurementData_t *data, uint8_t hour
   int16_t humVal = (int16_t)(data->si7021_hum * 10.0f);    /* tenths of % */
   int16_t pressVal = (int16_t)(data->bmp280_press);        /* hPa integer */
   int16_t luxVal = (int16_t)(data->tsl2561_lux);             /* lux integer */
-  
+
   PCD8544_AddChartPoint(&WS_TemperatureChart, tempVal, hour, minute);
   PCD8544_AddChartPoint(&WS_HumidityChart, humVal, hour, minute);
   PCD8544_AddChartPoint(&WS_PressureChart, pressVal, hour, minute);
