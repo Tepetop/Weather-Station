@@ -1035,6 +1035,21 @@ void WS_UI_MeasurementDisplay(void) {
   }
   PCD8544_WriteString(WS_UI.lcd, WS_UI.text_buffer);
 
+  
+  // /* Sensor status line */
+  // PCD8544_SetCursor(WS_UI.lcd, 0, 5);
+  // if (hasMeasurement && measurement.sensorStatus != WS_SENSOR_OK) {
+  //   snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "ERR:%s%s%s",
+  //            (measurement.sensorStatus & WS_SENSOR_ERR_SI7021)  ? "TH " : "",
+  //            (measurement.sensorStatus & WS_SENSOR_ERR_BMP280)  ? "P "  : "",
+  //            (measurement.sensorStatus & WS_SENSOR_ERR_TSL2561) ? "L"   : "");
+  // } else if (hasMeasurement) {
+  //   snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "Sensors OK");
+  // } else {
+  //   snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "No data");
+  // }
+  // PCD8544_WriteString(WS_UI.lcd, WS_UI.text_buffer);
+
   PCD8544_UpdateScreen(WS_UI.lcd);
 }
 
@@ -1157,19 +1172,20 @@ static const char* ws_node_state_str(WS_NodeStateEnum_t state) {
 
 /**
  * @brief Display list of measurement stations with their status
+ * @note Helper function that renders station status. Used by both menu callback and task.
  */
-void WS_UI_StationsStatus(void) {
+static void ws_render_stations_status(void) {
   if (WS_UI.lcd == NULL || WS_UI.ws_ctx == NULL || WS_UI.text_buffer == NULL) return;
 
-  PCD8544_ClearScreen(WS_UI.lcd);
+  PCD8544_ClearBuffer(WS_UI.lcd);
   PCD8544_SetFont(WS_UI.lcd, &Font_6x8);
 
   /* Header */
   PCD8544_SetCursor(WS_UI.lcd, 0, 0);
   PCD8544_WriteString(WS_UI.lcd, "-STATUS-");
 
-  /* Display each node */
-  uint8_t row = 1;
+  /* Display each node below Return */
+  uint8_t row = 2;
   for (uint8_t i = 0; i < WS_UI.ws_ctx->node_count && row < 6; i++) {
     const WS_NodeState_t *node = &WS_UI.ws_ctx->nodes[i];
     
@@ -1182,25 +1198,55 @@ void WS_UI_StationsStatus(void) {
                         node->data.si7021_hum != 0.0f ||
                         node->data.bmp280_press != 0.0f) ? 1U : 0U;
 
-    PCD8544_SetCursor(WS_UI.lcd, 0, row);
+    /* Build sensor status indicator */
+    const char *sens_flag = "";
+    if (has_data && node->data.sensorStatus != WS_SENSOR_OK) {
+      sens_flag = "!";
+    }
+
+    PCD8544_SetCursor(WS_UI.lcd, 1, row);
     snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, 
-             "%cS%u:%s %s", 
+             "%cS%u:%s %s%s", 
              active_marker, i + 1, status_str, 
-             has_data ? "[+]" : "[-]");
+             has_data ? "[+]" : "[-]",
+             sens_flag);
     PCD8544_WriteString(WS_UI.lcd, WS_UI.text_buffer);
     row++;
   }
 
   /* If no nodes configured */
   if (WS_UI.ws_ctx->node_count == 0) {
-    PCD8544_SetCursor(WS_UI.lcd, 0, 2);
+    PCD8544_SetCursor(WS_UI.lcd, 1, 1);
     PCD8544_WriteString(WS_UI.lcd, "Brak stacji");
   }
 
-  /* Footer with hint */
-  PCD8544_SetCursor(WS_UI.lcd, 0, 5);
-  snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "Cnt:%u", WS_UI.ws_ctx->node_count);
-  PCD8544_WriteString(WS_UI.lcd, WS_UI.text_buffer);
-
   PCD8544_UpdateScreen(WS_UI.lcd);
+}
+
+/**
+ * @brief Enter stations status view (menu callback)
+ * @details Called once when menu item is selected. Sets flag and performs initial draw.
+ */
+void WS_UI_StationsStatus(void) {
+  if (WS_UI.menu_ctx == NULL || WS_UI.lcd == NULL) return;
+
+  WS_UI.menu_ctx->state.InStationsStatusView = 1U;
+  ws_render_stations_status();
+}
+
+/**
+ * @brief Stations status view main task - call in main loop when InStationsStatusView == 1
+ * @details Periodically updates station status display to show real-time changes.
+ */
+void WS_UI_StationsStatusTask(void) {
+  static uint32_t lastRedraw = 0;
+  uint32_t now = HAL_GetTick();
+
+  if (WS_UI.menu_ctx == NULL || WS_UI.lcd == NULL) return;
+
+  /* Update status periodically */
+  if ((now - lastRedraw) >= PCD8544_REFRESH_RATE_MS) {
+    lastRedraw = now;
+    ws_render_stations_status();
+  }
 }

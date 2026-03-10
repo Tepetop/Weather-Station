@@ -14,7 +14,7 @@
 
 /* NRF24L01 configuration */
 #define NRF_CHANNEL      76      // 2476 MHz
-#define NRF_PAYLOAD_SIZE 20     // Measurement data payload size
+#define NRF_PAYLOAD_SIZE 24     // Measurement data payload size (must match OutdoorUnit)
 #define NRF_CMD_SIZE     8      // Command payload size
 #define CMD_MEASURE      0x01   // Command to request measurement
 #define NRF_TX_IRQ_TIMEOUT_MS 80U

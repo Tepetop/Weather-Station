@@ -27,6 +27,7 @@ Menu_Status Menu_Init(Menu_t *root, Menu_Context_t *content)
 	content->state.CurrentDepth = 0;
 	content->state.InDetailsView = 0;
     content->state.InDefaultMeasurementsView = 1;   // Default to showing measurements on startup
+    content->state.InStationsStatusView = 0;
 	
 	// Initialize arrays to zero
 	for(uint8_t i = 0; i < MENU_MAX_DEPTH; i++)
@@ -174,7 +175,7 @@ Menu_Status Menu_RefreshDisplay(PCD8544_t *PCD, Menu_Context_t *content)
         viewportHeight = PCD->font.PCD8544_ROWS - 1;
     }
 
-#ifdef PCD8544_ENCODER_MODE
+#if PCD8544_ENCODER_MODE
     int16_t startIndex;
 
     // Calculate start index for display
@@ -284,7 +285,7 @@ Menu_Status Menu_Next(PCD8544_t *PCD, Menu_Context_t *content)
     if(content->state.InDetailsView) return Menu_OK;
 #endif
 
-#ifdef PCD8544_ENCODER_MODE
+#if PCD8544_ENCODER_MODE
     // Special handling for moving FROM "POWROT" (index 0) TO the first item (index 1)
     if (content->state.CurrentDepth > 0 && content->state.MenuIndex == 0) {
         if (content->rootMenu != NULL) {
@@ -308,7 +309,7 @@ Menu_Status Menu_Next(PCD8544_t *PCD, Menu_Context_t *content)
     content->rootMenu = content->rootMenu->next;
     content->state.MenuIndex++;
 
-    #ifdef PCD8544_ENCODER_MODE
+    #if PCD8544_ENCODER_MODE
         /* Window size is reduced by 1 (Title Row). Max Cursor Index is ROWS - 2 (e.g. 4) */
         /* If MenuIndex fits in initial window (0 to ROWS-2), just inc cursor */
         /* e.g. ROWS=6. Max Item Visible at start = 4. If Index becomes 5, we scroll. */
@@ -360,7 +361,7 @@ Menu_Status Menu_Previev(PCD8544_t *PCD, Menu_Context_t *content)
     if(content->state.InDetailsView) return Menu_OK;
 #endif
 
-#ifdef PCD8544_ENCODER_MODE
+#if PCD8544_ENCODER_MODE
     // Handling transition FROM first item (index 1) TO "POWROT" (index 0)
     if (content->state.CurrentDepth > 0 && content->state.MenuIndex == 1) {
         content->state.MenuIndex--;
@@ -414,7 +415,7 @@ Menu_Status Menu_Enter(PCD8544_t *PCD, Menu_Context_t *content)
 {
     if (NULL == PCD || NULL == content) return Menu_Error;
 
-#ifdef PCD8544_ENCODER_MODE
+#if PCD8544_ENCODER_MODE
     // Returning from submenu if RETURN selected
     if (content->state.CurrentDepth > 0 && content->state.MenuIndex == 0) {
         return Menu_Escape(PCD, content);
@@ -688,4 +689,5 @@ void Menu_SetEscapeAction(Menu_Context_t *content)
 {
     Menu_SetAction(content, MENU_ACTION_ESCAPE);
 }
+
 

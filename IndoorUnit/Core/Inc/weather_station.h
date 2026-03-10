@@ -72,17 +72,31 @@ typedef enum {
  * ========================================================================== */
 
 /**
- * @brief Measurement data structure (packed for radio transmission)
- * @details Contains sensor readings from outdoor unit. Data is transmitted
- *          as-is over nRF24 link, so structure must be packed to ensure
- *          consistent layout across compiler settings.
+ * @brief Sensor error flags (bitwise)
+ * @details Matches Sensor_Error_t in OutdoorUnit. Each bit indicates a
+ *          sensor failure on the remote measurement station.
  */
-typedef struct __attribute__((packed)) {
+typedef enum {
+  WS_SENSOR_OK       = 0,        /**< All sensors operational */
+  WS_SENSOR_ERR_SI7021  = (1 << 0), /**< SI7021 (temp/humidity) error */
+  WS_SENSOR_ERR_BMP280  = (1 << 1), /**< BMP280 (pressure/temp) error */
+  WS_SENSOR_ERR_TSL2561 = (1 << 2)  /**< TSL2561 (light) error */
+} WS_SensorError_t;
+
+/**
+ * @brief Measurement data structure for radio transmission
+ * @details Contains sensor readings from outdoor unit. Layout must match
+ *          Measurement_Data_t in OutdoorUnit exactly (unpacked, 24 bytes).
+ *          The struct is NOT packed — both sides use ARM Cortex-M3 with
+ *          identical GCC ABI, so natural alignment is consistent.
+ */
+typedef struct {
   float si7021_temp;             /**< Temperature from SI7021 sensor (°C) */
   float si7021_hum;              /**< Humidity from SI7021 sensor (%) */
   float bmp280_temp;             /**< Temperature from BMP280 sensor (°C) */
   float bmp280_press;            /**< Pressure from BMP280 sensor (hPa) */
   float tsl2561_lux;             /**< Light intensity from TSL2561 (lux) */
+  uint8_t sensorStatus;          /**< Bitwise sensor health flags (WS_SensorError_t) */
 } WS_MeasurementData_t;
 
 /**
@@ -438,12 +452,17 @@ void WS_UI_ChartViewTask(void);
 void WS_UI_TakeMeasurement(void);
 
 /**
- * @brief Display list of measurement stations with their status (menu function callback)
- * @details Shows all configured nodes (up to WS_MAX_NODES) with:
- *          - Node index/name
- *          - Connection status (OK, ERROR, IDLE, BUSY)
- *          - Last communication result
+ * @brief Enter stations status view (menu callback)
+ * @details Shows list of all configured stations with their current state.
+ *          Call once from menu. Use WS_UI_StationsStatusTask() in main loop.
  */
 void WS_UI_StationsStatus(void);
+
+/**
+ * @brief Stations status view task
+ * @details Call in main loop when menuContext.state.InStationsStatusView == 1
+ *          to periodically update station status display.
+ */
+void WS_UI_StationsStatusTask(void);
 
 #endif

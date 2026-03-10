@@ -71,10 +71,11 @@
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 
-void EncoderButtonFlag(void);
+void EncoderButtonPress(void);
 static void NRF_DelayUs(uint32_t us);
 void RTC_alarm(void);
 static bool RTC_IsManualSetRequestedAtBoot(void);
+void Menu_testPowrot(void);
 
 /* USER CODE END PFP */
 
@@ -126,7 +127,7 @@ int main(void)
 
   /*             Initialize debounce button        */
   ButtonInitKey(&encoderSW, ENC_BUTTON_GPIO_Port, ENC_BUTTON_Pin, 50, 1000, 500, BUTTON_MODE_INTERRUPT);
-  ButtonRegisterPressCallback(&encoderSW, EncoderButtonFlag);
+  ButtonRegisterPressCallback(&encoderSW, EncoderButtonPress);
 
   /*            Initialize LCD           */
   if(PCD8544_Init(&LCD, &hspi1, LCD_DC_GPIO_Port, LCD_DC_Pin, LCD_CE_GPIO_Port, LCD_CE_Pin, LCD_RST_GPIO_Port, LCD_RST_Pin) != PCD_OK) {
@@ -258,8 +259,24 @@ int main(void)
         Menu_RefreshDisplay(&LCD, &menuContext);
       }
     }
-    else
+    else if (menuContext.state.InStationsStatusView)
     {
+      /* Keep status screen updated while this dedicated view is active */
+      WS_UI_StationsStatusTask();
+      
+      /* Exit status view on encoder button press (callback sets encoder.ButtonIRQ_Flag) */
+      if (encoder.ButtonIRQ_Flag)
+      {
+        encoder.ButtonIRQ_Flag = 0;
+        menuContext.state.InStationsStatusView = 0;
+        /* Clear any pending menu action that was set by the button callback */
+        menuContext.state.actionPending = 0;
+        menuContext.state.currentAction = MENU_ACTION_IDLE;
+        Menu_RefreshDisplay(&LCD, &menuContext);
+      }
+    }
+    else
+    {      
       /* Call the menu task to handle any pending button actions */
       Menu_Task(&LCD, &menuContext);
 
@@ -369,11 +386,16 @@ void RTC_alarm(void){
 }
 
 /*      Encoder button function to assign to callback     */
-void EncoderButtonFlag(void)
+void EncoderButtonPress(void)
 {
   encoder.ButtonIRQ_Flag = IRQ_FLAG_SET;
   Menu_SetEnterAction(&menuContext);
 }
+
+void Menu_testPowrot(void)
+{
+    Menu_Escape(&LCD, &menuContext);
+};
 
 /* Hold encoder button during boot to force one-time manual RTC update. */
 static bool RTC_IsManualSetRequestedAtBoot(void){
