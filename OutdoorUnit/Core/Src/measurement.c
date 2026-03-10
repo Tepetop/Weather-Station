@@ -6,6 +6,8 @@
  */
 
 #include "measurement.h"
+#include "stm32f1xx_hal_def.h"
+#include "stm32f1xx_hal_dma.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -89,16 +91,16 @@ static uint32_t Measurement_GetTSL2561IntegrationDelayMs(void) {
  * @param   hi2c  Pointer to I2C handle used for sensor communication
  * @retval  None
  */
-void Measurement_Init(Measurement_Context_t *ctx, I2C_HandleTypeDef *hi2c) {
+HAL_StatusTypeDef Measurement_Init(Measurement_Context_t *ctx, I2C_HandleTypeDef *hi2c) {
     if (ctx == NULL) {
-        return;
+        return HAL_ERROR;
     }
     
     measurement_hi2c = hi2c;
     
     if (measurement_hi2c == NULL) {
         ctx->state = MEAS_ERROR;
-        return;
+        return HAL_ERROR;
     }
     
     ctx->state = MEAS_INIT;
@@ -107,6 +109,7 @@ void Measurement_Init(Measurement_Context_t *ctx, I2C_HandleTypeDef *hi2c) {
     ctx->sensorsInitialized = 0;
     measurementWakeupTick = 0U;
     memset(&ctx->data, 0, sizeof(Measurement_Data_t));
+    return HAL_OK;
 }
 
 /**
@@ -114,9 +117,9 @@ void Measurement_Init(Measurement_Context_t *ctx, I2C_HandleTypeDef *hi2c) {
  * @param   ctx  Pointer to measurement context structure
  * @retval  None
  */
-void Measurement_Start(Measurement_Context_t *ctx) {
+HAL_StatusTypeDef Measurement_Start(Measurement_Context_t *ctx) {
     if (ctx == NULL) {
-        return;
+        return HAL_ERROR;
     }
     
     if (ctx->state == MEAS_IDLE || ctx->state == MEAS_SLEEP) {
@@ -130,7 +133,9 @@ void Measurement_Start(Measurement_Context_t *ctx) {
         } else {
             ctx->state = MEAS_MEASURE;
         }
+        return HAL_OK;
     }
+    return HAL_ERROR;
 }
 
 /* ============================================================================
@@ -417,10 +422,10 @@ void Measurement_WakeupSensors(Measurement_Context_t *ctx) {
  * @details Executes one state transition per call (non-blocking design).
  *          If a sensor fails, other sensors continue reading.
  */
-void Measurement_Process(Measurement_Context_t *ctx)
+HAL_StatusTypeDef Measurement_Process(Measurement_Context_t *ctx)
 {
     if (ctx == NULL) {
-        return;
+        return HAL_ERROR;
     }
     
     switch (ctx->state) {
@@ -488,6 +493,7 @@ void Measurement_Process(Measurement_Context_t *ctx)
             ctx->sensorsInitialized = 0;
             break;
     }
+    return HAL_OK;
 }
 
 /* ============================================================================
@@ -590,4 +596,5 @@ void Measurement_GetData(const Measurement_Context_t *ctx, Measurement_Data_t *d
         return;
     }
     *data = ctx->data;
+    data->sensorStatus = ctx->sensorErrorCode;
 }

@@ -907,3 +907,4 @@ uint8_t NRF24_GetCarrierDetect(NRF24_Handle_t *handle) {
     if (NRF24_ReadReg(handle, NRF24_REG_RPD, &val) != HAL_OK) return 0;
     return val & 0x01;
 }
+

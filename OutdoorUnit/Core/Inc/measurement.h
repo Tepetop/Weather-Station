@@ -13,6 +13,8 @@
 #include "si7021.h"
 #include "bmp280.h"
 #include "TSL2561.h"
+#include "stm32_hal_legacy.h"
+#include "stm32f1xx_hal_def.h"
 
 /* ============================================================================
  * Configuration
@@ -59,11 +61,12 @@ typedef enum {
  * @brief Structure to hold all sensor measurement data
  */
 typedef struct {
-    float si7021_temp;   /**< Si7021 temperature in degrees Celsius */
-    float si7021_hum;    /**< Si7021 relative humidity in percent */
-    float bmp280_temp;   /**< BMP280 temperature in degrees Celsius */
-    float bmp280_press;  /**< BMP280 pressure in hPa */
-    float tsl2561_lux;   /**< TSL2561 illuminance in lux */
+    float si7021_temp;      /**< Si7021 temperature in degrees Celsius */
+    float si7021_hum;       /**< Si7021 relative humidity in percent */
+    float bmp280_temp;      /**< BMP280 temperature in degrees Celsius */
+    float bmp280_press;     /**< BMP280 pressure in hPa */
+    float tsl2561_lux;      /**< TSL2561 illuminance in lux */
+    uint8_t sensorStatus;   /**< Bitwise sensor health flags (Sensor_Error_t). 0 = all OK */
 } Measurement_Data_t;
 
 /**
@@ -92,25 +95,27 @@ typedef struct {
  * @note    This function must be called before any other measurement functions.
  *          The context structure will be initialized to default values.
  */
-void Measurement_Init(Measurement_Context_t *ctx, I2C_HandleTypeDef *hi2c);
+HAL_StatusTypeDef Measurement_Init(Measurement_Context_t *ctx, I2C_HandleTypeDef *hi2c);
 
 /**
  * @brief   Starts a new measurement cycle
  * @param   ctx  Pointer to measurement context structure
- * @retval  None
+ * @retval  HAL_OK        Measurement cycle started successfully
+ * @retval  HAL_ERROR     Failed to start measurement cycle
  * @details Sets state to MEAS_WAKEUP or MEAS_MEASURE depending on current state.
  *          Only effective when in MEAS_IDLE or MEAS_SLEEP states.
  */
-void Measurement_Start(Measurement_Context_t *ctx);
+HAL_StatusTypeDef Measurement_Start(Measurement_Context_t *ctx);
 
 /**
  * @brief   Process the measurement state machine
  * @param   ctx  Pointer to measurement context structure
- * @retval  None
+ * @retval  HAL_OK        State machine processed successfully
+ * @retval  HAL_ERROR     Failed to process state machine
  * @details This function should be called periodically (e.g., in main loop).
  *          Executes one state transition per call (non-blocking design).
  */
-void Measurement_Process(Measurement_Context_t *ctx);
+HAL_StatusTypeDef Measurement_Process(Measurement_Context_t *ctx);
 
 /**
  * @brief   Returns the current state of the measurement state machine

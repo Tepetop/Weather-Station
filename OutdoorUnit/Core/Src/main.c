@@ -20,6 +20,7 @@
 #include "main.h"
 #include "dma.h"
 #include "i2c.h"
+#include "measurement.h"
 #include "spi.h"
 #include "usart.h"
 #include "gpio.h"
@@ -82,17 +83,13 @@ static void NRF_DelayUs(uint32_t us);
 static HAL_StatusTypeDef NRF_InitOutdoorUnit(void);
 static void NRF_StartReceive(void);
 static void NRF_HandleIRQ(void);
-static void NRF_SendMeasurementData(Measurement_Data_t *txData);
+static void NRF_SendMeasurementData(void);
 
 /* OutdoorLink context */
 static void OutLink_Init(void);
 
-/* Main loop processing */
-static void MainLoop_CheckIRQFallback(void);
-static void MainLoop_HandleIRQ(void);
-static void MainLoop_HandleTxCompletion(void);
-static void MainLoop_HandleTxTimeout(void);
-static void MainLoop_HandleMeasurementCommand(void);
+/* Main state machine */
+static void OutdoorLink_Process(void);
 
 /* USER CODE END PFP */
 
@@ -140,20 +137,40 @@ int main(void)
   I2C_CheckAddress(&hi2c2);
 #endif
 
-  /* Initialize NRF24L01 and OutdoorLink context */
-  if (NRF_InitOutdoorUnit() != HAL_OK) {
-    Error_Handler();
+  /* Initialize NRF24L01 with retries */
+  {
+    uint8_t nrf_ok = 0;
+    for (uint8_t i = 0; i < NRF_INIT_MAX_RETRIES; i++) {
+      if (NRF_InitOutdoorUnit() == HAL_OK) {
+        nrf_ok = 1;
+        break;
+      }
+      HAL_Delay(NRF_INIT_RETRY_DELAY_MS);
+    }
+    if (!nrf_ok) {
+      Error_Handler();
+    }
   }
-  OutLink_Init();
-  Outdoor_LedOff();
 
-  /* Initialize measurement module */
+  OutLink_Init();
+
+#if USE_LED_INDICATOR
+  Outdoor_LedOff();
+#endif
+
+  /* Initialize measurement module and process sensor init to completion */
   Measurement_Init(&measCtx, &hi2c2);
-  while (Measurement_GetState(&measCtx) == MEAS_INIT || 
-         Measurement_GetState(&measCtx) == MEAS_INIT_ERROR) {
-    Measurement_Process(&measCtx);
+  {
+    uint32_t initStart = HAL_GetTick();
+    while (measCtx.state != MEAS_SLEEP && measCtx.state != MEAS_ERROR
+           && (HAL_GetTick() - initStart) < 3000U) {
+      Measurement_Process(&measCtx);
+    }
   }
-  UartLog("Measurement module initialized\r\n");
+
+#if USE_UART_LOGGING
+  UartLog("System initialized\r\n");
+#endif
 
   /* Start in RX mode, waiting for commands */
   NRF24_FlushRX(&nrf);
@@ -169,11 +186,7 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
-    MainLoop_CheckIRQFallback();
-    MainLoop_HandleIRQ();
-    MainLoop_HandleTxCompletion();
-    MainLoop_HandleTxTimeout();
-    MainLoop_HandleMeasurementCommand();
+    OutdoorLink_Process();
 
   }
   /* USER CODE END 3 */
@@ -303,12 +316,10 @@ static void NRF_DelayUs(uint32_t us)
 static HAL_StatusTypeDef NRF_InitOutdoorUnit(void)
 {
   /* Initialize the nRF24L01 driver */
-  if (NRF24_Init(&nrf, &hspi1,
-                 NRF_CS_GPIO_Port, NRF_CS_Pin,
-                 NRF_CE_GPIO_Port, NRF_CE_Pin,
-                 NRF_IRQ_GPIO_Port, NRF_IRQ_Pin,
-                 NRF_DelayUs) != HAL_OK) {
+  if (NRF24_Init(&nrf, &hspi1,NRF_CS_GPIO_Port, NRF_CS_Pin,NRF_CE_GPIO_Port, NRF_CE_Pin,NRF_IRQ_GPIO_Port, NRF_IRQ_Pin, NRF_DelayUs) != HAL_OK) {
+#if USE_UART_LOGGING
     UartLog("NRF24 Init FAILED!\r\n");
+#endif
     return HAL_ERROR;
   }
 
@@ -332,8 +343,9 @@ static HAL_StatusTypeDef NRF_InitOutdoorUnit(void)
   NRF24_EnablePipe(&nrf, 1, 1);
   NRF24_SetPayloadSize(&nrf, 0, NRF_PAYLOAD_SIZE);
   NRF24_SetPayloadSize(&nrf, 1, NRF_CMD_SIZE);
-
+#if USE_UART_LOGGING
   UartLog("NRF24 Init OK - Listening for commands...\r\n");
+#endif
   return HAL_OK;
 }
 
@@ -366,8 +378,6 @@ static void NRF_HandleIRQ(void)
 
     if (rx_data[0] == CMD_MEASURE) {
       outLink.cmd_received = 1;
-      outLink.state = OUT_LINK_CMD_PENDING;
-      UartLog("CMD: Measure request received\r\n");
     }
   }
 
@@ -389,17 +399,13 @@ static void NRF_HandleIRQ(void)
 
 /**
  * @brief   Send measurement data to IndoorUnit via nRF24L01
- * @param   txData  Pointer to measurement data structure
  * @retval  None
+ * @details Fills txData from measCtx (including sensorStatus) and initiates TX.
  */
-static void NRF_SendMeasurementData(Measurement_Data_t *txData)
+static void NRF_SendMeasurementData(void)
 {
-  if (txData == NULL || outLink.tx_in_progress) {
-    return;
-  }
-
-  /* Get measurement data from context */
-  Measurement_GetData(&measCtx, txData);
+  /* Get measurement data including sensor status flags */
+  Measurement_GetData(&measCtx, &txData);
 
   /* Prepare TX state */
   outLink.irq_flag = 0;
@@ -407,13 +413,12 @@ static void NRF_SendMeasurementData(Measurement_Data_t *txData)
   outLink.tx_ok = 0;
   outLink.tx_in_progress = 1;
   outLink.tx_start_tick = HAL_GetTick();
-  outLink.state = OUT_LINK_TX_IN_PROGRESS;
 
   /* Configure and send */
   NRF24_SetMode(&nrf, NRF24_MODE_STANDBY);
   NRF24_FlushTX(&nrf);
   NRF24_ClearIRQ(&nrf, NRF24_STATUS_IRQ_MASK);
-  NRF24_WritePayload(&nrf, (uint8_t *)txData, sizeof(Measurement_Data_t));
+  NRF24_WritePayload(&nrf, (uint8_t *)&txData, sizeof(Measurement_Data_t));
   NRF24_SetMode(&nrf, NRF24_MODE_TX);
 }
 
@@ -444,126 +449,189 @@ static void OutLink_Init(void)
   outLink.tx_in_progress = 0U;
   outLink.tx_done = 0U;
   outLink.tx_ok = 0U;
+  outLink.meas_started = 0U;
+  outLink.meas_retry_count = 0U;
   outLink.last_status = 0U;
+  outLink.tx_start_tick = 0U;
+  outLink.meas_start_tick = 0U;
   outLink.state = OUT_LINK_IDLE;
 }
 
 /* ============================================================================
- * Main Loop Processing Functions
+ * Main State Machine
  * ============================================================================ */
 
 /**
- * @brief   Check for missed EXTI edges by polling NRF status
- * @retval  None
- * @details Fallback mechanism in case EXTI edge was missed
+ * @brief   Non-blocking state machine for the outdoor unit main loop
+ * @details Manages the complete flow: receive command → measure → transmit → idle.
+ *          Includes timeout protection and error recovery at every stage.
+ *          Replaces the previous sequential MainLoop_* functions to prevent
+ *          blocking while loops that could stall the system.
  */
-static void MainLoop_CheckIRQFallback(void)
+static void OutdoorLink_Process(void)
 {
-  if (!outLink.irq_flag && (outLink.tx_in_progress || outLink.cmd_received)) {
-    uint8_t st = NRF24_GetStatus(&nrf);
-    if (st & (NRF24_STATUS_RX_DR | NRF24_STATUS_TX_DS | NRF24_STATUS_MAX_RT)) {
-      outLink.irq_flag = 1U;
-    }
-  }
-}
-
-/**
- * @brief   Handle pending NRF IRQ events
- * @retval  None
- */
-static void MainLoop_HandleIRQ(void)
-{
+  /* ---- Always handle pending IRQ first ---- */
   if (outLink.irq_flag) {
     outLink.irq_flag = 0;
     NRF_HandleIRQ();
   }
-}
 
-/**
- * @brief   Handle TX completion (success or failure)
- * @retval  None
- */
-static void MainLoop_HandleTxCompletion(void)
-{
-  if (!outLink.tx_done) {
-    return;
-  }
+  switch (outLink.state) {
 
-  outLink.tx_done = 0;
-  outLink.tx_in_progress = 0;
+  /* ============================================================
+   * IDLE — RX mode, listening for commands from IndoorUnit
+   * ============================================================ */
+  case OUT_LINK_IDLE:
+    /* Fallback: poll NRF IRQ pin for missed EXTI edges */
+    if (HAL_GPIO_ReadPin(NRF_IRQ_GPIO_Port, NRF_IRQ_Pin) == GPIO_PIN_RESET) {
+      outLink.irq_flag = 1;
+    }
 
-  if (outLink.tx_ok) {
-    UartLog("TX: Data sent OK\r\n");
-    outLink.state = OUT_LINK_IDLE;
-  } else {
-    UartLog("TX: FAILED - no ACK\r\n");
-    outLink.state = OUT_LINK_ERROR;
-  }
+    /* Check if a measurement command was received via NRF_HandleIRQ */
+    if (outLink.cmd_received) {
+      outLink.cmd_received = 0;
+      outLink.meas_retry_count = 0;
+      outLink.meas_started = 0;
+      outLink.meas_start_tick = HAL_GetTick();
+#if USE_LED_INDICATOR
+      Outdoor_LedOn();
+#endif
+#if USE_UART_LOGGING
+      UartLog("CMD: Measure request\r\n");
+#endif
+      outLink.state = OUT_LINK_MEASURING;
+    }
+    break;
 
-  Outdoor_LedOff();
-  NRF_StartReceive();
-}
-
-/**
- * @brief   Handle TX timeout conditions
- * @retval  None
- * @details Checks for stuck TX operations and recovers
- */
-static void MainLoop_HandleTxTimeout(void)
-{
-  if (!outLink.tx_in_progress) {
-    return;
-  }
-
-  if ((HAL_GetTick() - outLink.tx_start_tick) <= NRF_TX_TIMEOUT_MS) {
-    return;
-  }
-
-  /* Check if IRQ was missed */
-  uint8_t st = NRF24_GetStatus(&nrf);
-  if (st & (NRF24_STATUS_TX_DS | NRF24_STATUS_MAX_RT)) {
-    outLink.irq_flag = 1U;
-    NRF_HandleIRQ();
-    return;
-  }
-
-  /* Hard timeout - no IRQ received */
-  if (!outLink.tx_done) {
-    outLink.tx_in_progress = 0;
-    outLink.tx_ok = 0;
-    outLink.state = OUT_LINK_ERROR;
-    UartLog("TX: IRQ TIMEOUT\r\n");
-    Outdoor_LedOff();
-    NRF_StartReceive();
-  }
-}
-
-/**
- * @brief   Handle incoming measurement command
- * @retval  None
- * @details Performs measurement cycle and sends data back
- */
-static void MainLoop_HandleMeasurementCommand(void)
-{
-  if (!outLink.cmd_received || outLink.tx_in_progress) {
-    return;
-  }
-
-  outLink.cmd_received = 0;
-  outLink.state = OUT_LINK_CMD_PENDING;
-  Outdoor_LedOn();
-
-  /* Perform measurement cycle */
-  Measurement_Start(&measCtx);
-
-  uint32_t timeout = HAL_GetTick() + 1000U;
-  do {
+  /* ============================================================
+   * MEASURING — Run measurement state machine (non-blocking)
+   * ============================================================ */
+  case OUT_LINK_MEASURING:
+    /* Step the measurement state machine */
     Measurement_Process(&measCtx);
-  } while (Measurement_GetState(&measCtx) != MEAS_SLEEP && HAL_GetTick() < timeout);
 
-  /* Send measurement data via NRF */
-  NRF_SendMeasurementData(&txData);
-  UartLog("Measurement sent\r\n");
+    /* If sensors reached a startable state, kick off the measurement */
+    if (!outLink.meas_started &&
+        (measCtx.state == MEAS_IDLE || measCtx.state == MEAS_SLEEP)) {
+      if (Measurement_Start(&measCtx) == HAL_OK) {
+        outLink.meas_started = 1;
+      }
+    }
+
+    /* Measurement cycle complete — send data */
+    if (outLink.meas_started && measCtx.state == MEAS_SLEEP) {
+      NRF_SendMeasurementData();
+      outLink.state = OUT_LINK_TX_SENDING;
+#if USE_UART_LOGGING
+      UartLog("MEAS: Done, sending data\r\n");
+#endif
+      break;
+    }
+
+    /* Critical sensor error — retry or send partial data */
+    if (measCtx.state == MEAS_ERROR) {
+      if (outLink.meas_retry_count < OUTDOOR_MEAS_MAX_RETRIES) {
+        outLink.meas_retry_count++;
+        outLink.meas_started = 0;
+        Measurement_Init(&measCtx, &hi2c2);
+        outLink.meas_start_tick = HAL_GetTick();
+#if USE_UART_LOGGING
+        {
+          char msg[40];
+          sprintf(msg, "MEAS: Retry %d/%d\r\n",
+                  outLink.meas_retry_count, OUTDOOR_MEAS_MAX_RETRIES);
+          UartLog(msg);
+        }
+#endif
+      } else {
+        /* Max retries exhausted — send whatever data we have with error flags */
+        NRF_SendMeasurementData();
+        outLink.state = OUT_LINK_TX_SENDING;
+#if USE_UART_LOGGING
+        UartLog("MEAS: Max retries, sending partial\r\n");
+#endif
+      }
+      break;
+    }
+
+    /* Measurement timeout guard */
+    if ((HAL_GetTick() - outLink.meas_start_tick) > OUTDOOR_MEAS_TIMEOUT_MS) {
+      NRF_SendMeasurementData();
+      outLink.state = OUT_LINK_TX_SENDING;
+#if USE_UART_LOGGING
+      UartLog("MEAS: Timeout, sending partial\r\n");
+#endif
+    }
+    break;
+
+  /* ============================================================
+   * TX_SENDING — Wait for NRF TX completion or timeout
+   * ============================================================ */
+  case OUT_LINK_TX_SENDING:
+    /* Poll NRF status for missed IRQ during TX */
+    if (!outLink.tx_done) {
+      uint8_t st = NRF24_GetStatus(&nrf);
+      if (st & (NRF24_STATUS_TX_DS | NRF24_STATUS_MAX_RT)) {
+        outLink.irq_flag = 1;
+      }
+    }
+
+    /* TX finished (ACK or MAX_RT) */
+    if (outLink.tx_done) {
+      outLink.tx_done = 0;
+      outLink.tx_in_progress = 0;
+#if USE_UART_LOGGING
+      UartLog(outLink.tx_ok ? "TX: OK\r\n" : "TX: FAIL (no ACK)\r\n");
+#endif
+#if USE_LED_INDICATOR
+      Outdoor_LedOff();
+#endif
+      NRF_StartReceive();
+      outLink.state = OUT_LINK_IDLE;
+      break;
+    }
+
+    /* TX timeout — hardware did not respond */
+    if (outLink.tx_in_progress &&
+        (HAL_GetTick() - outLink.tx_start_tick) > NRF_TX_TIMEOUT_MS) {
+#if USE_UART_LOGGING
+      UartLog("TX: Timeout\r\n");
+#endif
+      outLink.state = OUT_LINK_RECOVERY;
+    }
+    break;
+
+  /* ============================================================
+   * RECOVERY — Reset NRF and return to IDLE
+   * ============================================================ */
+  case OUT_LINK_RECOVERY:
+#if USE_LED_INDICATOR
+    Outdoor_LedOff();
+#endif
+    /* Reset NRF module to known state */
+    NRF24_SetMode(&nrf, NRF24_MODE_STANDBY);
+    NRF24_FlushTX(&nrf);
+    NRF24_FlushRX(&nrf);
+    NRF24_ClearIRQ(&nrf, NRF24_STATUS_IRQ_MASK);
+
+    /* Clear all link flags */
+    outLink.tx_in_progress = 0;
+    outLink.tx_done = 0;
+    outLink.tx_ok = 0;
+    outLink.cmd_received = 0;
+
+    NRF_StartReceive();
+    outLink.state = OUT_LINK_IDLE;
+#if USE_UART_LOGGING
+    UartLog("Recovery complete\r\n");
+#endif
+    break;
+
+  default:
+    /* Unknown state — enter recovery */
+    outLink.state = OUT_LINK_RECOVERY;
+    break;
+  }
 }
 
 /* USER CODE END 4 */
