@@ -75,7 +75,7 @@ void EncoderButtonPress(void);
 static void NRF_DelayUs(uint32_t us);
 void RTC_alarm(void);
 static bool RTC_IsManualSetRequestedAtBoot(void);
-void Menu_testPowrot(void);
+void Menu_Return (void);
 
 /* USER CODE END PFP */
 
@@ -221,7 +221,7 @@ int main(void)
   }
 
   /* Initialize UI context for weather station display functions */
-  WS_UI_Init(&WS_UI, &wsCtx, &wsRuntime, &LCD, &menuContext, &rtcNow, g_nrf_message, sizeof(g_nrf_message));
+  WS_UI_Init(&WS_UI, &wsCtx, &wsRuntime, &LCD, &menuContext, &encoder, &rtcNow, g_nrf_message, sizeof(g_nrf_message));
 
   /* USER CODE END 2 */
 
@@ -242,52 +242,8 @@ int main(void)
     /*    Process with button event routine    */
     ButtonTask(&encoderSW);
 
-    /* Handle chart view mode */
-    if (menuContext.state.InChartView)
-    {
-      WS_UI_ChartViewTask();
-      
-      /* Exit chart view on encoder button press (callback sets encoder.ButtonIRQ_Flag) */
-      if (encoder.ButtonIRQ_Flag)
-      {
-        encoder.ButtonIRQ_Flag = 0;
-        menuContext.state.InChartView = 0;
-        menuContext.state.ChartViewType = CHART_VIEW_NONE;
-        /* Clear any pending menu action that was set by the button callback */
-        menuContext.state.actionPending = 0;
-        menuContext.state.currentAction = MENU_ACTION_IDLE;
-        Menu_RefreshDisplay(&LCD, &menuContext);
-      }
-    }
-    else if (menuContext.state.InStationsStatusView)
-    {
-      /* Keep status screen updated while this dedicated view is active */
-      WS_UI_StationsStatusTask();
-      
-      /* Exit status view on encoder button press (callback sets encoder.ButtonIRQ_Flag) */
-      if (encoder.ButtonIRQ_Flag)
-      {
-        encoder.ButtonIRQ_Flag = 0;
-        menuContext.state.InStationsStatusView = 0;
-        /* Clear any pending menu action that was set by the button callback */
-        menuContext.state.actionPending = 0;
-        menuContext.state.currentAction = MENU_ACTION_IDLE;
-        Menu_RefreshDisplay(&LCD, &menuContext);
-      }
-    }
-    else
-    {      
-      /* Call the menu task to handle any pending button actions */
-      Menu_Task(&LCD, &menuContext);
-
-      /* Call user-defined encoder task */
-      Encoder_Task(&encoder, &menuContext);
-
-      if (menuContext.state.InDefaultMeasurementsView)
-      {
-        WS_UI_MeasurementDisplay();
-      }
-    }
+    /* View state machine handles chart, status, measurement and menu views */
+    WS_UI_ViewTask();
 
   }
   /* USER CODE END 3 */
@@ -392,7 +348,7 @@ void EncoderButtonPress(void)
   Menu_SetEnterAction(&menuContext);
 }
 
-void Menu_testPowrot(void)
+void Menu_Return(void)
 {
     Menu_Escape(&LCD, &menuContext);
 };

@@ -15,7 +15,7 @@
 
 #define MENU_TEST 0
 
-extern void Menu_testPowrot(void);
+extern void Menu_Return(void);
 
 /*		Definicja struktur 		*/
 Menu_t StronaDomyslna;
@@ -38,17 +38,16 @@ Menu_t Ustawienia;
 
 Menu_t StronaDomyslna = {"Dane pom.", 		&Ustawienia,      NULL, 				NULL, 			NULL, 		 		WS_UI_MeasurementDisplay};
 Menu_t Ustawienia = {"Ustawienia", 			NULL,  			  &StronaDomyslna, 		&powrotUstawienia, 		NULL, 		 		NULL};
-	Menu_t powrotUstawienia = {"Powrot", 	&Wykresy, 	  	  NULL, 				NULL, 			&Ustawienia, 		Menu_testPowrot}; 		// Opcja powrotu do menu Ustawienia
+	Menu_t powrotUstawienia = {"Powrot", 	&Wykresy, 	  	  NULL, 				NULL, 			&Ustawienia, 		Menu_Return}; 		// Opcja powrotu do menu Ustawienia
 	Menu_t Wykresy = {"Wykresy", 			&StacjePomiarowe, &powrotUstawienia, 	&powrotWykres,	&Ustawienia, 		NULL};
-		Menu_t powrotWykres = {"Powrot", 	&tempWykres, 	  NULL, 				NULL, 			&Wykresy, 	 		Menu_testPowrot}; 		// Opcja powrotu do menu Wykresy
+		Menu_t powrotWykres = {"Powrot", 	&tempWykres, 	  NULL, 				NULL, 			&Wykresy, 	 		Menu_Return}; 		// Opcja powrotu do menu Wykresy
 		Menu_t tempWykres = {"Temperatura", &wilgWykres, 	  &powrotWykres, 		NULL, 			&Wykresy, 	 		WS_UI_ChartTemperature};
 		Menu_t wilgWykres = {"Wilgotnosc", 	&cisnWykres, 	  &tempWykres, 			NULL, 			&Wykresy, 	 		WS_UI_ChartHumidity};
 		Menu_t cisnWykres = {"Cisnienie", 	&luxWykres, 	  &wilgWykres, 			NULL, 			&Wykresy, 	 		WS_UI_ChartPressure};
 		Menu_t luxWykres = {"Swiatlosc", 	NULL, 	  	 	  &cisnWykres, 			NULL, 			&Wykresy, 	 		WS_UI_ChartLux};
 	Menu_t StacjePomiarowe = {"Stacje pom.",&WykonajPomiar,   &Wykresy, 			&powrotPomiar, 	&Ustawienia, 		NULL};
-		Menu_t powrotPomiar = {"Powrot", 	&statusPomiarow,  NULL, 				NULL, 			&StacjePomiarowe, 	Menu_testPowrot}; 		// Opcja powrotu do menu Wykresy
+		Menu_t powrotPomiar = {"Powrot", 	&statusPomiarow,  NULL, 				NULL, 			&StacjePomiarowe, 	Menu_Return}; 		// Opcja powrotu do menu Wykresy
 		Menu_t statusPomiarow = {"Status", 	NULL,   	 	  &powrotPomiar, 		NULL, 			&StacjePomiarowe, 	WS_UI_StationsStatus};
-		//	Menu_t powrotStatus = {"Powrot",NULL,   	 	  NULL, 				NULL, 			&statusPomiarow, 	Menu_testPowrot}; 		// Opcja powrotu do menu Stacje Pomiarowe
 	Menu_t WykonajPomiar = {"Wykonaj pom.",	NULL, 			 &StacjePomiarowe,  	NULL, 			&Ustawienia, 		WS_UI_TakeMeasurement};
 
 #if MENU_TEST

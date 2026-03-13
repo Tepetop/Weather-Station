@@ -21,6 +21,7 @@
 #include <PCD_LCD/PCD8544.h>
 #include <PCD_LCD/PCD8544_Drawing.h>
 #include <PCD_LCD/PCD8544_Menu.h>
+#include <encoder.h>
 
 /* ============================================================================
  * PUBLIC CONSTANTS
@@ -364,14 +365,28 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
  * @brief UI runtime context containing references to all required components
  * @details Must be initialized before calling any WS_UI_* functions
  */
+/**
+ * @brief View state machine enumeration
+ * @details Tracks the active view/screen of the weather station UI
+ */
+typedef enum {
+  WS_VIEW_MENU = 0,               /**< Normal menu navigation */
+  WS_VIEW_CHART,                   /**< Chart view active */
+  WS_VIEW_STATIONS_STATUS,         /**< Stations status view active */
+  WS_VIEW_DEFAULT_MEASUREMENT      /**< Default measurement display active */
+} WS_ViewState_t;
+
 typedef struct {
   WS_Manager_t *ws_ctx;           /**< Weather station manager context */
   WS_RuntimeConfig_t *ws_cfg;     /**< Runtime configuration */
   PCD8544_t *lcd;                 /**< LCD display handle */
   Menu_Context_t *menu_ctx;       /**< Menu context */
+  Encoder_t *encoder;             /**< Encoder handle for button input */
   DS3231_DateTime *rtc_now;       /**< Current RTC time */
   char *text_buffer;              /**< Scratch buffer for text formatting */
   size_t text_buffer_size;        /**< Size of text buffer */
+  volatile uint8_t chart_data_dirty; /**< Flag: new chart data available, redraw needed */
+  WS_ViewState_t view_state;      /**< Current view state machine state */
 } WS_UIContext_t;
 
 /**
@@ -398,8 +413,8 @@ extern WS_UIContext_t WS_UI;
  * @param[in] text_buffer_size Size of scratch buffer
  */
 void WS_UI_Init(WS_UIContext_t *ui, WS_Manager_t *ws_ctx, WS_RuntimeConfig_t *ws_cfg,
-                PCD8544_t *lcd, Menu_Context_t *menu_ctx, DS3231_DateTime *rtc_now,
-                char *text_buffer, size_t text_buffer_size);
+                PCD8544_t *lcd, Menu_Context_t *menu_ctx, Encoder_t *encoder,
+                DS3231_DateTime *rtc_now, char *text_buffer, size_t text_buffer_size);
 
 /**
  * @brief Initialize all chart data structures with default settings
@@ -464,5 +479,15 @@ void WS_UI_StationsStatus(void);
  *          to periodically update station status display.
  */
 void WS_UI_StationsStatusTask(void);
+
+/**
+ * @brief Main view state machine task - call in main loop
+ * @details Handles all view transitions and updates:
+ *          - WS_VIEW_MENU: normal menu + encoder navigation
+ *          - WS_VIEW_CHART: chart display with button exit
+ *          - WS_VIEW_STATIONS_STATUS: station status with button exit
+ *          - WS_VIEW_DEFAULT_MEASUREMENT: live measurements + menu navigation
+ */
+void WS_UI_ViewTask(void);
 
 #endif

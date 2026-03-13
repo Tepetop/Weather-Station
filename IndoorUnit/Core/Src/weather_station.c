@@ -910,17 +910,19 @@ WS_UIContext_t WS_UI = {0};
  * @brief Initialize UI context with required handles
  */
 void WS_UI_Init(WS_UIContext_t *ui, WS_Manager_t *ws_ctx, WS_RuntimeConfig_t *ws_cfg,
-                PCD8544_t *lcd, Menu_Context_t *menu_ctx, DS3231_DateTime *rtc_now,
-                char *text_buffer, size_t text_buffer_size) {
+                PCD8544_t *lcd, Menu_Context_t *menu_ctx, Encoder_t *encoder,
+                DS3231_DateTime *rtc_now, char *text_buffer, size_t text_buffer_size) {
   if (ui == NULL) return;
   
   ui->ws_ctx = ws_ctx;
   ui->ws_cfg = ws_cfg;
   ui->lcd = lcd;
   ui->menu_ctx = menu_ctx;
+  ui->encoder = encoder;
   ui->rtc_now = rtc_now;
   ui->text_buffer = text_buffer;
   ui->text_buffer_size = text_buffer_size;
+  ui->view_state = WS_VIEW_MENU;
 }
 
 /**
@@ -964,6 +966,8 @@ void WS_UI_AddMeasurementToCharts(const WS_MeasurementData_t *data, uint8_t hour
   PCD8544_AddChartPoint(&WS_HumidityChart, humVal, hour, minute);
   PCD8544_AddChartPoint(&WS_PressureChart, pressVal, hour, minute);
   PCD8544_AddChartPoint(&WS_LuxChart, luxVal, hour, minute);
+
+  WS_UI.chart_data_dirty = 1U;
 }
 
 /**
@@ -1034,22 +1038,6 @@ void WS_UI_MeasurementDisplay(void) {
     snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "L:--.--lux");
   }
   PCD8544_WriteString(WS_UI.lcd, WS_UI.text_buffer);
-
-  
-  // /* Sensor status line */
-  // PCD8544_SetCursor(WS_UI.lcd, 0, 5);
-  // if (hasMeasurement && measurement.sensorStatus != WS_SENSOR_OK) {
-  //   snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "ERR:%s%s%s",
-  //            (measurement.sensorStatus & WS_SENSOR_ERR_SI7021)  ? "TH " : "",
-  //            (measurement.sensorStatus & WS_SENSOR_ERR_BMP280)  ? "P "  : "",
-  //            (measurement.sensorStatus & WS_SENSOR_ERR_TSL2561) ? "L"   : "");
-  // } else if (hasMeasurement) {
-  //   snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "Sensors OK");
-  // } else {
-  //   snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "No data");
-  // }
-  // PCD8544_WriteString(WS_UI.lcd, WS_UI.text_buffer);
-
   PCD8544_UpdateScreen(WS_UI.lcd);
 }
 
@@ -1111,41 +1099,39 @@ void WS_UI_ChartLux(void) {
 
 /**
  * @brief Chart view main task - call in main loop when InChartView == 1
+ * @details Redraws chart only when new measurement data has been received,
+ *          avoiding unnecessary redraws since chart data changes only on new measurements.
  */
 void WS_UI_ChartViewTask(void) {
-  static uint32_t lastRedraw = 0;
-  uint32_t now = HAL_GetTick();
-
   if (WS_UI.menu_ctx == NULL || WS_UI.lcd == NULL) return;
 
   /* Encoder button press exits chart view */
   /* Note: Button handling is done externally via Menu_SetEnterAction */
 
-  if ((now - lastRedraw) >= PCD8544_REFRESH_RATE_MS) {
-    lastRedraw = now;
+  if (WS_UI.chart_data_dirty == 0U) return;
+  WS_UI.chart_data_dirty = 0U;
 
-    PCD8544_ClearBuffer(WS_UI.lcd);
+  PCD8544_ClearBuffer(WS_UI.lcd);
 
-    switch (WS_UI.menu_ctx->state.ChartViewType) {
-      case CHART_VIEW_TEMPERATURE:
-        PCD8544_DrawChart(WS_UI.lcd, &WS_TemperatureChart);
-        break;
-      case CHART_VIEW_HUMIDITY:
-        PCD8544_DrawChart(WS_UI.lcd, &WS_HumidityChart);
-        break;
-      case CHART_VIEW_PRESSURE:
-        PCD8544_DrawChart(WS_UI.lcd, &WS_PressureChart);
-        break;
-      case CHART_VIEW_LUX:
-        PCD8544_DrawChart(WS_UI.lcd, &WS_LuxChart);
-        break;
+  switch (WS_UI.menu_ctx->state.ChartViewType) {
+    case CHART_VIEW_TEMPERATURE:
+      PCD8544_DrawChart(WS_UI.lcd, &WS_TemperatureChart);
+      break;
+    case CHART_VIEW_HUMIDITY:
+      PCD8544_DrawChart(WS_UI.lcd, &WS_HumidityChart);
+      break;
+    case CHART_VIEW_PRESSURE:
+      PCD8544_DrawChart(WS_UI.lcd, &WS_PressureChart);
+      break;
+    case CHART_VIEW_LUX:
+      PCD8544_DrawChart(WS_UI.lcd, &WS_LuxChart);
+      break;
 
-      default:
-        break;
-    }
-
-    PCD8544_UpdateScreen(WS_UI.lcd);
+    default:
+      break;
   }
+
+  PCD8544_UpdateScreen(WS_UI.lcd);
 }
 
 /**
@@ -1236,17 +1222,90 @@ void WS_UI_StationsStatus(void) {
 
 /**
  * @brief Stations status view main task - call in main loop when InStationsStatusView == 1
- * @details Periodically updates station status display to show real-time changes.
+ * @details Redraws station status only when new measurement data has been received,
+ *          since node states change only during measurement cycles.
  */
 void WS_UI_StationsStatusTask(void) {
-  static uint32_t lastRedraw = 0;
-  uint32_t now = HAL_GetTick();
-
   if (WS_UI.menu_ctx == NULL || WS_UI.lcd == NULL) return;
 
-  /* Update status periodically */
-  if ((now - lastRedraw) >= PCD8544_REFRESH_RATE_MS) {
-    lastRedraw = now;
-    ws_render_stations_status();
+  if (WS_UI.chart_data_dirty == 0U) return;
+
+  ws_render_stations_status();
+}
+
+/* ============================================================================
+ * PUBLIC API - View State Machine
+ * ========================================================================== */
+
+/**
+ * @brief Exit a dedicated view (chart or stations status) back to menu
+ * @details Clears view flags, resets pending actions, and refreshes menu display.
+ */
+static void ws_exit_dedicated_view(void) {
+  WS_UI.encoder->ButtonIRQ_Flag = 0;
+  WS_UI.menu_ctx->state.actionPending = 0;
+  WS_UI.menu_ctx->state.currentAction = MENU_ACTION_IDLE;
+  Menu_RefreshDisplay(WS_UI.lcd, WS_UI.menu_ctx);
+  WS_UI.view_state = WS_VIEW_MENU;
+}
+
+/**
+ * @brief Main view state machine task - call in main loop
+ */
+void WS_UI_ViewTask(void) {
+  if (WS_UI.menu_ctx == NULL || WS_UI.lcd == NULL || WS_UI.encoder == NULL) return;
+
+  switch (WS_UI.view_state) {
+
+    case WS_VIEW_MENU:
+      Menu_Task(WS_UI.lcd, WS_UI.menu_ctx);
+      Encoder_Task(WS_UI.encoder, WS_UI.menu_ctx);
+
+      if (WS_UI.menu_ctx->state.InChartView) {
+        WS_UI.view_state = WS_VIEW_CHART;
+      } else if (WS_UI.menu_ctx->state.InStationsStatusView) {
+        WS_UI.view_state = WS_VIEW_STATIONS_STATUS;
+      } else if (WS_UI.menu_ctx->state.InDefaultMeasurementsView) {
+        WS_UI.view_state = WS_VIEW_DEFAULT_MEASUREMENT;
+      }
+      break;
+
+    case WS_VIEW_CHART:
+      WS_UI_ChartViewTask();
+
+      if (WS_UI.encoder->ButtonIRQ_Flag) {
+        WS_UI.menu_ctx->state.InChartView = 0;
+        WS_UI.menu_ctx->state.ChartViewType = CHART_VIEW_NONE;
+        ws_exit_dedicated_view();
+      }
+      break;
+
+    case WS_VIEW_STATIONS_STATUS:
+      WS_UI_StationsStatusTask();
+
+      if (WS_UI.encoder->ButtonIRQ_Flag) {
+        WS_UI.menu_ctx->state.InStationsStatusView = 0;
+        ws_exit_dedicated_view();
+      }
+      break;
+
+    case WS_VIEW_DEFAULT_MEASUREMENT:
+      Menu_Task(WS_UI.lcd, WS_UI.menu_ctx);
+      Encoder_Task(WS_UI.encoder, WS_UI.menu_ctx);
+
+      if (WS_UI.menu_ctx->state.InChartView) {
+        WS_UI.view_state = WS_VIEW_CHART;
+      } else if (WS_UI.menu_ctx->state.InStationsStatusView) {
+        WS_UI.view_state = WS_VIEW_STATIONS_STATUS;
+      } else if (!WS_UI.menu_ctx->state.InDefaultMeasurementsView) {
+        WS_UI.view_state = WS_VIEW_MENU;
+      } else {
+        WS_UI_MeasurementDisplay();
+      }
+      break;
+
+    default:
+      WS_UI.view_state = WS_VIEW_MENU;
+      break;
   }
 }
