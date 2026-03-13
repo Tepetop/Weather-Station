@@ -720,3 +720,28 @@ PCD_Status PCD8544_InvertLine(PCD8544_t *PCD, uint8_t y)
     }
     return PCD_OK;
 }
+
+PCD_Status PCD_8544_DrawCenteredTitle(PCD8544_t *PCD, const char *title)
+{
+  if(PCD == NULL || title == NULL)
+  {
+    return PCD_ERROR;
+  }
+  const char* titleString = title;
+  PCD_Status status;
+  PCD8544_SetCursor(PCD, 0, 0); 
+  
+  // Calculate centering: (Screen_Width - Text_Width) / 2
+  // Text is "-TITLE-"
+  uint8_t textPixelWidth = (strlen(titleString) + 2) * PCD->font.font_width;
+  
+  if(textPixelWidth < PCD8544_WIDTH)
+  {
+      PCD->buffer.PCD8544_CurrentX = (PCD8544_WIDTH - textPixelWidth) / 2;
+  }
+
+  status = PCD8544_WriteString(PCD, "-");
+  status = PCD8544_WriteString(PCD, (char*)titleString);
+  status = PCD8544_WriteString(PCD, "-");
+  return status;
+}

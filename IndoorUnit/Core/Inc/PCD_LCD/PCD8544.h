@@ -195,4 +195,6 @@ PCD_Status PCD8544_InvertSelectedRegion(PCD8544_t *PCD, uint8_t x, uint8_t y, ui
 
 PCD_Status PCD8544_InvertLine(PCD8544_t *PCD, uint8_t y);
 
+PCD_Status PCD_8544_DrawCenteredTitle(PCD8544_t *PCD, const char *title);
+
 #endif /* INC_PCD8544_H_ */

@@ -160,16 +160,7 @@ Menu_Status Menu_RefreshDisplay(PCD8544_t *PCD, Menu_Context_t *content)
         
         // Calculate centering: (Screen_Width - Text_Width) / 2
         // Text is "-TITLE-"
-        uint8_t textPixelWidth = (strlen(titleString) + 2) * PCD->font.font_width;
-        
-        if(textPixelWidth < PCD8544_WIDTH)
-        {
-            PCD->buffer.PCD8544_CurrentX = (PCD8544_WIDTH - textPixelWidth) / 2;
-        }
-
-        PCD8544_WriteString(PCD, "-");
-        PCD8544_WriteString(PCD, (char*)titleString);
-        PCD8544_WriteString(PCD, "-");
+        PCD_8544_DrawCenteredTitle(PCD, titleString);
 
         listStartVisualRow = 1;
         viewportHeight = PCD->font.PCD8544_ROWS - 1;

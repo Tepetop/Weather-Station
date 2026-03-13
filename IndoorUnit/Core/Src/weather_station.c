@@ -1167,8 +1167,7 @@ static void ws_render_stations_status(void) {
   PCD8544_SetFont(WS_UI.lcd, &Font_6x8);
 
   /* Header */
-  PCD8544_SetCursor(WS_UI.lcd, 0, 0);
-  PCD8544_WriteString(WS_UI.lcd, "-STATUS-");
+  PCD_8544_DrawCenteredTitle(WS_UI.lcd, "STATUS");
 
   /* Display each node below Return */
   uint8_t row = 2;
