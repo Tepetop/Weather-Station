@@ -64,11 +64,13 @@ typedef struct
 	GPIO_TypeDef		*DC_GPIOPort; // GPIO DC Port for a button
 	GPIO_TypeDef		*RST_GPIOPort; // GPIO RST Port for a button
 	GPIO_TypeDef		*CE_GPIOPort; // GPIO CE Port for a button
+	GPIO_TypeDef		*BLK_GPIOPort; // GPIO BLK Port for a button
 
 	/*PINS*/
 	uint16_t		 	DC_GpioPin; // GPIO DC Pin for a button
 	uint16_t			RST_GpioPin; // GPIO RST Pin for a button
 	uint16_t			CE_GpioPin; // GPIO CE Pin for a button
+	uint16_t			BLK_GpioPin; // GPIO BLK Pin for a button
 	/*INTERNAL STRUCTURES*/
 	PCD8544_FONT_INFO_t font;
 	PCD8544_BUFFER_INFO_T buffer;
@@ -148,7 +150,7 @@ typedef struct
 /*				Functions declarations						*/
 
 PCD_Status PCD8544_Init (PCD8544_t *PCD, SPI_HandleTypeDef *hspi, GPIO_TypeDef *dc_port, uint16_t dc_pin,
-		GPIO_TypeDef *ce_port, uint16_t ce_pin, GPIO_TypeDef *rst_port, uint16_t rst_pin);
+		GPIO_TypeDef *ce_port, uint16_t ce_pin, GPIO_TypeDef *rst_port, uint16_t rst_pin, GPIO_TypeDef *blk_port, uint16_t blk_pin);
 
 PCD_Status PCD8544_SetCommunicationMode(PCD8544_t *PCD, PCD_SPI_Mode mode);
 
@@ -196,5 +198,8 @@ PCD_Status PCD8544_InvertSelectedRegion(PCD8544_t *PCD, uint8_t x, uint8_t y, ui
 PCD_Status PCD8544_InvertLine(PCD8544_t *PCD, uint8_t y);
 
 PCD_Status PCD_8544_DrawCenteredTitle(PCD8544_t *PCD, const char *title);
+
+void PCD8544_SetBacklight(PCD8544_t *PCD);
+void PCD8544_ResetBacklight(PCD8544_t *PCD);
 
 #endif /* INC_PCD8544_H_ */

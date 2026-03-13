@@ -21,6 +21,7 @@
 */
 
 #include "PCD8544.h"
+#include "stm32f1xx_hal_gpio.h"
 
 /**
  * @desc    Initialise pcd8544 controller
@@ -30,7 +31,7 @@
  * @return  void
  */
 PCD_Status PCD8544_Init (PCD8544_t *PCD, SPI_HandleTypeDef *hspi, GPIO_TypeDef *dc_port, uint16_t dc_pin,
-		GPIO_TypeDef *ce_port, uint16_t ce_pin, GPIO_TypeDef *rst_port, uint16_t rst_pin)
+		GPIO_TypeDef *ce_port, uint16_t ce_pin, GPIO_TypeDef *rst_port, uint16_t rst_pin, GPIO_TypeDef *blk_port, uint16_t blk_pin)
 {
   if( NULL == PCD || NULL == hspi)
     {
@@ -49,6 +50,9 @@ PCD_Status PCD8544_Init (PCD8544_t *PCD, SPI_HandleTypeDef *hspi, GPIO_TypeDef *
 
     PCD -> RST_GPIOPort = rst_port;
     PCD -> RST_GpioPin = rst_pin;
+
+    PCD -> BLK_GPIOPort = blk_port;
+    PCD -> BLK_GpioPin = blk_pin;
 
 
     PCD -> buffer.PCD8544_CurrentX = 0;
@@ -85,6 +89,8 @@ PCD_Status PCD8544_Init (PCD8544_t *PCD, SPI_HandleTypeDef *hspi, GPIO_TypeDef *
     if (state != PCD_OK) return state;
       // normal mode
     state = PCD8544_CommandSend (PCD, DISPLAY_CONTROL | NORMAL_MODE);
+
+    PCD8544_SetBacklight(PCD);
 
     //PCD8544_SetCursor(PCD, 0, 0);
 
@@ -744,4 +750,22 @@ PCD_Status PCD_8544_DrawCenteredTitle(PCD8544_t *PCD, const char *title)
   status = PCD8544_WriteString(PCD, (char*)titleString);
   status = PCD8544_WriteString(PCD, "-");
   return status;
+}
+
+void PCD8544_SetBacklight(PCD8544_t *PCD)
+{
+  if (PCD == NULL)
+  {
+    return;
+  }
+  HAL_GPIO_WritePin(PCD->BLK_GPIOPort, PCD->BLK_GpioPin, GPIO_PIN_SET);
+}
+
+void PCD8544_ResetBacklight(PCD8544_t *PCD)
+{
+  if (PCD == NULL)
+  {
+    return;
+  }
+  HAL_GPIO_WritePin(PCD->BLK_GPIOPort, PCD->BLK_GpioPin, GPIO_PIN_RESET);
 }

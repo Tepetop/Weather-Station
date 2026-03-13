@@ -21,7 +21,9 @@
 #include "dma.h"
 #include "i2c.h"
 #include "spi.h"
+#include "stm32f1xx_hal.h"
 #include "tim.h"
+#include "usart.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -48,8 +50,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
-
+#define SCREENSAVER_TIMEOUT_MS 30000U // 30 seconds
 
 /* USER CODE END PD */
 
@@ -61,8 +62,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
-
+uint32_t screensaverTimeout = 0;
 
 
 /* USER CODE END PV */
@@ -99,7 +99,7 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-   HAL_Init();
+  HAL_Init();
 
   /* USER CODE BEGIN Init */
 
@@ -119,6 +119,7 @@ int main(void)
   MX_I2C2_Init();
   MX_TIM1_Init();
   MX_SPI2_Init();
+  MX_USART2_UART_Init();
   /* USER CODE BEGIN 2 */
   bool rtcManualSetRequested = RTC_IsManualSetRequestedAtBoot();
 
@@ -130,7 +131,7 @@ int main(void)
   ButtonRegisterPressCallback(&encoderSW, EncoderButtonPress);
 
   /*            Initialize LCD           */
-  if(PCD8544_Init(&LCD, &hspi1, LCD_DC_GPIO_Port, LCD_DC_Pin, LCD_CE_GPIO_Port, LCD_CE_Pin, LCD_RST_GPIO_Port, LCD_RST_Pin) != PCD_OK) {
+  if(PCD8544_Init(&LCD, &hspi1, LCD_DC_GPIO_Port, LCD_DC_Pin, LCD_CE_GPIO_Port, LCD_CE_Pin, LCD_RST_GPIO_Port, LCD_RST_Pin, LCD_BLK_GPIO_Port, LCD_BLK_Pin) != PCD_OK) {
     Error_Handler();
   }
   else {
@@ -223,6 +224,8 @@ int main(void)
   /* Initialize UI context for weather station display functions */
   WS_UI_Init(&WS_UI, &wsCtx, &wsRuntime, &LCD, &menuContext, &encoder, &rtcNow, g_nrf_message, sizeof(g_nrf_message));
 
+  screensaverTimeout = HAL_GetTick();
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -245,6 +248,13 @@ int main(void)
     /* View state machine handles chart, status, measurement and menu views */
     WS_UI_ViewTask();
 
+    if(HAL_GetTick() - screensaverTimeout > SCREENSAVER_TIMEOUT_MS &&
+       WS_UI.view_state != WS_VIEW_SCREEN_SAVER) 
+    {
+      WS_UI.menu_ctx->state.InScreenSaver = 1;
+      screensaverTimeout = HAL_GetTick();
+    }
+
   }
   /* USER CODE END 3 */
 }
@@ -253,7 +263,8 @@ int main(void)
   * @brief System Clock Configuration
   * @retval None
   */
-void SystemClock_Config(void){
+void SystemClock_Config(void)
+{
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 

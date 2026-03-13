@@ -373,7 +373,8 @@ typedef enum {
   WS_VIEW_MENU = 0,               /**< Normal menu navigation */
   WS_VIEW_CHART,                   /**< Chart view active */
   WS_VIEW_STATIONS_STATUS,         /**< Stations status view active */
-  WS_VIEW_DEFAULT_MEASUREMENT      /**< Default measurement display active */
+  WS_VIEW_DEFAULT_MEASUREMENT,     /**< Default measurement display active */
+  WS_VIEW_SCREEN_SAVER             /**< Screen saver view active */
 } WS_ViewState_t;
 
 typedef struct {
@@ -387,6 +388,7 @@ typedef struct {
   size_t text_buffer_size;        /**< Size of text buffer */
   volatile uint8_t chart_data_dirty; /**< Flag: new chart data available, redraw needed */
   WS_ViewState_t view_state;      /**< Current view state machine state */
+  uint32_t last_activity_tick;    /**< Timestamp of last button press for screen saver */
 } WS_UIContext_t;
 
 /**

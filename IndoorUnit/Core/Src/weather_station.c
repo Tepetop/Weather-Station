@@ -8,6 +8,7 @@
  */
 
 #include "weather_station.h"
+#include "PCD8544.h"
 
 #include <PCD_LCD/PCD8544_fonts.h>
 
@@ -923,6 +924,7 @@ void WS_UI_Init(WS_UIContext_t *ui, WS_Manager_t *ws_ctx, WS_RuntimeConfig_t *ws
   ui->text_buffer = text_buffer;
   ui->text_buffer_size = text_buffer_size;
   ui->view_state = WS_VIEW_MENU;
+  ui->last_activity_tick = HAL_GetTick();
 }
 
 /**
@@ -1170,7 +1172,7 @@ static void ws_render_stations_status(void) {
   PCD_8544_DrawCenteredTitle(WS_UI.lcd, "STATUS");
 
   /* Display each node below Return */
-  uint8_t row = 2;
+  uint8_t row = 1;
   for (uint8_t i = 0; i < WS_UI.ws_ctx->node_count && row < 6; i++) {
     const WS_NodeState_t *node = &WS_UI.ws_ctx->nodes[i];
     
@@ -1254,11 +1256,30 @@ static void ws_exit_dedicated_view(void) {
 void WS_UI_ViewTask(void) {
   if (WS_UI.menu_ctx == NULL || WS_UI.lcd == NULL || WS_UI.encoder == NULL) return;
 
+  uint32_t now = HAL_GetTick();
+  const uint32_t SCREEN_SAVER_TIMEOUT_MS = 30000U; /* 30 seconds */
+
+  /* Check for screen saver timeout (only when not in screen saver mode) */
+  if (WS_UI.view_state != WS_VIEW_SCREEN_SAVER) {
+    if ((now - WS_UI.last_activity_tick) > SCREEN_SAVER_TIMEOUT_MS) {
+      /* Enter screen saver mode */
+      WS_UI.menu_ctx->state.InScreenSaver = 1U;
+      WS_UI.view_state = WS_VIEW_SCREEN_SAVER;
+      PCD8544_ResetBacklight(WS_UI.lcd);
+      return;
+    }
+  }
+
   switch (WS_UI.view_state) {
 
     case WS_VIEW_MENU:
       Menu_Task(WS_UI.lcd, WS_UI.menu_ctx);
       Encoder_Task(WS_UI.encoder, WS_UI.menu_ctx);
+
+      /* Reset activity timer on button press */
+      if (WS_UI.encoder->ButtonIRQ_Flag) {
+        WS_UI.last_activity_tick = now;
+      }
 
       if (WS_UI.menu_ctx->state.InChartView) {
         WS_UI.view_state = WS_VIEW_CHART;
@@ -1273,6 +1294,7 @@ void WS_UI_ViewTask(void) {
       WS_UI_ChartViewTask();
 
       if (WS_UI.encoder->ButtonIRQ_Flag) {
+        WS_UI.last_activity_tick = now;
         WS_UI.menu_ctx->state.InChartView = 0;
         WS_UI.menu_ctx->state.ChartViewType = CHART_VIEW_NONE;
         ws_exit_dedicated_view();
@@ -1283,6 +1305,7 @@ void WS_UI_ViewTask(void) {
       WS_UI_StationsStatusTask();
 
       if (WS_UI.encoder->ButtonIRQ_Flag) {
+        WS_UI.last_activity_tick = now;
         WS_UI.menu_ctx->state.InStationsStatusView = 0;
         ws_exit_dedicated_view();
       }
@@ -1292,6 +1315,11 @@ void WS_UI_ViewTask(void) {
       Menu_Task(WS_UI.lcd, WS_UI.menu_ctx);
       Encoder_Task(WS_UI.encoder, WS_UI.menu_ctx);
 
+      /* Reset activity timer on button press */
+      if (WS_UI.encoder->ButtonIRQ_Flag) {
+        WS_UI.last_activity_tick = now;
+      }
+
       if (WS_UI.menu_ctx->state.InChartView) {
         WS_UI.view_state = WS_VIEW_CHART;
       } else if (WS_UI.menu_ctx->state.InStationsStatusView) {
@@ -1300,6 +1328,18 @@ void WS_UI_ViewTask(void) {
         WS_UI.view_state = WS_VIEW_MENU;
       } else {
         WS_UI_MeasurementDisplay();
+      }
+      break;
+
+    case WS_VIEW_SCREEN_SAVER:
+      /* Screen saver active - backlight off, waiting for button press */
+      if (WS_UI.encoder->ButtonIRQ_Flag) {
+        /* Wake up from screen saver */
+        WS_UI.encoder->ButtonIRQ_Flag = 0;
+        WS_UI.last_activity_tick = now;
+        WS_UI.menu_ctx->state.InScreenSaver = 0;
+        PCD8544_SetBacklight(WS_UI.lcd);
+        ws_exit_dedicated_view();
       }
       break;
 

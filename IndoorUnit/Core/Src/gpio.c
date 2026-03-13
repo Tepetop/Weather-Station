@@ -20,7 +20,6 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "gpio.h"
-#include "stm32f1xx_hal_gpio.h"
 
 /* USER CODE BEGIN 0 */
 
@@ -55,7 +54,7 @@ void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(USER_LED_GPIO_Port, USER_LED_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, SPI2_CS_Pin|LCD_DC_Pin, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, SPI2_CS_Pin|LCD_BLK_Pin|LCD_DC_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(SPI2_CE_GPIO_Port, SPI2_CE_Pin, GPIO_PIN_RESET);
@@ -76,8 +75,10 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(RTC_SQW_GPIO_Port, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : SPI2_CS_Pin LCD_RST_Pin LCD_CE_Pin LCD_DC_Pin */
-  GPIO_InitStruct.Pin = SPI2_CS_Pin|LCD_RST_Pin|LCD_CE_Pin|LCD_DC_Pin;
+  /*Configure GPIO pins : SPI2_CS_Pin LCD_BLK_Pin LCD_RST_Pin LCD_CE_Pin
+                           LCD_DC_Pin */
+  GPIO_InitStruct.Pin = SPI2_CS_Pin|LCD_BLK_Pin|LCD_RST_Pin|LCD_CE_Pin
+                          |LCD_DC_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
@@ -98,7 +99,7 @@ void MX_GPIO_Init(void)
 
   /*Configure GPIO pin : SPI2_IRQ_Pin */
   GPIO_InitStruct.Pin = SPI2_IRQ_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(SPI2_IRQ_GPIO_Port, &GPIO_InitStruct);
 
