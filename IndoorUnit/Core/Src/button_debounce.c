@@ -141,7 +141,6 @@ static void ButtonIdleRoutine(Button_t* Key)
 	{
 		if(Key->InterruptFlag)
 		{
-			Key->InterruptFlag = 0; // Clear flag
 			Key->State = DEBOUNCE; // Jump to DEBOUNCE State
 			Key->LastTick = HAL_GetTick(); // Remember current tick for Debounce software timer
 		}
@@ -173,6 +172,11 @@ static void ButtonDebounceRoutine(Button_t* Key)
 		// After Debounce Timer elapsed check if button is still pressed
 		if(ButtonIsPressed(Key))
 		{
+			if(Key->IOMode == BUTTON_MODE_INTERRUPT)
+			{
+				Key->InterruptFlag = 0; // Clear latched interrupt after debounce validation
+			}
+
 			// Still pressed
 			Key->State = PRESSED; // Jump to PRESSED state
 			Key->LastTick = HAL_GetTick(); // Remember current tick for Long Press action
@@ -184,6 +188,11 @@ static void ButtonDebounceRoutine(Button_t* Key)
 		}
 		else
 		{
+			if(Key->IOMode == BUTTON_MODE_INTERRUPT)
+			{
+				Key->InterruptFlag = 0; // Drop stale interrupt when press was not stable
+			}
+
 			// If button was released during debounce time
 			Key->State = IDLE; // Go back do IDLE state
 		}
@@ -202,6 +211,7 @@ static void ButtonPressedRoutine(Button_t* Key)
 	// Check if button was released
 	if(!ButtonIsPressed(Key))
 	{
+		Key->InterruptFlag = 0;
 #if BUTTON_RELEASE_ACTION
 		// If released go to RELEASE state
 		Key->State = RELEASE;
@@ -238,6 +248,7 @@ static void ButtonRepeatRoutine(Button_t* Key)
 	// Check if button was released
 	if(!ButtonIsPressed(Key))
 	{
+		Key->InterruptFlag = 0;
 #if BUTTON_RELEASE_ACTION
 		// If released go to RELEASE state
 		Key->State = RELEASE;
@@ -331,12 +342,10 @@ void ButtonTask(Button_t* Key)
  */
 void ButtonIRQHandler(Button_t* Key, uint16_t GPIO_Pin)
 {
-	// Check if interrupt is for this button's pin and button is in INTERRUPT mode
-	if(Key->IOMode == BUTTON_MODE_INTERRUPT && GPIO_Pin == Key->GpioPin)
+	// Latch a new event only while idle to avoid stale interrupts from contact bounce
+	if(Key->IOMode == BUTTON_MODE_INTERRUPT && GPIO_Pin == Key->GpioPin && Key->State == IDLE)
 	{
 		// Set flag to be processed in ButtonTask
-		// Flag is set regardless of current state to not lose interrupts
-		// It will be processed when button returns to IDLE state
 		Key->InterruptFlag = 1;
 	}
 }

@@ -50,7 +50,6 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define SCREENSAVER_TIMEOUT_MS 30000U // 30 seconds
 
 /* USER CODE END PD */
 
@@ -62,8 +61,6 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-uint32_t screensaverTimeout = 0;
-
 
 /* USER CODE END PV */
 
@@ -73,9 +70,9 @@ void SystemClock_Config(void);
 
 void EncoderButtonPress(void);
 static void NRF_DelayUs(uint32_t us);
-void RTC_alarm(void);
+void RTC_alarm1(void);
 static bool RTC_IsManualSetRequestedAtBoot(void);
-void Menu_Return (void);
+void Menu_EscapeWraper (void);
 
 /* USER CODE END PFP */
 
@@ -224,8 +221,6 @@ int main(void)
   /* Initialize UI context for weather station display functions */
   WS_UI_Init(&WS_UI, &wsCtx, &wsRuntime, &LCD, &menuContext, &encoder, &rtcNow, g_nrf_message, sizeof(g_nrf_message));
 
-  screensaverTimeout = HAL_GetTick();
-
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -240,20 +235,13 @@ int main(void)
     WS_ProcessEventHandler(&wsCtx, &wsRuntime, HAL_GetTick());
 
     /*    Process with RTC event     */
-    DS3231_EventHandler(&rtc, &rtcNow, RTC_alarm, NULL);
+    DS3231_EventHandler(&rtc, &rtcNow, RTC_alarm1, NULL);
 
     /*    Process with button event routine    */
     ButtonTask(&encoderSW);
 
     /* View state machine handles chart, status, measurement and menu views */
     WS_UI_ViewTask();
-
-    if(HAL_GetTick() - screensaverTimeout > SCREENSAVER_TIMEOUT_MS &&
-       WS_UI.view_state != WS_VIEW_SCREEN_SAVER) 
-    {
-      WS_UI.menu_ctx->state.InScreenSaver = 1;
-      screensaverTimeout = HAL_GetTick();
-    }
 
   }
   /* USER CODE END 3 */
@@ -343,7 +331,7 @@ static void NRF_DelayUs(uint32_t us) {
 }
 
 /* RTC alarm function assign to callback */
-void RTC_alarm(void){
+void RTC_alarm1(void){
   alarm1_count++;
   if(alarm1_count% 3 == 0) 
   {
@@ -359,7 +347,7 @@ void EncoderButtonPress(void)
   Menu_SetEnterAction(&menuContext);
 }
 
-void Menu_Return(void)
+void Menu_EscapeWraper(void)
 {
     Menu_Escape(&LCD, &menuContext);
 };

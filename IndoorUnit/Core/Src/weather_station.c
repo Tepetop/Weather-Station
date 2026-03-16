@@ -881,9 +881,6 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
   }
 
   if (WS_ConsumeActiveDataReady(ctx)) {
-
-    //ws_display_measurements(ctx, cfg);
-
     /* Add new measurement data to charts when data is received */
     if ((WS_UI.rtc_now != NULL) && (ctx->latest_data_valid != 0U)) {
       WS_UI_AddMeasurementToCharts(&ctx->latest_data, WS_UI.rtc_now->hours, WS_UI.rtc_now->minutes);
@@ -923,7 +920,7 @@ void WS_UI_Init(WS_UIContext_t *ui, WS_Manager_t *ws_ctx, WS_RuntimeConfig_t *ws
   ui->rtc_now = rtc_now;
   ui->text_buffer = text_buffer;
   ui->text_buffer_size = text_buffer_size;
-  ui->view_state = WS_VIEW_MENU;
+  ui->view_state = WS_VIEW_DEFAULT_MEASUREMENT;
   ui->last_activity_tick = HAL_GetTick();
 }
 
@@ -976,11 +973,10 @@ void WS_UI_AddMeasurementToCharts(const WS_MeasurementData_t *data, uint8_t hour
  * @brief Display live measurement data (menu function callback)
  */
 void WS_UI_MeasurementDisplay(void) {
-  static uint32_t lastUpdate = 0;
-  uint32_t now = HAL_GetTick();
 
-  if ((now - lastUpdate) < 700) return;
-  lastUpdate = now;
+  /*  Render screen only if new data is available */
+  if (WS_UI.chart_data_dirty == 0U) return;
+  WS_UI.chart_data_dirty = 0U;
 
   if (WS_UI.lcd == NULL || WS_UI.ws_ctx == NULL) return;
 
@@ -1191,7 +1187,7 @@ static void ws_render_stations_status(void) {
       sens_flag = "!";
     }
 
-    PCD8544_SetCursor(WS_UI.lcd, 1, row);
+    PCD8544_SetCursor(WS_UI.lcd, 0, row);
     snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, 
              "%cS%u:%s %s%s", 
              active_marker, i + 1, status_str, 
@@ -1203,7 +1199,7 @@ static void ws_render_stations_status(void) {
 
   /* If no nodes configured */
   if (WS_UI.ws_ctx->node_count == 0) {
-    PCD8544_SetCursor(WS_UI.lcd, 1, 1);
+    PCD8544_SetCursor(WS_UI.lcd, 0, 1);
     PCD8544_WriteString(WS_UI.lcd, "Brak stacji");
   }
 
@@ -1251,23 +1247,50 @@ static void ws_exit_dedicated_view(void) {
 }
 
 /**
+ * @brief Switch UI into the default live measurements view
+ * @details Leaves chart/status/detail modes, resets pending menu actions,
+ *          and forces the measurements screen to redraw on the next pass.
+ */
+static void ws_activate_default_measurement_view(void) {
+  WS_UI.menu_ctx->state.InChartView = 0U;
+  WS_UI.menu_ctx->state.InStationsStatusView = 0U;
+  WS_UI.menu_ctx->state.InDetailsView = 0U;
+  WS_UI.menu_ctx->state.InDefaultMeasurementsView = 1U;
+  WS_UI.menu_ctx->state.ChartViewType = CHART_VIEW_NONE;
+  WS_UI.menu_ctx->state.actionPending = 0U;
+  WS_UI.menu_ctx->state.currentAction = MENU_ACTION_IDLE;
+  WS_UI.menu_ctx->state.CurrentDepth = 0U;
+  WS_UI.menu_ctx->state.MenuIndex = 0U;
+  WS_UI.menu_ctx->state.CursorPosOnLCD = 0U;
+
+  if (WS_UI.menu_ctx->defaultMenu != NULL) {
+    WS_UI.menu_ctx->rootMenu = WS_UI.menu_ctx->defaultMenu;
+  }
+
+  WS_UI.chart_data_dirty = 1U;
+  WS_UI.view_state = WS_VIEW_DEFAULT_MEASUREMENT;
+}
+
+/**
  * @brief Main view state machine task - call in main loop
  */
 void WS_UI_ViewTask(void) {
   if (WS_UI.menu_ctx == NULL || WS_UI.lcd == NULL || WS_UI.encoder == NULL) return;
 
   uint32_t now = HAL_GetTick();
-  const uint32_t SCREEN_SAVER_TIMEOUT_MS = 30000U; /* 30 seconds */
 
-  /* Check for screen saver timeout (only when not in screen saver mode) */
-  if (WS_UI.view_state != WS_VIEW_SCREEN_SAVER) {
-    if ((now - WS_UI.last_activity_tick) > SCREEN_SAVER_TIMEOUT_MS) {
-      /* Enter screen saver mode */
-      WS_UI.menu_ctx->state.InScreenSaver = 1U;
-      WS_UI.view_state = WS_VIEW_SCREEN_SAVER;
-      PCD8544_ResetBacklight(WS_UI.lcd);
-      return;
-    }
+  if (WS_UI.menu_ctx->state.InScreenSaver != 0U && WS_UI.encoder->ButtonIRQ_Flag != 0U) {
+    WS_UI.encoder->ButtonIRQ_Flag = 0U;
+    WS_UI.last_activity_tick = now;
+    WS_UI.menu_ctx->state.InScreenSaver = 0U;
+    PCD8544_SetBacklight(WS_UI.lcd);
+  }
+
+  /* Screen saver only controls backlight; view rendering continues normally. */
+  if (WS_UI.menu_ctx->state.InScreenSaver == 0U && (now - WS_UI.last_activity_tick) > SCREEN_SAVER_TIMEOUT_MS) {
+    WS_UI.menu_ctx->state.InScreenSaver = 1U;
+    ws_activate_default_measurement_view();
+    PCD8544_ResetBacklight(WS_UI.lcd);
   }
 
   switch (WS_UI.view_state) {
@@ -1328,18 +1351,6 @@ void WS_UI_ViewTask(void) {
         WS_UI.view_state = WS_VIEW_MENU;
       } else {
         WS_UI_MeasurementDisplay();
-      }
-      break;
-
-    case WS_VIEW_SCREEN_SAVER:
-      /* Screen saver active - backlight off, waiting for button press */
-      if (WS_UI.encoder->ButtonIRQ_Flag) {
-        /* Wake up from screen saver */
-        WS_UI.encoder->ButtonIRQ_Flag = 0;
-        WS_UI.last_activity_tick = now;
-        WS_UI.menu_ctx->state.InScreenSaver = 0;
-        PCD8544_SetBacklight(WS_UI.lcd);
-        ws_exit_dedicated_view();
       }
       break;
 

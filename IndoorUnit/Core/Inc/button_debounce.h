@@ -32,7 +32,7 @@ typedef enum
 
 typedef struct
 {
-	BUTTON_STATE 	State; // Button current state
+	volatile BUTTON_STATE 	State; // Button current state
 	BUTTON_IO_MODE 	IOMode; // IO Mode - Polling or Interrupt
 
 	GPIO_TypeDef* 	GpioPort; // GPIO Port for a button
@@ -43,7 +43,7 @@ typedef struct
 	uint32_t		TimerLongPress; // Fixed, settable time for long press timer
 	uint32_t		TimerRepeat; // Fixed, settable time for repeat timer
 
-	uint8_t			InterruptFlag; // Flag set in interrupt, cleared in task
+	volatile uint8_t	InterruptFlag; // Flag set in interrupt, cleared in task
 
 	void(*ButtonPressed)(void); // A callback for buttos pressed
 	void(*ButtonLongPressed)(void); // A callback for long press
