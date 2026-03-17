@@ -90,7 +90,7 @@ typedef enum {
 } OUT_STATE_t;
 
 /* ============================================================================
- * External Variables (defined in main.c)
+ * External Variables (defined in outdoor_station.c)
  * ============================================================================ */
 extern Measurement_Data_t txData;     /**< Data buffer for NRF transmission */
 extern char Message[128];             /**< Message buffer for UART transfer */

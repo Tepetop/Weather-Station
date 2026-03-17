@@ -36,11 +36,11 @@
  *          Multiple flags can be combined using bitwise OR.
  */
 typedef enum {
-    ERROR_SENSORS_NONE     = 0,         /**< No errors (0x00) */
-    ERROR_SI7021   = (1 << 0),  /**< Si7021 sensor error (0x01) */
-    ERROR_BMP280   = (1 << 1),  /**< BMP280 sensor error (0x02) */
-    ERROR_TSL2561  = (1 << 2),  /**< TSL2561 sensor error (0x04) */
-    ERROR_ALL_SENSORS      = (ERROR_SI7021 | ERROR_BMP280 | ERROR_TSL2561) /**< All sensors error (0x07) */
+    ERROR_SENSORS_NONE      = 0,         /**< No errors (0x00) */
+    ERROR_SI7021            = (1 << 0),  /**< Si7021 sensor error (0x01) */
+    ERROR_BMP280            = (1 << 1),  /**< BMP280 sensor error (0x02) */
+    ERROR_TSL2561           = (1 << 2),  /**< TSL2561 sensor error (0x04) */
+    ERROR_ALL_SENSORS       = (ERROR_SI7021 | ERROR_BMP280 | ERROR_TSL2561) /**< All sensors error (0x07) */
 } Sensor_Error_t;
 
 /**

@@ -491,6 +491,10 @@ HAL_StatusTypeDef Measurement_Process(Measurement_Context_t *ctx)
             if (ctx->sensorsInitialized != 0) {
                 ctx->state = MEAS_SLEEP;
             }
+            if (ctx->sensorErrorCode == ERROR_ALL_SENSORS) {
+                /* All sensors failed - stay in error state but allow retries */
+                ctx->state = MEAS_ERROR;
+            }
             /* Otherwise stay in error state */
             break;
 

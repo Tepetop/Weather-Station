@@ -50,6 +50,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/TSL2561.c
     Core/Src/NRF24L01.c
     Core/Src/measurement.c
+    Core/Src/outdoor_station.c
 )
 
 # Add include paths
