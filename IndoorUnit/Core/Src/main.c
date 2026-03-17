@@ -229,6 +229,9 @@ int main(void)
   /* Force initial measurement display render (show time + placeholders) */
   WS_UI.chart_data_dirty = 1U;
 
+  /*  Initial measurement request */
+  WS_RequestMeasurementForActiveNode(&wsCtx);
+
   /* USER CODE END 2 */
 
   /* Infinite loop */

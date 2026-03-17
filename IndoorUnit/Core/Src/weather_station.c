@@ -950,13 +950,36 @@ void WS_UI_InitCharts(void) {
 }
 
 /**
+ * @brief Compute averaged temperature from available sensors
+ * @param[in] data Measurement data containing sensor readings and status
+ * @return Averaged temperature: mean of Si7021 and BMP280 if both OK,
+ *         single sensor value if only one OK, or 0.0f if both failed.
+ */
+static float ws_avg_temperature(const WS_MeasurementData_t *data) {
+  uint8_t si_ok  = ((data->sensorStatus & WS_SENSOR_ERR_SI7021) == 0U) ? 1U : 0U;
+  uint8_t bmp_ok = ((data->sensorStatus & WS_SENSOR_ERR_BMP280) == 0U) ? 1U : 0U;
+
+  if (si_ok && bmp_ok) {
+    return (data->si7021_temp + data->bmp280_temp) * 0.5f;
+  }
+  if (si_ok) {
+    return data->si7021_temp;
+  }
+  if (bmp_ok) {
+    return data->bmp280_temp;
+  }
+  return 0.0f;
+}
+
+/**
  * @brief Add new measurement data to all charts
  */
 void WS_UI_AddMeasurementToCharts(const WS_MeasurementData_t *data, uint8_t hour, uint8_t minute) {
   if (data == NULL) return;
   
   /* Convert float values to chart units (scaled integers) */
-  int16_t tempVal = (int16_t)(data->si7021_temp * 10.0f);  /* tenths of C */
+  float avg_temp = ws_avg_temperature(data);
+  int16_t tempVal = (int16_t)(avg_temp * 10.0f);           /* tenths of C */
   int16_t humVal = (int16_t)(data->si7021_hum * 10.0f);    /* tenths of % */
   int16_t pressVal = (int16_t)(data->bmp280_press);        /* hPa integer */
   int16_t luxVal = (int16_t)(data->tsl2561_lux);             /* lux integer */
@@ -997,10 +1020,11 @@ void WS_UI_MeasurementDisplay(void) {
   }
   PCD8544_WriteString(WS_UI.lcd, WS_UI.text_buffer);
 
-  /* Temperature */
+  /* Temperature (averaged from available sensors) */
   PCD8544_SetCursor(WS_UI.lcd, 0, 1);
   if (hasMeasurement) {
-    ws_format_fixed(value_text, sizeof(value_text), measurement.si7021_temp, 2U);
+    float avg_temp = ws_avg_temperature(&measurement);
+    ws_format_fixed(value_text, sizeof(value_text), avg_temp, 2U);
     snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "T:%sC", value_text);
   } else {
     snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "T:--.--C");
@@ -1146,11 +1170,11 @@ void WS_UI_TakeMeasurement(void) {
 static const char* ws_node_state_str(WS_NodeStateEnum_t state) {
   switch (state) {
     case WS_NODE_IDLE:           return "OK";
-    case WS_NODE_TX_IN_PROGRESS: return "TX..";
-    case WS_NODE_WAIT_RESPONSE:  return "WAIT";
-    case WS_NODE_DATA_READY:     return "DATA";
-    case WS_NODE_ERROR:          return "ERR";
-    default:                     return "?";
+    case WS_NODE_TX_IN_PROGRESS: return "TX";
+    case WS_NODE_WAIT_RESPONSE:  return "WR";
+    case WS_NODE_DATA_READY:     return "DR";
+    case WS_NODE_ERROR:          return "ER";
+    default:                     return "??";
   }
 }
 
@@ -1165,7 +1189,7 @@ static void ws_render_stations_status(void) {
   PCD8544_SetFont(WS_UI.lcd, &Font_6x8);
 
   /* Header */
-  PCD_8544_DrawCenteredTitle(WS_UI.lcd, "STATUS");
+  PCD_8544_DrawCenteredTitle(WS_UI.lcd, "Status");
 
   /* Display each node below Return */
   uint8_t row = 1;
@@ -1174,26 +1198,47 @@ static void ws_render_stations_status(void) {
     
     /* Determine status indicator */
     const char *status_str = ws_node_state_str(node->state);
-    char active_marker = (i == WS_UI.ws_ctx->active_node) ? '*' : ' ';
+    char active_marker = (i == WS_UI.ws_ctx->active_node) ? '*' : '!';
     
     /* Check if node has valid data */
     uint8_t has_data = (node->data.si7021_temp != 0.0f || 
                         node->data.si7021_hum != 0.0f ||
                         node->data.bmp280_press != 0.0f) ? 1U : 0U;
 
-    /* Build sensor status indicator */
-    const char *sens_flag = "";
-    if (has_data && node->data.sensorStatus != WS_SENSOR_OK) {
-      sens_flag = "!";
-    }
+    uint8_t sensor_err = has_data ? node->data.sensorStatus : 0U;
 
     PCD8544_SetCursor(WS_UI.lcd, 0, row);
     snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, 
-             "%cS%u:%s %s%s", 
+             "%cS%u:%s%s%s", 
              active_marker, i + 1, status_str, 
-             has_data ? "[+]" : "[-]",
-             sens_flag);
+             has_data ? "+" : "-",
+             sensor_err ? "!" : " ");
     PCD8544_WriteString(WS_UI.lcd, WS_UI.text_buffer);
+
+    /* Show which sensors failed on an extra row */
+    if (sensor_err && row < 6) {
+      uint8_t err_col = 8;
+      char err_line[16] = " ";
+      
+      if (sensor_err & WS_SENSOR_ERR_SI7021)  
+      { 
+        strncat(err_line, "Si7 ",  sizeof(err_line) - strlen(err_line) - 1U); 
+      }
+
+      if (sensor_err & WS_SENSOR_ERR_BMP280)  
+      { 
+        strncat(err_line, "BMP ",  sizeof(err_line) - strlen(err_line) - 1U); 
+      }
+
+      if (sensor_err & WS_SENSOR_ERR_TSL2561) 
+      { 
+        strncat(err_line, "TSL",   sizeof(err_line) - strlen(err_line) - 1U); 
+      }
+
+      PCD8544_SetCursor(WS_UI.lcd, err_col , row);
+      PCD8544_WriteString(WS_UI.lcd, err_line);
+    }
+
     row++;
   }
 
@@ -1296,13 +1341,13 @@ void WS_UI_ViewTask(void) {
   switch (WS_UI.view_state) {
 
     case WS_VIEW_MENU:
-      Menu_Task(WS_UI.lcd, WS_UI.menu_ctx);
-      Encoder_Task(WS_UI.encoder, WS_UI.menu_ctx);
-
-      /* Reset activity timer on button press */
-      if (WS_UI.encoder->ButtonIRQ_Flag) {
+      /* Capture flags before Encoder_Task clears them */
+      if (WS_UI.encoder->ButtonIRQ_Flag || WS_UI.encoder->IRQ_Flag) {
         WS_UI.last_activity_tick = now;
       }
+
+      Menu_Task(WS_UI.lcd, WS_UI.menu_ctx);
+      Encoder_Task(WS_UI.encoder, WS_UI.menu_ctx);
 
       if (WS_UI.menu_ctx->state.InChartView) {
         WS_UI.view_state = WS_VIEW_CHART;
@@ -1335,13 +1380,13 @@ void WS_UI_ViewTask(void) {
       break;
 
     case WS_VIEW_DEFAULT_MEASUREMENT:
-      Menu_Task(WS_UI.lcd, WS_UI.menu_ctx);
-      Encoder_Task(WS_UI.encoder, WS_UI.menu_ctx);
-
-      /* Reset activity timer on button press */
-      if (WS_UI.encoder->ButtonIRQ_Flag) {
+      /* Capture flags before Encoder_Task clears them */
+      if (WS_UI.encoder->ButtonIRQ_Flag || WS_UI.encoder->IRQ_Flag) {
         WS_UI.last_activity_tick = now;
       }
+
+      Menu_Task(WS_UI.lcd, WS_UI.menu_ctx);
+      Encoder_Task(WS_UI.encoder, WS_UI.menu_ctx);
 
       if (WS_UI.menu_ctx->state.InChartView) {
         WS_UI.view_state = WS_VIEW_CHART;
