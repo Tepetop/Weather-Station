@@ -176,7 +176,7 @@ HAL_StatusTypeDef NRF24_Init(NRF24_Handle_t *handle, SPI_HandleTypeDef *hspi, GP
     status = NRF24_SetPALevel(handle, NRF24_PA_MAX);
     if (status != HAL_OK) return status;
 
-    status = NRF24_SetChannel(handle, 0x4C); // Default channel
+    status = NRF24_SetChannel(handle, NRF24_DEFAULT_CHANNEL);
     if (status != HAL_OK) return status;
 
     status = NRF24_WriteReg(handle, NRF24_REG_DYNPD, 0x00); // Disable dynamic payload
@@ -302,12 +302,10 @@ HAL_StatusTypeDef NRF24_SetMode(NRF24_Handle_t *handle, NRF24_Mode_t mode) {
         return HAL_ERROR; // Invalid handle
     }
     
-    uint8_t config_val;
-    HAL_StatusTypeDef status = NRF24_ReadReg(handle, NRF24_REG_CONFIG, &config_val);
+    uint8_t config;
+    HAL_StatusTypeDef status = NRF24_ReadReg(handle, NRF24_REG_CONFIG, &config);
 
     if (status != HAL_OK) return status;
-
-    uint8_t config = config_val;
 
     switch (mode) {
         case NRF24_MODE_POWER_DOWN:
@@ -330,7 +328,7 @@ HAL_StatusTypeDef NRF24_SetMode(NRF24_Handle_t *handle, NRF24_Mode_t mode) {
             status = NRF24_WriteReg(handle, NRF24_REG_CONFIG, config);
             if (status != HAL_OK) return status;
             ce_high(handle);
-            handle->delay_us(0x82); // Tstby2a max 130µs
+            handle->delay_us(130); // Tstby2a max 130µs
         break;
 
         case NRF24_MODE_TX:
@@ -339,7 +337,7 @@ HAL_StatusTypeDef NRF24_SetMode(NRF24_Handle_t *handle, NRF24_Mode_t mode) {
             status = NRF24_WriteReg(handle, NRF24_REG_CONFIG, config);
             if (status != HAL_OK) return status;
             ce_high(handle); // Start transmission with CE high
-            handle->delay_us(0x0A); // Minimum 10µs CE pulse
+            handle->delay_us(10); // Minimum 10µs CE pulse
             ce_low(handle); // Return to Standby-I after transmission
         break;
     }
@@ -356,7 +354,7 @@ HAL_StatusTypeDef NRF24_SetChannel(NRF24_Handle_t *handle, uint8_t channel) {
     if(handle == NULL) {
         return HAL_ERROR; // Invalid handle
     }
-    if (channel > 0x7D) channel = 0x7D;
+    if (channel > NRF24_MAX_CHANNEL) channel = NRF24_MAX_CHANNEL;
     return NRF24_WriteReg(handle, NRF24_REG_RF_CH, channel);
 }
 
@@ -373,22 +371,10 @@ HAL_StatusTypeDef NRF24_SetDataRate(NRF24_Handle_t *handle, NRF24_DataRate_t rat
     uint8_t rf_setup;
     HAL_StatusTypeDef status = NRF24_ReadReg(handle, NRF24_REG_RF_SETUP, &rf_setup);
     if (status != HAL_OK) return status;
-    rf_setup &= ~(0x28); // Clear RF_DR_LOW (bit 5) and RF_DR_HIGH (bit 3)
-
-    switch (rate) {
-        case NRF24_DR_250KBPS:
-            rf_setup |= 0x20; // RF_DR_LOW=1, RF_DR_HIGH=0 (nRF24L01+ only)
-            break;
-
-        case NRF24_DR_2MBPS:
-            rf_setup |= 0x08; // RF_DR_LOW=0, RF_DR_HIGH=1
-            break;
-
-        case NRF24_DR_1MBPS:
-        default:
-            // RF_DR_LOW=0, RF_DR_HIGH=0 → 1Mbps (no bits to set)
-            break;
-    }
+    // NRF24_DR_250KBPS (0x20) and NRF24_DR_2MBPS (0x08) encode the exact
+    // RF_DR_LOW and RF_DR_HIGH bit positions, so the mask covers both.
+    rf_setup &= ~(NRF24_DR_250KBPS | NRF24_DR_2MBPS); // Clear both DR bits
+    rf_setup |= (uint8_t)rate;                          // Apply new rate bits
 
     return NRF24_WriteReg(handle, NRF24_REG_RF_SETUP, rf_setup);
 }
@@ -407,8 +393,8 @@ HAL_StatusTypeDef NRF24_SetPALevel(NRF24_Handle_t *handle, NRF24_PALevel_t level
     HAL_StatusTypeDef status = NRF24_ReadReg(handle, NRF24_REG_RF_SETUP, &rf_setup);
     if (status != HAL_OK) return status;
     
-    rf_setup &= ~0x06; // Clear RF_PWR
-    rf_setup |= level;
+    rf_setup &= ~NRF24_PA_MAX; // Clear RF_PWR bits (NRF24_PA_MAX=0x06 covers both bits)
+    rf_setup |= (uint8_t)level;
 
     return NRF24_WriteReg(handle, NRF24_REG_RF_SETUP, rf_setup);
 }
@@ -447,7 +433,7 @@ HAL_StatusTypeDef NRF24_SetAutoAck(NRF24_Handle_t *handle, uint8_t pipe, uint8_t
     } else {
         en_aa &= ~(0x01 << pipe);
     }
-return NRF24_WriteReg(handle, NRF24_REG_EN_AA, en_aa);
+    return NRF24_WriteReg(handle, NRF24_REG_EN_AA, en_aa);
 }
 
 /**
@@ -672,6 +658,7 @@ void NRF24_IRQ_Handler(NRF24_Handle_t *handle) {
 * @return HAL status.
 */
 HAL_StatusTypeDef NRF24_SetCRC(NRF24_Handle_t *handle, NRF24_CRC_t crc) {
+    if (handle == NULL) return HAL_ERROR;
     uint8_t config;
     HAL_StatusTypeDef status = NRF24_ReadReg(handle, NRF24_REG_CONFIG, &config);
     if (status != HAL_OK) return status;
@@ -697,7 +684,7 @@ HAL_StatusTypeDef NRF24_SetCRC(NRF24_Handle_t *handle, NRF24_CRC_t crc) {
 * @return HAL status.
 */
 HAL_StatusTypeDef NRF24_SetAutoRetr(NRF24_Handle_t *handle, uint8_t ard, uint8_t arc) {
-    if (ard > 15 || arc > 15) return HAL_ERROR;
+    if (handle == NULL || ard > 15 || arc > 15) return HAL_ERROR;
     uint8_t val = (ard << 4) | arc;
     return NRF24_WriteReg(handle, NRF24_REG_SETUP_RETR, val);
 }
@@ -709,6 +696,7 @@ HAL_StatusTypeDef NRF24_SetAutoRetr(NRF24_Handle_t *handle, uint8_t ard, uint8_t
 * @return HAL status.
 */
 HAL_StatusTypeDef NRF24_EnableDynAck(NRF24_Handle_t *handle, uint8_t enable) {
+    if (handle == NULL) return HAL_ERROR;
     uint8_t feature;
 
     HAL_StatusTypeDef status = NRF24_ReadReg(handle, NRF24_REG_FEATURE, &feature);
@@ -730,6 +718,7 @@ HAL_StatusTypeDef NRF24_EnableDynAck(NRF24_Handle_t *handle, uint8_t enable) {
 * @return HAL status.
 */
 HAL_StatusTypeDef NRF24_EnableAckPay(NRF24_Handle_t *handle, uint8_t enable) {
+    if (handle == NULL) return HAL_ERROR;
     uint8_t feature;
     HAL_StatusTypeDef status = NRF24_ReadReg(handle, NRF24_REG_FEATURE, &feature);
 
