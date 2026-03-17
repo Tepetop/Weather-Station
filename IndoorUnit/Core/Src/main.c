@@ -39,6 +39,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/_types.h>
 
 #include "weather_station_config.h"
 /* USER CODE END Includes */
@@ -71,6 +72,7 @@ void SystemClock_Config(void);
 void EncoderButtonPress(void);
 static void NRF_DelayUs(uint32_t us);
 void RTC_alarm1(void);
+void RTC_alarm2(void);
 static bool RTC_IsManualSetRequestedAtBoot(void);
 void Menu_EscapeWraper (void);
 
@@ -165,7 +167,9 @@ int main(void)
   }
 
   DS3231_SetAlarm1(&rtc, &RTCalarm1);
+  DS3231_SetAlarm2(&rtc, &RTCalarm2);
   DS3231_EnableAlarm1Interrupt(&rtc);
+  DS3231_EnableAlarm2Interrupt(&rtc);
 
 
   /* Initialize menu system with predefined configuration */
@@ -221,6 +225,9 @@ int main(void)
   /* Initialize UI context for weather station display functions */
   WS_UI_Init(&WS_UI, &wsCtx, &wsRuntime, &LCD, &menuContext, &encoder, &rtcNow, g_nrf_message, sizeof(g_nrf_message));
 
+  /* Force initial measurement display render (show time + placeholders) */
+  WS_UI.chart_data_dirty = 1U;
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -235,7 +242,7 @@ int main(void)
     WS_ProcessEventHandler(&wsCtx, &wsRuntime, HAL_GetTick());
 
     /*    Process with RTC event     */
-    DS3231_EventHandler(&rtc, &rtcNow, RTC_alarm1, NULL);
+    DS3231_EventHandler(&rtc, &rtcNow, RTC_alarm1, RTC_alarm2);
 
     /*    Process with button event routine    */
     ButtonTask(&encoderSW);
@@ -332,12 +339,12 @@ static void NRF_DelayUs(uint32_t us) {
 
 /* RTC alarm function assign to callback */
 void RTC_alarm1(void){
-  alarm1_count++;
-  if(alarm1_count% 3 == 0) 
-  {
-    alarm1_count= 0;
-    WS_RequestMeasurementForActiveNode(&wsCtx);
-  }
+  WS_UI.chart_data_dirty = 1U;
+}
+
+/* RTC alarm function assign to callback */
+void RTC_alarm2(void){
+  WS_RequestMeasurementForActiveNode(&wsCtx);
 }
 
 /*      Encoder button function to assign to callback     */

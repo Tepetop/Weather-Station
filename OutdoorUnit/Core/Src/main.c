@@ -27,6 +27,7 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
@@ -64,6 +65,27 @@
 /** @brief Measurement context for sensor data acquisition */
 static Measurement_Context_t measCtx;
 
+/** @brief Data buffer for NRF transmission */
+Measurement_Data_t txData;
+
+/** @brief Message buffer for UART transfer */
+char Message[128];
+
+/** @brief Message length */
+uint8_t Length;
+
+/** @brief NRF24L01 handle instance */
+NRF24_Handle_t nrf;
+
+/** @brief OutdoorLink state machine context */
+OutdoorLinkContext_t outLink = {0};
+
+/** @brief NRF TX address (multiceiver - derived from NODE_ID) */
+const uint8_t NRF_TX_ADDR[5] = {0xC2 + NODE_ID, 0xC2, 0xC2, 0xC2, 0xC2};
+
+/** @brief NRF RX address (multiceiver - derived from NODE_ID) */
+const uint8_t NRF_RX_ADDR[5] = {0xE7 + NODE_ID, 0xE7, 0xE7, 0xE7, 0xE7};
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -90,6 +112,7 @@ static void OutLink_Init(void);
 
 /* Main state machine */
 static void OutdoorLink_Process(void);
+
 
 /* USER CODE END PFP */
 
@@ -137,39 +160,56 @@ int main(void)
   I2C_CheckAddress(&hi2c2);
 #endif
 
-  /* Initialize NRF24L01 with retries */
-  {
-    uint8_t nrf_ok = 0;
-    for (uint8_t i = 0; i < NRF_INIT_MAX_RETRIES; i++) {
-      if (NRF_InitOutdoorUnit() == HAL_OK) {
-        nrf_ok = 1;
-        break;
-      }
-      HAL_Delay(NRF_INIT_RETRY_DELAY_MS);
-    }
-    if (!nrf_ok) {
-      Error_Handler();
-    }
-  }
+/* Initialize NRF24L01 */  
+if(NRF_InitOutdoorUnit() != HAL_OK)
+{
+  Error_Handler_WithName("NRF_InitOutdoorUnit");
+}
 
-  OutLink_Init();
+//Initialize OutdoorLink context
+OutLink_Init();
 
 #if USE_LED_INDICATOR
   Outdoor_LedOff();
 #endif
 
   /* Initialize measurement module and process sensor init to completion */
-  Measurement_Init(&measCtx, &hi2c2);
-  {
-    uint32_t initStart = HAL_GetTick();
-    while (measCtx.state != MEAS_SLEEP && measCtx.state != MEAS_ERROR
-           && (HAL_GetTick() - initStart) < 3000U) {
-      Measurement_Process(&measCtx);
+  if(Measurement_Init(&measCtx, &hi2c2) != HAL_OK)
+    {
+      Error_Handler_WithName("Measurement_Init");
     }
+  else {
+      uint32_t initStart = HAL_GetTick();
+      while (measCtx.state != MEAS_SLEEP && measCtx.state != MEAS_ERROR && (HAL_GetTick() - initStart) < 3000U) 
+      {
+        Measurement_Process(&measCtx);
+      }
+  }
+  if(measCtx.state == MEAS_ERROR)
+  {
+    Error_Handler_WithName("Sensor Initialization");
   }
 
+
 #if USE_UART_LOGGING
-  UartLog("System initialized\r\n");
+  if(measCtx.sensorErrorCode == ERROR_SENSORS_NONE)
+  {
+    UartLog("System initialized\r\n");
+  }
+  else 
+  {
+    /* Log which sensors failed */
+    if (measCtx.sensorErrorCode & ERROR_TSL2561) {
+      UartLog("  - TSL2561 sensor failed\r\n");
+    }
+    if (measCtx.sensorErrorCode & ERROR_BMP280) {
+      UartLog("  - BMP280 sensor failed\r\n");
+    }
+    if (measCtx.sensorErrorCode & ERROR_SI7021) {
+      UartLog("  - SI7021 sensor failed\r\n");
+    }
+
+  }
 #endif
 
   /* Start in RX mode, waiting for commands */
@@ -187,6 +227,7 @@ int main(void)
     /* USER CODE BEGIN 3 */
 
     OutdoorLink_Process();
+    
 
   }
   /* USER CODE END 3 */
@@ -211,7 +252,7 @@ void SystemClock_Config(void){
   RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL16;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
-    Error_Handler();
+    Error_Handler_WithName("HAL_RCC_OscConfig");
   }
 
   /** Initializes the CPU, AHB and APB buses clocks
@@ -225,7 +266,7 @@ void SystemClock_Config(void){
 
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
   {
-    Error_Handler();
+    Error_Handler_WithName("HAL_RCC_ClockConfig");
   }
 }
 
@@ -511,9 +552,10 @@ static void OutdoorLink_Process(void)
     Measurement_Process(&measCtx);
 
     /* If sensors reached a startable state, kick off the measurement */
-    if (!outLink.meas_started &&
-        (measCtx.state == MEAS_IDLE || measCtx.state == MEAS_SLEEP)) {
-      if (Measurement_Start(&measCtx) == HAL_OK) {
+    if (!outLink.meas_started && (measCtx.state == MEAS_IDLE || measCtx.state == MEAS_SLEEP)) 
+    {
+      if (Measurement_Start(&measCtx) == HAL_OK) 
+      {
         outLink.meas_started = 1;
       }
     }
@@ -530,11 +572,19 @@ static void OutdoorLink_Process(void)
 
     /* Critical sensor error — retry or send partial data */
     if (measCtx.state == MEAS_ERROR) {
+      /* No sensors available at all — send error status immediately */
+      if (measCtx.sensorsInitialized == 0) {
+        NRF_SendMeasurementData();
+        outLink.state = OUT_LINK_TX_SENDING;
+#if USE_UART_LOGGING
+        UartLog("MEAS: No sensors available, sending error status\r\n");
+#endif
+        break;
+      }
       if (outLink.meas_retry_count < OUTDOOR_MEAS_MAX_RETRIES) {
         outLink.meas_retry_count++;
         outLink.meas_started = 0;
         Measurement_Init(&measCtx, &hi2c2);
-        outLink.meas_start_tick = HAL_GetTick();
 #if USE_UART_LOGGING
         {
           char msg[40];
@@ -583,8 +633,15 @@ static void OutdoorLink_Process(void)
 #if USE_UART_LOGGING
       UartLog(outLink.tx_ok ? "TX: OK\r\n" : "TX: FAIL (no ACK)\r\n");
 #endif
+
 #if USE_LED_INDICATOR
       Outdoor_LedOff();
+#endif
+
+#if USE_TIMER_PROFILING 
+      char timeBuf[50];
+      snprintf(timeBuf,sizeof(timeBuf),"Time elapsed: %lu ms\r\n", (HAL_GetTick() - outLink.tx_start_tick));
+      UartLog(timeBuf);
 #endif
       NRF_StartReceive();
       outLink.state = OUT_LINK_IDLE;
@@ -594,8 +651,15 @@ static void OutdoorLink_Process(void)
     /* TX timeout — hardware did not respond */
     if (outLink.tx_in_progress &&
         (HAL_GetTick() - outLink.tx_start_tick) > NRF_TX_TIMEOUT_MS) {
+          
 #if USE_UART_LOGGING
       UartLog("TX: Timeout\r\n");
+#endif
+
+#if USE_TIMER_PROFILING 
+      char timeBuf[50];
+      snprintf(timeBuf,sizeof(timeBuf),"Time elapsed: %lu ms\r\n", (HAL_GetTick() - outLink.tx_start_tick));
+      UartLog(timeBuf);
 #endif
       outLink.state = OUT_LINK_RECOVERY;
     }
@@ -643,12 +707,29 @@ static void OutdoorLink_Process(void)
 void Error_Handler(void)
 {
   /* USER CODE BEGIN Error_Handler_Debug */
-  /* User can add his own implementation to report the HAL error return state */
-  __disable_irq();
-  while (1)
-  {
-  }
+  Error_Handler_WithName("Unknown");
   /* USER CODE END Error_Handler_Debug */
+}
+
+/**
+  * @brief  Error handler with function name reporting for debugging
+  * @param  function_name  Name of the function that caused the error
+  * @retval None
+  * @note   Logs the error via UART before halting the system
+  */
+void Error_Handler_WithName(const char *function_name)
+{
+#if USE_UART_LOGGING
+  char error_msg[80];
+  snprintf(error_msg, sizeof(error_msg), "ERROR: Failure in function '%s'\r\n", function_name);
+  HAL_UART_Transmit(&huart1, (uint8_t *)error_msg, strlen(error_msg), HAL_MAX_DELAY);
+#else
+  (void)function_name; /* Suppress unused parameter warning */
+#endif
+  __disable_irq();
+  while (1) {
+    /* Stay halted - watchdog or external reset required */
+  }
 }
 #ifdef USE_FULL_ASSERT
 /**

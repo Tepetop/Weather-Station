@@ -46,7 +46,7 @@ DS3231_DateTime currentDateTime = {
   .century = false
 };
 
-  DS3231_Alarm1 RTCalarm1 = {
+DS3231_Alarm1 RTCalarm1 = {
   .seconds = 1,
   .minutes = 0,
   .hours = 0,
@@ -54,6 +54,15 @@ DS3231_DateTime currentDateTime = {
   .format = 0, 
   .day_date = 0,
   .mode = DS3231_ALM1_EVERY_SECOND  
+};
+
+DS3231_Alarm2 RTCalarm2 = {
+  .minutes = 1,
+  .hours = 0,
+  .ampm = 0,  
+  .format = 0, 
+  .day_date = 0,
+  .mode = DS3231_ALM2_EVERY_MINUTE  
 };
 
 DS3231_DateTime rtcNow;

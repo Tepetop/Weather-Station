@@ -104,7 +104,7 @@ HAL_StatusTypeDef Measurement_Init(Measurement_Context_t *ctx, I2C_HandleTypeDef
     }
     
     ctx->state = MEAS_INIT;
-    ctx->sensorErrorCode = ERROR_NONE;
+    ctx->sensorErrorCode = ERROR_SENSORS_NONE;
     ctx->initRetryCount = 0;
     ctx->sensorsInitialized = 0;
     measurementWakeupTick = 0U;
@@ -124,7 +124,7 @@ HAL_StatusTypeDef Measurement_Start(Measurement_Context_t *ctx) {
     
     if (ctx->state == MEAS_IDLE || ctx->state == MEAS_SLEEP) {
         /* Clear error codes from previous measurement */
-        ctx->sensorErrorCode = ERROR_NONE;
+        ctx->sensorErrorCode = ERROR_SENSORS_NONE;
         measurementWakeupTick = 0U;
         
         /* Wake up sensors first if they were sleeping */
@@ -199,7 +199,7 @@ static HAL_StatusTypeDef Measurement_InitTSL2561(Measurement_Context_t *ctx) {
  */
 static void Measurement_InitializeSensors(Measurement_Context_t *ctx) {
     /* Reset error code before initialization */
-    ctx->sensorErrorCode = ERROR_NONE;
+    ctx->sensorErrorCode = ERROR_SENSORS_NONE;
     
     /* Initialize Si7021 */
     if (!(ctx->sensorsInitialized & SENSOR_SI7021_INIT)) {
@@ -223,7 +223,7 @@ static void Measurement_InitializeSensors(Measurement_Context_t *ctx) {
     }
     
     /* Transition to next state based on initialization result */
-    if (ctx->sensorErrorCode != ERROR_NONE) {
+    if (ctx->sensorErrorCode != ERROR_SENSORS_NONE) {
         ctx->initRetryCount++;
         if (ctx->initRetryCount >= MEASUREMENT_MAX_RETRY_COUNT) {
             /* Max retries reached, go to error state but allow partial operation */
@@ -407,7 +407,10 @@ void Measurement_WakeupSensors(Measurement_Context_t *ctx) {
     
     /* TSL2561 - power on */
     if (ctx->sensorsInitialized & SENSOR_TSL2561_INIT) {
-        TSL2561_PowerOn(&htsl2561);
+        if (TSL2561_PowerOn(&htsl2561) != HAL_OK) {
+            ctx->sensorsInitialized &= ~SENSOR_TSL2561_INIT;
+            ctx->sensorErrorCode |= ERROR_TSL2561;
+        }
     }
 }
 
@@ -449,7 +452,12 @@ HAL_StatusTypeDef Measurement_Process(Measurement_Context_t *ctx)
         case MEAS_WAKEUP:
             if (measurementWakeupTick == 0U) {
                 Measurement_WakeupSensors(ctx);
-                measurementWakeupTick = HAL_GetTick();
+                /* Only wait for TSL2561 integration if sensor is still available */
+                if (ctx->sensorsInitialized & SENSOR_TSL2561_INIT) {
+                    measurementWakeupTick = HAL_GetTick();
+                } else {
+                    ctx->state = MEAS_MEASURE;
+                }
                 break;
             }
             /* TSL2561 integration time delay */
@@ -461,7 +469,7 @@ HAL_StatusTypeDef Measurement_Process(Measurement_Context_t *ctx)
         
         case MEAS_MEASURE:
             /* Try to reinitialize any failed sensors before starting measurement */
-            if (ctx->sensorErrorCode != ERROR_NONE) {
+            if (ctx->sensorErrorCode == ERROR_ALL_SENSORS) {
                 Measurement_HandleError(ctx);
             }
             /* Perform all measurements sequentially */
@@ -489,7 +497,7 @@ HAL_StatusTypeDef Measurement_Process(Measurement_Context_t *ctx)
         default:
             /* Unknown state - reset to init */
             ctx->state = MEAS_INIT;
-            ctx->sensorErrorCode = ERROR_NONE;
+            ctx->sensorErrorCode = ERROR_SENSORS_NONE;
             ctx->sensorsInitialized = 0;
             break;
     }
@@ -519,7 +527,7 @@ Measurement_State_t Measurement_GetState(const Measurement_Context_t *ctx) {
  */
 uint8_t Measurement_GetErrorCode(const Measurement_Context_t *ctx) {
     if (ctx == NULL) {
-        return ERROR_NONE;
+        return ERROR_SENSORS_NONE;
     }
     return ctx->sensorErrorCode;
 }

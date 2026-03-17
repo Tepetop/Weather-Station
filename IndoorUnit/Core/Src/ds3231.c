@@ -751,7 +751,7 @@ DS3231_Status DS3231_EventHandler(DS3231_t *hrtc, DS3231_DateTime *rtcNow, void 
             {
                 alarm1();
             }
-            else if((hrtc->DS3231_IRQ_Alarm & DS3231_IRQ_ALARM2) && (alarm2 != NULL)) // Alarm 2 triggered
+            if((hrtc->DS3231_IRQ_Alarm & DS3231_IRQ_ALARM2) && (alarm2 != NULL)) // Alarm 2 triggered
             {
                 alarm2();
             }
