@@ -200,6 +200,7 @@ PCD_Status PCD8544_InvertLine(PCD8544_t *PCD, uint8_t y);
 PCD_Status PCD_8544_DrawCenteredTitle(PCD8544_t *PCD, const char *title);
 
 void PCD8544_SetBacklight(PCD8544_t *PCD);
+
 void PCD8544_ResetBacklight(PCD8544_t *PCD);
 
 #endif /* INC_PCD8544_H_ */

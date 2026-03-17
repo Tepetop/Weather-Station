@@ -2,7 +2,7 @@
  * button_debounce.h
  *
  *  Created on: Sep 6, 2024
- *      Author: remik
+ *      Author: Tepetop
  */
 
 #ifndef INC_BUTTON_DEBOUNCE_H_
@@ -45,7 +45,7 @@ typedef struct
 
 	volatile uint8_t	InterruptFlag; // Flag set in interrupt, cleared in task
 
-	void(*ButtonPressed)(void); // A callback for buttos pressed
+	void(*ButtonPressed)(void); // A callback for button pressed
 	void(*ButtonLongPressed)(void); // A callback for long press
 	void(*ButtonRepeat)(void); // A callback for repeat
 	void(*ButtonRelease)(void); // A callback for release

@@ -105,6 +105,7 @@ HAL_StatusTypeDef Measurement_Init(Measurement_Context_t *ctx, I2C_HandleTypeDef
     
     ctx->state = MEAS_INIT;
     ctx->sensorErrorCode = ERROR_SENSORS_NONE;
+    ctx->data.sensorStatus = ERROR_SENSORS_NONE;
     ctx->initRetryCount = 0;
     ctx->sensorsInitialized = 0;
     measurementWakeupTick = 0U;
@@ -125,6 +126,7 @@ HAL_StatusTypeDef Measurement_Start(Measurement_Context_t *ctx) {
     if (ctx->state == MEAS_IDLE || ctx->state == MEAS_SLEEP) {
         /* Clear error codes from previous measurement */
         ctx->sensorErrorCode = ERROR_SENSORS_NONE;
+        ctx->data.sensorStatus = ERROR_SENSORS_NONE;
         measurementWakeupTick = 0U;
         
         /* Wake up sensors first if they were sleeping */
@@ -200,6 +202,7 @@ static HAL_StatusTypeDef Measurement_InitTSL2561(Measurement_Context_t *ctx) {
 static void Measurement_InitializeSensors(Measurement_Context_t *ctx) {
     /* Reset error code before initialization */
     ctx->sensorErrorCode = ERROR_SENSORS_NONE;
+    ctx->data.sensorStatus = ERROR_SENSORS_NONE;
     
     /* Initialize Si7021 */
     if (!(ctx->sensorsInitialized & SENSOR_SI7021_INIT)) {
@@ -255,6 +258,7 @@ static void Measurement_InitializeSensors(Measurement_Context_t *ctx) {
 static void Measurement_ReadSi7021(Measurement_Context_t *ctx) {
     /* Skip if sensor not initialized */
     if (!(ctx->sensorsInitialized & SENSOR_SI7021_INIT)) {
+        ctx->data.sensorStatus |= ERROR_SI7021;
         ctx->sensorErrorCode |= ERROR_SI7021;
         return;
     }
@@ -263,6 +267,7 @@ static void Measurement_ReadSi7021(Measurement_Context_t *ctx) {
         ctx->data.si7021_temp = hsi7021.data.temperature;
         ctx->data.si7021_hum = hsi7021.data.humidity;
     } else {
+        ctx->data.sensorStatus |= ERROR_SI7021;
         ctx->sensorErrorCode |= ERROR_SI7021;
         /* Mark sensor as needing reinitialization */
         ctx->sensorsInitialized &= ~SENSOR_SI7021_INIT;
@@ -277,6 +282,7 @@ static void Measurement_ReadSi7021(Measurement_Context_t *ctx) {
 static void Measurement_ReadBMP280(Measurement_Context_t *ctx) {
     /* Skip if sensor not initialized */
     if (!(ctx->sensorsInitialized & SENSOR_BMP280_INIT)) {
+        ctx->data.sensorStatus |= ERROR_BMP280;
         ctx->sensorErrorCode |= ERROR_BMP280;
         return;
     }
@@ -295,6 +301,7 @@ static void Measurement_ReadBMP280(Measurement_Context_t *ctx) {
         ctx->data.bmp280_temp = hbmp280.data.temperature;
         ctx->data.bmp280_press = hbmp280.data.pressure;
     } else {
+        ctx->data.sensorStatus |= ERROR_BMP280;
         ctx->sensorErrorCode |= ERROR_BMP280;
         /* Mark sensor as needing reinitialization */
         ctx->sensorsInitialized &= ~SENSOR_BMP280_INIT;
@@ -309,6 +316,7 @@ static void Measurement_ReadBMP280(Measurement_Context_t *ctx) {
 static void Measurement_ReadTSL2561(Measurement_Context_t *ctx) {
     /* Skip if sensor not initialized */
     if (!(ctx->sensorsInitialized & SENSOR_TSL2561_INIT)) {
+        ctx->data.sensorStatus |= ERROR_TSL2561;
         ctx->sensorErrorCode |= ERROR_TSL2561;
         return;
     }
@@ -316,6 +324,7 @@ static void Measurement_ReadTSL2561(Measurement_Context_t *ctx) {
     if (TSL2561_CalculateLux(&htsl2561) == HAL_OK) {
         ctx->data.tsl2561_lux = htsl2561.data.lux;
     } else {
+        ctx->data.sensorStatus |= ERROR_TSL2561;
         ctx->sensorErrorCode |= ERROR_TSL2561;
         /* Mark sensor as needing reinitialization */
         ctx->sensorsInitialized &= ~SENSOR_TSL2561_INIT;
@@ -554,6 +563,7 @@ HAL_StatusTypeDef Measurement_ReinitSensor(Measurement_Context_t *ctx, Sensor_Er
         case ERROR_SI7021:
             if (Measurement_InitSi7021(ctx) == HAL_OK) {
                 ctx->sensorErrorCode &= ~ERROR_SI7021;
+                ctx->data.sensorStatus &= ~ERROR_SI7021;
                 result = HAL_OK;
             }
             break;
@@ -561,6 +571,7 @@ HAL_StatusTypeDef Measurement_ReinitSensor(Measurement_Context_t *ctx, Sensor_Er
         case ERROR_BMP280:
             if (Measurement_InitBMP280(ctx) == HAL_OK) {
                 ctx->sensorErrorCode &= ~ERROR_BMP280;
+                ctx->data.sensorStatus &= ~ERROR_BMP280;
                 result = HAL_OK;
             }
             break;
@@ -568,6 +579,7 @@ HAL_StatusTypeDef Measurement_ReinitSensor(Measurement_Context_t *ctx, Sensor_Er
         case ERROR_TSL2561:
             if (Measurement_InitTSL2561(ctx) == HAL_OK) {
                 ctx->sensorErrorCode &= ~ERROR_TSL2561;
+                ctx->data.sensorStatus &= ~ERROR_TSL2561;
                 result = HAL_OK;
             }
             break;
@@ -585,16 +597,16 @@ HAL_StatusTypeDef Measurement_ReinitSensor(Measurement_Context_t *ctx, Sensor_Er
  * @param   buffer  Pointer to buffer where CSV string will be stored
  * @param   len     Maximum length of the buffer
  * @retval  None
- * @note    Output format: "si7021_temp,si7021_hum,bmp280_temp,bmp280_press,tsl2561_lux"
+ * @note    Output format: "si7021_temp,si7021_hum,bmp280_temp,bmp280_press,tsl2561_lux,sensor_status"
  */
 void Measurement_GetCSV(const Measurement_Context_t *ctx, char *buffer, uint16_t len) {
     if (ctx == NULL || buffer == NULL || len == 0) {
         return;
     }
-    snprintf(buffer, len, "%f,%f,%f,%f,%f",             
+    snprintf(buffer, len, "%f,%f,%f,%f,%f,%d",             
              ctx->data.si7021_temp, ctx->data.si7021_hum,
              ctx->data.bmp280_temp, ctx->data.bmp280_press,
-             ctx->data.tsl2561_lux);
+             ctx->data.tsl2561_lux, ctx->data.sensorStatus);
 }
 
 /**
@@ -608,5 +620,4 @@ void Measurement_GetData(const Measurement_Context_t *ctx, Measurement_Data_t *d
         return;
     }
     *data = ctx->data;
-    data->sensorStatus = ctx->sensorErrorCode;
 }

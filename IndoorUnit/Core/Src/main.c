@@ -214,6 +214,7 @@ int main(void)
   wsRuntime.tx_irq_timeout_ms = NRF_TX_IRQ_TIMEOUT_MS;
   wsRuntime.rx_timeout_ms = 2000U;
 
+  /*  If NRF24L01 initialization fails, display error on LCD , go to error handler*/
   if (WS_InitRadioAndStart(&wsCtx, &wsRuntime) != HAL_OK) {
     PCD8544_SetFont(&LCD, &Font_6x8);
     PCD8544_SetCursor(&LCD, 0, 0);
@@ -319,8 +320,6 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
     WS_SetIrqFlag(&wsCtx);
   }
 }
-
-
 
 /*                PRIVATE FUNCTIONS                             */
 

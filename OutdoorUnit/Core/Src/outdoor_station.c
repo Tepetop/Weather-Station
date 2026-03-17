@@ -143,12 +143,15 @@ void OutdoorStation_Process(void)
         outLink.meas_retry_count = 0;
         outLink.meas_started = 0;
         outLink.meas_start_tick = HAL_GetTick();
+
 #if USE_LED_INDICATOR
         Outdoor_LedOn();
 #endif
+
 #if USE_UART_LOGGING
         UartLog("CMD: Measure request\r\n");
 #endif
+
         outLink.state = OUT_LINK_MEASURING;
       }
       break;
@@ -171,9 +174,11 @@ void OutdoorStation_Process(void)
       {
         OutdoorStation_SendMeasurementData();
         outLink.state = OUT_LINK_TX_SENDING;
+
 #if USE_UART_LOGGING
         UartLog("MEAS: Done, sending data\r\n");
 #endif
+
         break;
       }
 
@@ -185,9 +190,11 @@ void OutdoorStation_Process(void)
         {
           OutdoorStation_SendMeasurementData();
           outLink.state = OUT_LINK_TX_SENDING;
+
 #if USE_UART_LOGGING
           UartLog("MEAS: No sensors available, sending error status\r\n");
 #endif
+
           break;
         }
 
@@ -196,6 +203,7 @@ void OutdoorStation_Process(void)
           outLink.meas_retry_count++;
           outLink.meas_started = 0;
           Measurement_Init(&measCtx, &hi2c2);
+
 #if USE_UART_LOGGING
           {
             char msg[40];
@@ -203,6 +211,7 @@ void OutdoorStation_Process(void)
             UartLog(msg);
           }
 #endif
+
         }
         else
         {
@@ -221,9 +230,11 @@ void OutdoorStation_Process(void)
       {
         OutdoorStation_SendMeasurementData();
         outLink.state = OUT_LINK_TX_SENDING;
+
 #if USE_UART_LOGGING
         UartLog("MEAS: Timeout, sending partial\r\n");
 #endif
+
       }
       break;
 
@@ -243,6 +254,7 @@ void OutdoorStation_Process(void)
       {
         outLink.tx_done = 0;
         outLink.tx_in_progress = 0;
+
 #if USE_UART_LOGGING
         UartLog(outLink.tx_ok ? "TX: OK\r\n" : "TX: FAIL (no ACK)\r\n");
 #endif
@@ -267,6 +279,7 @@ void OutdoorStation_Process(void)
       /* TX timeout - hardware did not respond */
       if (outLink.tx_in_progress && (HAL_GetTick() - outLink.tx_start_tick) > NRF_TX_TIMEOUT_MS)
       {
+
 #if USE_UART_LOGGING
         UartLog("TX: Timeout\r\n");
 #endif
@@ -284,6 +297,7 @@ void OutdoorStation_Process(void)
       break;
 
     case OUT_LINK_RECOVERY:
+
 #if USE_LED_INDICATOR
       Outdoor_LedOff();
 #endif
