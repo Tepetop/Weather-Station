@@ -9,6 +9,7 @@
 
 #include "weather_station.h"
 #include "PCD8544.h"
+#include "debug_log.h"
 
 #include <PCD_LCD/PCD8544_fonts.h>
 
@@ -190,7 +191,7 @@ static void ws_send_measure_command(WS_Manager_t *ctx, const WS_RuntimeConfig_t 
   NRF24_WritePayload(cfg->nrf, cmd, cfg->cmd_size);
   NRF24_SetMode(cfg->nrf, NRF24_MODE_TX);
 
-  //ws_show_status_line(cfg, "TX START");
+  Debug_LogNrfTxStart(ctx->active_node);
 }
 
 /**
@@ -304,18 +305,21 @@ static void ws_handle_irq(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg) {
       ctx->latest_data_valid = 1U;
 
       ws_set_led(cfg, GPIO_PIN_RESET);
+      Debug_LogNrfRxData(node_idx);
     }
   }
 
   if (status & NRF24_STATUS_TX_DS) {
     NRF24_ClearIRQ(cfg->nrf, NRF24_STATUS_TX_DS);
     WS_MarkTxResultFromIrq(ctx, true, status);
+    Debug_LogNrfTxResult(1U);
   }
 
   if (status & NRF24_STATUS_MAX_RT) {
     NRF24_ClearIRQ(cfg->nrf, NRF24_STATUS_MAX_RT);
     NRF24_FlushTX(cfg->nrf);
     WS_MarkTxResultFromIrq(ctx, false, status);
+    Debug_LogNrfTxResult(0U);
   }
 }
 
@@ -861,7 +865,7 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
   if (WS_IsActiveTxTimedOut(ctx, now_tick, cfg->tx_irq_timeout_ms) && (node->tx_done == 0U)) {
     WS_HandleActiveTxTimeout(ctx, node->last_status);
     ws_start_receive(ctx, cfg);
-   // ws_show_status_line(cfg, "TX IRQ TO");
+    Debug_LogNrfTimeout(1U);  /* TX timeout */
     WS_ScheduleNextNode(ctx);
     ctx->app_state = WS_APP_ERROR_RECOVERY;
   }
@@ -874,7 +878,7 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
 
   if (WS_IsActiveRxTimedOut(ctx, now_tick, cfg->rx_timeout_ms)) {
     WS_HandleActiveRxTimeout(ctx, node->last_status);
-    //ws_show_status_line(cfg, "RX TIMEOUT");
+    Debug_LogNrfTimeout(0U);  /* RX timeout */
     ws_start_receive(ctx, cfg);
     WS_ScheduleNextNode(ctx);
     ctx->app_state = WS_APP_ERROR_RECOVERY;
@@ -994,14 +998,27 @@ void WS_UI_AddMeasurementToCharts(const WS_MeasurementData_t *data, uint8_t hour
 
 /**
  * @brief Display live measurement data (menu function callback)
+ * @details When called as menu callback, forces initial render by setting
+ *          chart_data_dirty. This ensures screen updates when entering
+ *          from menu navigation even if no new measurement data exists.
  */
 void WS_UI_MeasurementDisplay(void) {
+  if (WS_UI.lcd == NULL || WS_UI.ws_ctx == NULL || WS_UI.menu_ctx == NULL) return;
+
+  /* Force render when entering this view from menu or other views.
+   * This fixes the bug where selecting StronaDomyslna from menu
+   * would not show anything if chart_data_dirty was 0. */
+  if (WS_UI.view_state != WS_VIEW_DEFAULT_MEASUREMENT ||
+      !WS_UI.menu_ctx->state.InDefaultMeasurementsView) {
+    WS_UI.chart_data_dirty = 1U;
+    WS_UI.menu_ctx->state.InDefaultMeasurementsView = 1U;
+    WS_UI.view_state = WS_VIEW_DEFAULT_MEASUREMENT;
+    Debug_LogMenuAction("ENTER_DEFAULT_VIEW");
+  }
 
   /*  Render screen only if new data is available */
   if (WS_UI.chart_data_dirty == 0U) return;
   WS_UI.chart_data_dirty = 0U;
-
-  if (WS_UI.lcd == NULL || WS_UI.ws_ctx == NULL) return;
 
   WS_MeasurementData_t measurement;
   uint8_t hasMeasurement = WS_GetLatestMeasurement(WS_UI.ws_ctx, &measurement) ? 1U : 0U;

@@ -54,6 +54,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/button_debounce.c
     Core/Src/NRF24L01.c
     Core/Src/weather_station.c
+    Core/Src/debug_log.c
 )
 
 # Add include paths

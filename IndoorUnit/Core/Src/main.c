@@ -42,6 +42,7 @@
 #include <sys/_types.h>
 
 #include "weather_station_config.h"
+#include "debug_log.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -226,6 +227,9 @@ int main(void)
   /* Initialize UI context for weather station display functions */
   WS_UI_Init(&WS_UI, &wsCtx, &wsRuntime, &LCD, &menuContext, &encoder, &rtcNow, g_nrf_message, sizeof(g_nrf_message));
 
+  /* Initialize debug logging system */
+  Debug_Init();
+
   /* Force initial measurement display render (show time + placeholders) */
   WS_UI.chart_data_dirty = 1U;
 
@@ -253,6 +257,9 @@ int main(void)
 
     /* View state machine handles chart, status, measurement and menu views */
     WS_UI_ViewTask();
+
+    /* Debug heartbeat - logs every minute to detect program hangs */
+    Debug_Heartbeat();
 
   }
   /* USER CODE END 3 */
@@ -342,11 +349,13 @@ static void NRF_DelayUs(uint32_t us) {
 /* RTC alarm function assign to callback */
 void RTC_alarm1(void){
   WS_UI.chart_data_dirty = 1U;
+  Debug_LogRtcAlarm1();
 }
 
 /* RTC alarm function assign to callback */
 void RTC_alarm2(void){
   WS_RequestMeasurementForActiveNode(&wsCtx);
+  Debug_LogRtcAlarm2();
 }
 
 /*      Encoder button function to assign to callback     */
