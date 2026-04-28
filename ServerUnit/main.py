@@ -13,13 +13,13 @@ SSID = "Miminet"
 PASSWORD = "21590801"
 
 # Data mode
-SIMULATE = True
+SIMULATE = False  # Set to True to enable simulated data instead of UART reading
 
 # UART configuration (Pico W UART0: GP0 TX, GP1 RX)
 UART_ID = 0
-UART_BAUDRATE = 9600
-UART_TX_PIN = 0
-UART_RX_PIN = 1
+UART_BAUDRATE = 115200
+UART_TX_PIN = 1
+UART_RX_PIN = 2
 MAX_UART_LINE_BYTES = 240
 
 # API and storage settings
