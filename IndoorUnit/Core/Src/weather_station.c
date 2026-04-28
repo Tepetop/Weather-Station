@@ -137,6 +137,118 @@ static void ws_format_fixed(char *dst, size_t dst_size, float value, uint8_t dec
 }
 
 /**
+ * @brief Formats sensor status bitmask to Pico W status text
+ * @param[out] dst Destination buffer
+ * @param[in] dst_size Destination buffer size
+ * @param[in] sensor_status Sensor status bitmask (WS_SensorError_t)
+ */
+static void ws_format_sensor_status(char *dst, size_t dst_size, uint8_t sensor_status) {
+  uint8_t known_status = sensor_status &
+      ((uint8_t)WS_SENSOR_ERR_SI7021 | (uint8_t)WS_SENSOR_ERR_BMP280 | (uint8_t)WS_SENSOR_ERR_TSL2561);
+
+  if ((dst == NULL) || (dst_size == 0U)) {
+    return;
+  }
+
+  switch (known_status) {
+    case (uint8_t)WS_SENSOR_OK:
+      snprintf(dst, dst_size, "OK");
+      break;
+    case (uint8_t)WS_SENSOR_ERR_SI7021:
+      snprintf(dst, dst_size, "ERR:SI7021");
+      break;
+    case (uint8_t)WS_SENSOR_ERR_BMP280:
+      snprintf(dst, dst_size, "ERR:BMP280");
+      break;
+    case (uint8_t)WS_SENSOR_ERR_TSL2561:
+      snprintf(dst, dst_size, "ERR:TSL2561");
+      break;
+    case (uint8_t)(WS_SENSOR_ERR_SI7021 | WS_SENSOR_ERR_BMP280):
+      snprintf(dst, dst_size, "ERR:SI7021,BMP280");
+      break;
+    case (uint8_t)(WS_SENSOR_ERR_SI7021 | WS_SENSOR_ERR_TSL2561):
+      snprintf(dst, dst_size, "ERR:SI7021,TSL2561");
+      break;
+    case (uint8_t)(WS_SENSOR_ERR_BMP280 | WS_SENSOR_ERR_TSL2561):
+      snprintf(dst, dst_size, "ERR:BMP280,TSL2561");
+      break;
+    case (uint8_t)(WS_SENSOR_ERR_SI7021 | WS_SENSOR_ERR_BMP280 | WS_SENSOR_ERR_TSL2561):
+      snprintf(dst, dst_size, "ERR:SI7021,BMP280,TSL2561");
+      break;
+    default:
+      snprintf(dst, dst_size, "ERR:UNKNOWN");
+      break;
+  }
+}
+
+/**
+ * @brief Sends one measurement record to Pico W over UART as CSV line
+ * @param[in] ctx Weather station manager context
+ * @param[in] cfg Runtime configuration containing UART handle and RTC
+ * @param[in] node_idx Node index mapped to station id S0..S3
+ */
+static void ws_send_measurement_uart(const WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, uint8_t node_idx) {
+  if ((ctx == NULL) || (cfg == NULL) || (cfg->huart_pico == NULL) || (node_idx >= ctx->node_count)) {
+    return;
+  }
+
+  const WS_NodeState_t *node = &ctx->nodes[node_idx];
+  char si7021_temp_text[16];
+  char si7021_hum_text[16];
+  char bmp280_temp_text[16];
+  char bmp280_press_text[16];
+  char tsl2561_lux_text[16];
+  char status_text[40];
+  char line[128];
+  uint8_t year = 0U;
+  uint8_t month = 0U;
+  uint8_t date = 0U;
+  uint8_t hours = 0U;
+  uint8_t minutes = 0U;
+  uint8_t seconds = 0U;
+
+  ws_format_fixed(si7021_temp_text, sizeof(si7021_temp_text), node->data.si7021_temp, 2U);
+  ws_format_fixed(si7021_hum_text, sizeof(si7021_hum_text), node->data.si7021_hum, 2U);
+  ws_format_fixed(bmp280_temp_text, sizeof(bmp280_temp_text), node->data.bmp280_temp, 2U);
+  ws_format_fixed(bmp280_press_text, sizeof(bmp280_press_text), node->data.bmp280_press, 2U);
+  ws_format_fixed(tsl2561_lux_text, sizeof(tsl2561_lux_text), node->data.tsl2561_lux, 2U);
+  ws_format_sensor_status(status_text, sizeof(status_text), node->data.sensorStatus);
+
+  if (cfg->rtc_now != NULL) {
+    year = cfg->rtc_now->year;
+    month = cfg->rtc_now->month;
+    date = cfg->rtc_now->date;
+    hours = cfg->rtc_now->hours;
+    minutes = cfg->rtc_now->minutes;
+    seconds = cfg->rtc_now->seconds;
+  }
+
+  int line_len = snprintf(
+      line,
+      sizeof(line),
+      "20%02u-%02u-%02uT%02u:%02u:%02u,S%u,%s,%s,%s,%s,%s,%s\n",
+      (unsigned int)year,
+      (unsigned int)month,
+      (unsigned int)date,
+      (unsigned int)hours,
+      (unsigned int)minutes,
+      (unsigned int)seconds,
+      (unsigned int)node_idx,
+      si7021_temp_text,
+      si7021_hum_text,
+      bmp280_temp_text,
+      bmp280_press_text,
+      tsl2561_lux_text,
+      status_text);
+
+  if ((line_len <= 0) || ((size_t)line_len >= sizeof(line))) {
+    return;
+  }
+
+  (void)HAL_UART_Transmit(cfg->huart_pico, (uint8_t *)line, (uint16_t)line_len, 100U);
+}
+
+/**
  * @brief Configures nRF24L01+ to enter receive mode
  * @param[in,out] ctx Weather station manager context
  * @param[in] cfg Runtime configuration containing nRF24 handle
@@ -885,6 +997,8 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
   }
 
   if (WS_ConsumeActiveDataReady(ctx)) {
+    ws_send_measurement_uart(ctx, cfg, ctx->active_node);
+
     /* Add new measurement data to charts when data is received */
     if ((WS_UI.rtc_now != NULL) && (ctx->latest_data_valid != 0U)) {
       WS_UI_AddMeasurementToCharts(&ctx->latest_data, WS_UI.rtc_now->hours, WS_UI.rtc_now->minutes);

@@ -21,7 +21,6 @@
 #include "dma.h"
 #include "i2c.h"
 #include "spi.h"
-#include "stm32f1xx_hal.h"
 #include "tim.h"
 #include "usart.h"
 #include "gpio.h"
@@ -214,6 +213,7 @@ int main(void)
   wsRuntime.payload_size = NRF_PAYLOAD_SIZE;
   wsRuntime.tx_irq_timeout_ms = NRF_TX_IRQ_TIMEOUT_MS;
   wsRuntime.rx_timeout_ms = 2000U;
+  wsRuntime.huart_pico = &huart2;
 
   /*  If NRF24L01 initialization fails, display error on LCD , go to error handler*/
   if (WS_InitRadioAndStart(&wsCtx, &wsRuntime) != HAL_OK) {

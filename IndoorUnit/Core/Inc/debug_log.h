@@ -19,7 +19,7 @@
  * @brief Master enable switch for debug logging
  * @details Comment out to disable all debug output and minimize code size
  */
-#define DEBUG_LOG_ENABLE
+/* #define DEBUG_LOG_ENABLE */
 
 /**
  * @brief Enable individual log categories

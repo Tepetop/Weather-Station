@@ -121,6 +121,7 @@ typedef struct {
   uint8_t payload_size;          /**< Data payload size (bytes) */
   uint32_t tx_irq_timeout_ms;    /**< TX interrupt timeout (ms) */
   uint32_t rx_timeout_ms;        /**< RX response timeout (ms) */
+  UART_HandleTypeDef *huart_pico;/**< UART handle for Pico W CSV output (can be NULL) */
 } WS_RuntimeConfig_t;
 
 /**
