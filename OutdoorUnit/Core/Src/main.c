@@ -22,13 +22,12 @@
 #include "i2c.h"
 #include "iwdg.h"
 #include "spi.h"
-#include "stm32f1xx_hal_iwdg.h"
 #include "usart.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "outdoorstation.h"
+#include "outdoor_station.h"
 
 
 /* USER CODE END Includes */
@@ -85,6 +84,11 @@ int main(void)
   HAL_Init();
 
   /* USER CODE BEGIN Init */
+
+#if defined(DEBUG)
+  /* Keep IWDG stopped while CPU is halted by debugger (breakpoints/step). */
+  __HAL_DBGMCU_FREEZE_IWDG();
+#endif
 
   /* USER CODE END Init */
 

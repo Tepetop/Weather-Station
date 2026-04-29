@@ -226,7 +226,7 @@ static void ws_send_measurement_uart(const WS_Manager_t *ctx, const WS_RuntimeCo
   int line_len = snprintf(
       line,
       sizeof(line),
-      "20%02u-%02u-%02uT%02u:%02u:%02u,S%u,%s,%s,%s,%s,%s,%s\n",
+      "DATA:20%02u-%02u-%02uT%02u:%02u:%02u,S%u,%s,%s,%s,%s,%s,%s\n",
       (unsigned int)year,
       (unsigned int)month,
       (unsigned int)date,

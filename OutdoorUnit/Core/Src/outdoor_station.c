@@ -1,5 +1,5 @@
 #include "main.h"
-#include "outdoorstation.h"
+#include "outdoor_station.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -8,6 +8,7 @@
 #include "measurement_unit_config.h"
 #include "gpio.h"
 #include "i2c.h"
+#include "iwdg.h"
 #include "spi.h"
 #include "usart.h"
 
@@ -80,6 +81,7 @@ HAL_StatusTypeDef OutdoorStation_Init(void)
     while (measCtx.state != MEAS_SLEEP && measCtx.state != MEAS_ERROR && (HAL_GetTick() - initStart) < 3000U)
     {
       Measurement_Process(&measCtx);
+      HAL_IWDG_Refresh(&hiwdg);
     }
   }
 /*  Check if sensors initialized successfully */

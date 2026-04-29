@@ -40,7 +40,7 @@ static void debug_send(const char *str, uint16_t len) {
  */
 static void debug_print_timestamped(const char *msg) {
   int len = snprintf(debug_buffer, sizeof(debug_buffer),
-                     "[%02u:%02u:%02u] %s\r\n",
+                     "LOG:[%02u:%02u:%02u] %s\r\n",
                      rtcNow.hours, rtcNow.minutes, rtcNow.seconds, msg);
   if (len > 0 && len < (int)sizeof(debug_buffer)) {
     debug_send(debug_buffer, (uint16_t)len);
@@ -65,7 +65,7 @@ void Debug_Log(const char *msg) {
 void Debug_LogValue(const char *msg, int32_t value) {
   if (msg == NULL) return;
   int len = snprintf(debug_buffer, sizeof(debug_buffer),
-                     "[%02u:%02u:%02u] %s%ld\r\n",
+                     "LOG:[%02u:%02u:%02u] %s%ld\r\n",
                      rtcNow.hours, rtcNow.minutes, rtcNow.seconds,
                      msg, (long)value);
   if (len > 0 && len < (int)sizeof(debug_buffer)) {
@@ -76,7 +76,7 @@ void Debug_LogValue(const char *msg, int32_t value) {
 void Debug_LogHex(const char *msg, uint32_t value) {
   if (msg == NULL) return;
   int len = snprintf(debug_buffer, sizeof(debug_buffer),
-                     "[%02u:%02u:%02u] %s0x%08lX\r\n",
+                     "LOG:[%02u:%02u:%02u] %s0x%08lX\r\n",
                      rtcNow.hours, rtcNow.minutes, rtcNow.seconds,
                      msg, (unsigned long)value);
   if (len > 0 && len < (int)sizeof(debug_buffer)) {
@@ -86,11 +86,11 @@ void Debug_LogHex(const char *msg, uint32_t value) {
 
 #ifdef DEBUG_LOG_RTC_EVENTS
 void Debug_LogRtcAlarm1(void) {
-  Debug_Log("RTC:ALM1 (screen update)");
+  Debug_Log("LOG:RTC:ALM1 (screen update)");
 }
 
 void Debug_LogRtcAlarm2(void) {
-  Debug_Log("RTC:ALM2 (measurement trigger)");
+  Debug_Log("LOG:RTC:ALM2 (measurement trigger)");
 }
 #else
 void Debug_LogRtcAlarm1(void) {}
@@ -99,26 +99,26 @@ void Debug_LogRtcAlarm2(void) {}
 
 #ifdef DEBUG_LOG_NRF_EVENTS
 void Debug_LogNrfTxStart(uint8_t node_idx) {
-  Debug_LogValue("NRF:TX_START node=", node_idx);
+  Debug_LogValue("LOG:NRF:TX_START node=", node_idx);
 }
 
 void Debug_LogNrfTxResult(uint8_t success) {
   if (success) {
-    Debug_Log("NRF:TX_OK (ACK received)");
+    Debug_Log("LOG:NRF:TX_OK (ACK received)");
   } else {
-    Debug_Log("NRF:TX_FAIL (MAX_RT)");
+    Debug_Log("LOG:NRF:TX_FAIL (MAX_RT)");
   }
 }
 
 void Debug_LogNrfRxData(uint8_t node_idx) {
-  Debug_LogValue("NRF:RX_DATA from node=", node_idx);
+  Debug_LogValue("LOG:NRF:RX_DATA from node=", node_idx);
 }
 
 void Debug_LogNrfTimeout(uint8_t is_tx) {
   if (is_tx) {
-    Debug_Log("NRF:TX_TIMEOUT");
+    Debug_Log("LOG:NRF:TX_TIMEOUT");
   } else {
-    Debug_Log("NRF:RX_TIMEOUT (no response)");
+    Debug_Log("LOG:NRF:RX_TIMEOUT (no response)");
   }
 }
 #else
@@ -131,7 +131,7 @@ void Debug_LogNrfTimeout(uint8_t is_tx) { (void)is_tx; }
 #ifdef DEBUG_LOG_MENU_EVENTS
 void Debug_LogMenuAction(const char *action_name) {
   int len = snprintf(debug_buffer, sizeof(debug_buffer),
-                     "[%02u:%02u:%02u] MENU:%s\r\n",
+                     "LOG:[%02u:%02u:%02u] MENU:%s\r\n",
                      rtcNow.hours, rtcNow.minutes, rtcNow.seconds, action_name);
   if (len > 0 && len < (int)sizeof(debug_buffer)) {
     debug_send(debug_buffer, (uint16_t)len);
@@ -144,7 +144,7 @@ void Debug_LogMenuAction(const char *action_name) { (void)action_name; }
 #ifdef DEBUG_LOG_VIEW_EVENTS
 void Debug_LogViewTransition(uint8_t from_state, uint8_t to_state) {
   int len = snprintf(debug_buffer, sizeof(debug_buffer),
-                     "[%02u:%02u:%02u] VIEW:%u->%u\r\n",
+                     "LOG:[%02u:%02u:%02u] VIEW:%u->%u\r\n",
                      rtcNow.hours, rtcNow.minutes, rtcNow.seconds,
                      from_state, to_state);
   if (len > 0 && len < (int)sizeof(debug_buffer)) {
@@ -164,7 +164,7 @@ void Debug_Heartbeat(void) {
   if ((now - last_heartbeat_tick) >= DEBUG_HEARTBEAT_INTERVAL_MS) {
     last_heartbeat_tick = now;
     heartbeat_count++;
-    Debug_LogValue("HEARTBEAT #", heartbeat_count);
+    Debug_LogValue("LOG:HEARTBEAT #", heartbeat_count);
   }
 }
 #else
@@ -172,8 +172,8 @@ void Debug_Heartbeat(void) {}
 #endif
 
 void Debug_LogBoot(void) {
-  Debug_Log("=== WEATHER STATION BOOT ===");
-  Debug_Log("Debug logging enabled");
+  Debug_Log("LOG:WEATHER STATION BOOT");
+  Debug_Log("LOG:Debug logging enabled");
 }
 
 #endif /* DEBUG_LOG_ENABLE */

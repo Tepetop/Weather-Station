@@ -1,5 +1,5 @@
-#ifndef OUTDOORSTATION_H
-#define OUTDOORSTATION_H
+#ifndef OUTDOO_RSTATION_H
+#define OUTDOO_RSTATION_H
 
 #include "main.h"
 

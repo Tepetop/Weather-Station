@@ -5,8 +5,6 @@
 /.metadata/
 
 # IDE settings
-.vscode/settings.json
-.vscode/launch.json
 /.settings/
 .mxproject
 *.launch
