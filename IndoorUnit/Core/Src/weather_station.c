@@ -935,6 +935,16 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
     return;
   }
 
+  if (ctx->app_state == WS_APP_ERROR_RECOVERY) {
+    /* Recover radio state after TX/RX failures (MAX_RT/timeout). */
+    if (WS_InitRadioAndStart(ctx, cfg) == HAL_OK) {
+      Debug_Log("LOG:NRF:RECOVERY_OK");
+    } else {
+      Debug_Log("LOG:NRF:RECOVERY_FAIL");
+    }
+    return;
+  }
+
   WS_NodeState_t *node = WS_GetActiveNode(ctx);
   if (node == NULL) {
     return;

@@ -348,7 +348,7 @@ static void NRF_DelayUs(uint32_t us) {
 /* RTC alarm function assign to callback */
 void RTC_alarm1(void){
   WS_UI.chart_data_dirty = 1U;
-  Debug_LogRtcAlarm1();
+  //Debug_LogRtcAlarm1();
 }
 
 /* RTC alarm function assign to callback */
