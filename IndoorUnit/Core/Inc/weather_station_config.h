@@ -7,6 +7,7 @@
 #include "ds3231.h"
 #include "NRF24L01.h"
 #include "weather_station.h"
+#include "weather_station_ui.h"
 
 
 #define IRQ_FLAG_SET 1
@@ -17,7 +18,7 @@
 #define NRF_PAYLOAD_SIZE 24     // Measurement data payload size (must match OutdoorUnit)
 #define NRF_CMD_SIZE     8      // Command payload size
 #define CMD_MEASURE      0x01   // Command to request measurement
-#define NRF_TX_IRQ_TIMEOUT_MS 80U
+#define NRF_TX_IRQ_TIMEOUT_MS 120U
 #define WS_NODE_COUNT 1U
 #define RTC_MANUAL_SET_HOLD_MS 1200U
 

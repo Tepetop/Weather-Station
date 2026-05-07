@@ -8,10 +8,8 @@
  */
 
 #include "weather_station.h"
-#include "PCD8544.h"
+#include "weather_station_ui.h"
 #include "debug_log.h"
-
-#include <PCD_LCD/PCD8544_fonts.h>
 
 #include <stdint.h>
 #include <string.h>
@@ -35,6 +33,9 @@
 
 /** @brief Status register pipe mask */
 #define WS_STATUS_PIPE_MASK 0x07U
+
+/** @brief Maximum retries before forcing full radio recovery */
+#define WS_MAX_RETRIES 3U
 
 /* ============================================================================
  * PRIVATE HELPER FUNCTIONS - LED Control
@@ -73,31 +74,6 @@ static void ws_apply_active_node_address(WS_Manager_t *ctx, const WS_RuntimeConf
 
   NRF24_SetTXAddress(cfg->nrf, node->tx_addr, 5U);
   NRF24_SetRXAddress(cfg->nrf, 0U, node->tx_addr, 5U);
-}
-
-/* ============================================================================
- * PRIVATE HELPER FUNCTIONS - Display
- * ========================================================================== */
-
-/**
- * @brief Displays a status message on the LCD's bottom line
- * @param[in] cfg Runtime configuration containing LCD handle
- * @param[in] text Status text to display (NULL-terminated string)
- * @details Clears line 5 (bottom line) and writes the status text.
- *          Used for debugging and user feedback during operations.
- * @note Currently unused but available for debugging. Uncomment calls in
- *       WS_ProcessEventHandler() to enable status display.
- */
-__attribute__((unused))
-static void ws_show_status_line(const WS_RuntimeConfig_t *cfg, const char *text) {
-  if ((cfg == NULL) || (cfg->lcd == NULL) || (text == NULL)) {
-    return;
-  }
-
-  PCD8544_SetCursor(cfg->lcd, 0, 5);
-  PCD8544_ClearBufferLine(cfg->lcd, 5);
-  PCD8544_WriteString(cfg->lcd, (char *)text);
-  PCD8544_UpdateScreen(cfg->lcd);
 }
 
 /**
@@ -285,7 +261,7 @@ static void ws_send_measure_command(WS_Manager_t *ctx, const WS_RuntimeConfig_t 
     return;
   }
 
-  if ((node->tx_in_progress != 0U) || (node->awaiting_response != 0U)) {
+  if ((node->state == WS_NODE_TX_IN_PROGRESS) || (node->state == WS_NODE_WAIT_RESPONSE)) {
     return;
   }
 
@@ -304,64 +280,6 @@ static void ws_send_measure_command(WS_Manager_t *ctx, const WS_RuntimeConfig_t 
   NRF24_SetMode(cfg->nrf, NRF24_MODE_TX);
 
   Debug_LogNrfTxStart(ctx->active_node);
-}
-
-/**
- * @brief Displays measurement data on the LCD screen
- * @param[in,out] ctx Weather station manager context
- * @param[in] cfg Runtime configuration containing LCD and text buffer
- * @details Formats and displays:
- *          - Current time (from RTC)
- *          - Temperature (°C)
- *          - Humidity (%)
- *          - Pressure (hPa)
- *          - Light intensity (lux)
- *          All values are formatted to 2 decimal places.
- * @note Currently unused but available for display feature. Uncomment call in
- *       WS_ProcessEventHandler() to enable automatic measurement display.
- */
-__attribute__((unused))
-static void ws_display_measurements(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg) {
-  WS_NodeState_t *node = WS_GetActiveNode(ctx);
-  if ((node == NULL) || (cfg == NULL) || (cfg->lcd == NULL) || (cfg->text_buffer == NULL) || (cfg->text_buffer_size == 0U)) {
-    return;
-  }
-
-  char value_text[16];
-  PCD8544_ClearScreen(cfg->lcd);
-  PCD8544_SetFont(cfg->lcd, &Font_6x8);
-
-  PCD8544_SetCursor(cfg->lcd, 0, 0);
-  if (cfg->rtc_now != NULL) {
-    snprintf(cfg->text_buffer, cfg->text_buffer_size, "%02d:%02d:%02d", cfg->rtc_now->hours, cfg->rtc_now->minutes, cfg->rtc_now->seconds);
-  } else {
-    snprintf(cfg->text_buffer, cfg->text_buffer_size, "--:--:--");
-  }
-  PCD8544_WriteString(cfg->lcd, cfg->text_buffer);
-
-  PCD8544_SetCursor(cfg->lcd, 0, 1);
-  ws_format_fixed(value_text, sizeof(value_text), node->data.si7021_temp, 2U);
-  snprintf(cfg->text_buffer, cfg->text_buffer_size, "T:%sC", value_text);
-  PCD8544_WriteString(cfg->lcd, cfg->text_buffer);
-
-  PCD8544_SetCursor(cfg->lcd, 0, 2);
-  ws_format_fixed(value_text, sizeof(value_text), node->data.si7021_hum, 2U);
-  snprintf(cfg->text_buffer, cfg->text_buffer_size, "H:%s%%", value_text);
-  PCD8544_WriteString(cfg->lcd, cfg->text_buffer);
-
-  PCD8544_SetCursor(cfg->lcd, 0, 3);
-  ws_format_fixed(value_text, sizeof(value_text), node->data.bmp280_press, 2U);
-  snprintf(cfg->text_buffer, cfg->text_buffer_size, "P:%shPa", value_text);
-  PCD8544_WriteString(cfg->lcd, cfg->text_buffer);
-
-  PCD8544_SetCursor(cfg->lcd, 0, 4);
-  ws_format_fixed(value_text, sizeof(value_text), node->data.tsl2561_lux, 2U);
-  snprintf(cfg->text_buffer, cfg->text_buffer_size, "L:%slux", value_text);
-  PCD8544_WriteString(cfg->lcd, cfg->text_buffer);
-
-  PCD8544_SetCursor(cfg->lcd, 0, 5);
-  PCD8544_WriteString(cfg->lcd, "OK");
-  PCD8544_UpdateScreen(cfg->lcd);
 }
 
 /* ============================================================================
@@ -408,13 +326,12 @@ static void ws_handle_irq(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg) {
 
       WS_NodeState_t *rx_node = &ctx->nodes[node_idx];
       memcpy(&rx_node->data, &measurement, sizeof(measurement));
-      rx_node->awaiting_response = 0U;
-      rx_node->data_received = 1U;
       rx_node->last_status = status;
       rx_node->state = WS_NODE_DATA_READY;
+      rx_node->retry_count = 0U;
 
-      memcpy(&ctx->latest_data, &measurement, sizeof(ctx->latest_data));
       ctx->latest_data_valid = 1U;
+      ctx->latest_node_index = node_idx;
 
       ws_set_led(cfg, GPIO_PIN_RESET);
       Debug_LogNrfRxData(node_idx);
@@ -455,6 +372,31 @@ static uint8_t ws_clamp_count(uint8_t node_count) {
   return node_count;
 }
 
+/**
+ * @brief Handles retry scheduling before entering full radio recovery
+ * @param[in,out] ctx Manager context
+ * @return true when a retry was scheduled, false when recovery is required
+ */
+static bool ws_schedule_retry_or_recover(WS_Manager_t *ctx) {
+  WS_NodeState_t *node = WS_GetActiveNode(ctx);
+  if (node == NULL) {
+    return false;
+  }
+
+  node->retry_count++;
+  if (node->retry_count < WS_MAX_RETRIES) {
+    node->measurement_pending = 1U;
+    node->state = WS_NODE_IDLE;
+    ctx->app_state = WS_APP_IDLE;
+    return true;
+  }
+
+  node->retry_count = 0U;
+  WS_ScheduleNextNode(ctx);
+  ctx->app_state = WS_APP_ERROR_RECOVERY;
+  return false;
+}
+
 /* ============================================================================
  * PUBLIC API - Initialization
  * ========================================================================== */
@@ -477,6 +419,7 @@ void WS_InitManager(WS_Manager_t *ctx, const uint8_t tx_addrs[][5], const uint8_
   ctx->node_count = ws_clamp_count(node_count);
   ctx->active_node = 0U;
   ctx->latest_data_valid = 0U;
+  ctx->latest_node_index = 0U;
   ctx->app_state = WS_APP_IDLE;
 
   for (uint8_t i = 0U; i < ctx->node_count; i++) {
@@ -566,7 +509,7 @@ bool WS_ShouldFallbackToStatusRead(const WS_Manager_t *ctx) {
   if (node == NULL) {
     return false;
   }
-  return (node->tx_in_progress != 0U) || (node->awaiting_response != 0U);
+  return (node->state == WS_NODE_TX_IN_PROGRESS) || (node->state == WS_NODE_WAIT_RESPONSE);
 }
 
 /* ============================================================================
@@ -616,13 +559,9 @@ void WS_StartTxForActiveNode(WS_Manager_t *ctx, uint32_t now_tick) {
     return;
   }
 
-  node->awaiting_response = 0U;
-  node->tx_done = 0U;
-  node->tx_ok = 0U;
-  node->tx_in_progress = 1U;
   node->tx_start_tick = now_tick;
+  node->response_start_tick = 0U;
   node->state = WS_NODE_TX_IN_PROGRESS;
-  node->retry_count = 0U;
 }
 
 /**
@@ -635,13 +574,18 @@ void WS_StartTxForActiveNode(WS_Manager_t *ctx, uint32_t now_tick) {
  */
 void WS_MarkTxResultFromIrq(WS_Manager_t *ctx, bool ok, uint8_t status) {
   WS_NodeState_t *node = WS_GetActiveNode(ctx);
-  if (node == NULL) {
+  if ((node == NULL) || (node->state != WS_NODE_TX_IN_PROGRESS)) {
     return;
   }
 
   node->last_status = status;
-  node->tx_ok = ok ? 1U : 0U;
-  node->tx_done = 1U;
+
+  if (ok) {
+    node->response_start_tick = HAL_GetTick();
+    node->state = WS_NODE_WAIT_RESPONSE;
+  } else {
+    node->state = WS_NODE_ERROR;
+  }
 }
 
 /**
@@ -656,22 +600,22 @@ void WS_MarkTxResultFromIrq(WS_Manager_t *ctx, bool ok, uint8_t status) {
  */
 WS_TxEvent_t WS_ConsumeTxEvent(WS_Manager_t *ctx, uint32_t now_tick) {
   WS_NodeState_t *node = WS_GetActiveNode(ctx);
-  if ((node == NULL) || (node->tx_done == 0U)) {
+  if ((ctx == NULL) || (node == NULL) || (ctx->app_state != WS_APP_WAIT_TX_IRQ)) {
     return WS_TX_EVENT_NONE;
   }
 
-  node->tx_done = 0U;
-  node->tx_in_progress = 0U;
-
-  if (node->tx_ok != 0U) {
-    node->awaiting_response = 1U;
-    node->response_start_tick = now_tick;
-    node->state = WS_NODE_WAIT_RESPONSE;
+  if (node->state == WS_NODE_WAIT_RESPONSE) {
+    if (node->response_start_tick == 0U) {
+      node->response_start_tick = now_tick;
+    }
     return WS_TX_EVENT_OK;
   }
 
-  node->state = WS_NODE_ERROR;
-  return WS_TX_EVENT_FAIL;
+  if (node->state == WS_NODE_ERROR) {
+    return WS_TX_EVENT_FAIL;
+  }
+
+  return WS_TX_EVENT_NONE;
 }
 
 /* ============================================================================
@@ -688,7 +632,7 @@ WS_TxEvent_t WS_ConsumeTxEvent(WS_Manager_t *ctx, uint32_t now_tick) {
  */
 bool WS_IsActiveTxTimedOut(const WS_Manager_t *ctx, uint32_t now_tick, uint32_t timeout_ms) {
   const WS_NodeState_t *node = WS_GetActiveNodeConst(ctx);
-  if ((node == NULL) || (node->tx_in_progress == 0U)) {
+  if ((node == NULL) || (node->state != WS_NODE_TX_IN_PROGRESS)) {
     return false;
   }
   return (now_tick - node->tx_start_tick) > timeout_ms;
@@ -707,29 +651,8 @@ void WS_HandleActiveTxTimeout(WS_Manager_t *ctx, uint8_t status) {
     return;
   }
 
-  node->tx_in_progress = 0U;
-  node->tx_done = 0U;
-  node->tx_ok = 0U;
   node->last_status = status;
   node->state = WS_NODE_ERROR;
-}
-
-/**
- * @brief Marks that the active node is waiting for a response
- * @param[in,out] ctx Manager context
- * @param[in] now_tick Current tick count (timestamp)
- * @details Sets awaiting_response flag, timestamps start, updates state to
- *          WAIT_RESPONSE. Called after successful TX when expecting data.
- */
-void WS_MarkActiveResponseWaiting(WS_Manager_t *ctx, uint32_t now_tick) {
-  WS_NodeState_t *node = WS_GetActiveNode(ctx);
-  if (node == NULL) {
-    return;
-  }
-
-  node->awaiting_response = 1U;
-  node->response_start_tick = now_tick;
-  node->state = WS_NODE_WAIT_RESPONSE;
 }
 
 /**
@@ -742,7 +665,7 @@ void WS_MarkActiveResponseWaiting(WS_Manager_t *ctx, uint32_t now_tick) {
  */
 bool WS_IsActiveRxTimedOut(const WS_Manager_t *ctx, uint32_t now_tick, uint32_t timeout_ms) {
   const WS_NodeState_t *node = WS_GetActiveNodeConst(ctx);
-  if ((node == NULL) || (node->awaiting_response == 0U)) {
+  if ((node == NULL) || (node->state != WS_NODE_WAIT_RESPONSE)) {
     return false;
   }
   return (now_tick - node->response_start_tick) > timeout_ms;
@@ -761,7 +684,6 @@ void WS_HandleActiveRxTimeout(WS_Manager_t *ctx, uint8_t status) {
     return;
   }
 
-  node->awaiting_response = 0U;
   node->last_status = status;
   node->state = WS_NODE_ERROR;
 }
@@ -787,11 +709,9 @@ void WS_MarkActiveDataReceived(WS_Manager_t *ctx, const WS_MeasurementData_t *da
 
   if (data != NULL) {
     memcpy(&node->data, data, sizeof(node->data));
-    memcpy(&ctx->latest_data, data, sizeof(ctx->latest_data));
     ctx->latest_data_valid = 1U;
+    ctx->latest_node_index = ctx->active_node;
   }
-  node->awaiting_response = 0U;
-  node->data_received = 1U;
   node->last_status = status;
   node->state = WS_NODE_DATA_READY;
 }
@@ -806,11 +726,11 @@ void WS_MarkActiveDataReceived(WS_Manager_t *ctx, const WS_MeasurementData_t *da
  */
 bool WS_ConsumeActiveDataReady(WS_Manager_t *ctx) {
   WS_NodeState_t *node = WS_GetActiveNode(ctx);
-  if ((node == NULL) || (node->data_received == 0U)) {
+  if ((node == NULL) || (node->state != WS_NODE_DATA_READY)) {
     return false;
   }
 
-  node->data_received = 0U;
+  node->retry_count = 0U;
   node->state = WS_NODE_IDLE;
   return true;
 }
@@ -846,11 +766,12 @@ void WS_ScheduleNextNode(WS_Manager_t *ctx) {
  *          regardless of which node it came from.
  */
 bool WS_GetLatestMeasurement(const WS_Manager_t *ctx, WS_MeasurementData_t *out_data) {
-  if ((ctx == NULL) || (out_data == NULL) || (ctx->latest_data_valid == 0U)) {
+  if ((ctx == NULL) || (out_data == NULL) || (ctx->latest_data_valid == 0U) ||
+      (ctx->latest_node_index >= ctx->node_count)) {
     return false;
   }
 
-  memcpy(out_data, &ctx->latest_data, sizeof(*out_data));
+  memcpy(out_data, &ctx->nodes[ctx->latest_node_index].data, sizeof(*out_data));
   return true;
 }
 
@@ -942,6 +863,7 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
     } else {
       Debug_Log("LOG:NRF:RECOVERY_FAIL");
     }
+    ctx->app_state = WS_APP_IDLE;
     return;
   }
 
@@ -951,9 +873,23 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
   }
 
   if ((ctx->nrf_irq_flag == 0U) && WS_ShouldFallbackToStatusRead(ctx)) {
-    uint8_t st = NRF24_GetStatus(cfg->nrf);
-    if (st & (NRF24_STATUS_RX_DR | NRF24_STATUS_TX_DS | NRF24_STATUS_MAX_RT)) {
-      WS_SetIrqFlag(ctx);
+    uint8_t should_poll = 0U;
+
+    if ((node->state == WS_NODE_TX_IN_PROGRESS) &&
+        ((now_tick - node->tx_start_tick) > ((cfg->tx_irq_timeout_ms * 3U) / 4U))) {
+      should_poll = 1U;
+    }
+
+    if ((node->state == WS_NODE_WAIT_RESPONSE) &&
+        ((now_tick - node->response_start_tick) > ((cfg->rx_timeout_ms * 3U) / 4U))) {
+      should_poll = 1U;
+    }
+
+    if (should_poll != 0U) {
+      uint8_t st = NRF24_GetStatus(cfg->nrf);
+      if (st & (NRF24_STATUS_RX_DR | NRF24_STATUS_TX_DS | NRF24_STATUS_MAX_RT)) {
+        WS_SetIrqFlag(ctx);
+      }
     }
   }
 
@@ -963,17 +899,16 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
   }
 
   WS_TxEvent_t tx_event = WS_ConsumeTxEvent(ctx, now_tick);
-  
+
   if (tx_event == WS_TX_EVENT_OK) {
     ws_start_receive(ctx, cfg);
-   // ws_show_status_line(cfg, "WAIT DATA");
     ctx->app_state = WS_APP_WAIT_RX_DATA;
+    return;
 
   } else if (tx_event == WS_TX_EVENT_FAIL) {
     ws_start_receive(ctx, cfg);
-   // ws_show_status_line(cfg, "TX FAIL  ");
-    WS_ScheduleNextNode(ctx);
-    ctx->app_state = WS_APP_ERROR_RECOVERY;
+    (void)ws_schedule_retry_or_recover(ctx);
+    return;
   }
 
   if (WS_IsActiveTxTimedOut(ctx, now_tick, cfg->tx_irq_timeout_ms)) {
@@ -981,15 +916,27 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
     if (st & (NRF24_STATUS_TX_DS | NRF24_STATUS_MAX_RT)) {
       WS_SetIrqFlag(ctx);
       ws_handle_irq(ctx, cfg);
+
+      tx_event = WS_ConsumeTxEvent(ctx, now_tick);
+      if (tx_event == WS_TX_EVENT_OK) {
+        ws_start_receive(ctx, cfg);
+        ctx->app_state = WS_APP_WAIT_RX_DATA;
+        return;
+      }
+      if (tx_event == WS_TX_EVENT_FAIL) {
+        ws_start_receive(ctx, cfg);
+        (void)ws_schedule_retry_or_recover(ctx);
+        return;
+      }
     }
   }
 
-  if (WS_IsActiveTxTimedOut(ctx, now_tick, cfg->tx_irq_timeout_ms) && (node->tx_done == 0U)) {
+  if (WS_IsActiveTxTimedOut(ctx, now_tick, cfg->tx_irq_timeout_ms) && (node->state == WS_NODE_TX_IN_PROGRESS)) {
     WS_HandleActiveTxTimeout(ctx, node->last_status);
     ws_start_receive(ctx, cfg);
     Debug_LogNrfTimeout(1U);  /* TX timeout */
-    WS_ScheduleNextNode(ctx);
-    ctx->app_state = WS_APP_ERROR_RECOVERY;
+    (void)ws_schedule_retry_or_recover(ctx);
+    return;
   }
 
   if (node->measurement_pending != 0U) {
@@ -1002,546 +949,20 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
     WS_HandleActiveRxTimeout(ctx, node->last_status);
     Debug_LogNrfTimeout(0U);  /* RX timeout */
     ws_start_receive(ctx, cfg);
-    WS_ScheduleNextNode(ctx);
-    ctx->app_state = WS_APP_ERROR_RECOVERY;
+    (void)ws_schedule_retry_or_recover(ctx);
+    return;
   }
 
   if (WS_ConsumeActiveDataReady(ctx)) {
     ws_send_measurement_uart(ctx, cfg, ctx->active_node);
 
     /* Add new measurement data to charts when data is received */
-    if ((WS_UI.rtc_now != NULL) && (ctx->latest_data_valid != 0U)) {
-      WS_UI_AddMeasurementToCharts(&ctx->latest_data, WS_UI.rtc_now->hours, WS_UI.rtc_now->minutes);
+    if (WS_UI.rtc_now != NULL) {
+      WS_UI_AddMeasurementToCharts(&node->data, WS_UI.rtc_now->hours, WS_UI.rtc_now->minutes);
     }
 
     WS_ScheduleNextNode(ctx);
     ctx->app_state = WS_APP_DATA_READY;
-  }
-}
-
-/* ============================================================================
- * USER INTERFACE MODULE - Chart Data & Display Functions
- * ========================================================================== */
-
-/** @brief Global chart data instances */
-PCD8544_ChartData_t WS_TemperatureChart;
-PCD8544_ChartData_t WS_HumidityChart;
-PCD8544_ChartData_t WS_PressureChart;
-PCD8544_ChartData_t WS_LuxChart;
-
-/** @brief Global UI context */
-WS_UIContext_t WS_UI = {0};
-
-/**
- * @brief Initialize UI context with required handles
- */
-void WS_UI_Init(WS_UIContext_t *ui, WS_Manager_t *ws_ctx, WS_RuntimeConfig_t *ws_cfg,
-                PCD8544_t *lcd, Menu_Context_t *menu_ctx, Encoder_t *encoder,
-                DS3231_DateTime *rtc_now, char *text_buffer, size_t text_buffer_size) {
-  if (ui == NULL) return;
-  
-  ui->ws_ctx = ws_ctx;
-  ui->ws_cfg = ws_cfg;
-  ui->lcd = lcd;
-  ui->menu_ctx = menu_ctx;
-  ui->encoder = encoder;
-  ui->rtc_now = rtc_now;
-  ui->text_buffer = text_buffer;
-  ui->text_buffer_size = text_buffer_size;
-  ui->view_state = WS_VIEW_DEFAULT_MEASUREMENT;
-  ui->last_activity_tick = HAL_GetTick();
-}
-
-/**
- * @brief Initialize all chart data structures
- */
-void WS_UI_InitCharts(void) {
-  /* Temperature chart - tenths of degree Celsius */
-  PCD8544_InitChartData(&WS_TemperatureChart);
-  WS_TemperatureChart.decimalPlaces = 1;
-  WS_TemperatureChart.chartType = PCD8544_CHART_DOT_LINE;
-
-  /* Humidity chart - tenths of percent */
-  PCD8544_InitChartData(&WS_HumidityChart);
-  WS_HumidityChart.decimalPlaces = 1;
-  WS_HumidityChart.chartType = PCD8544_CHART_DOT_LINE;
-
-  /* Pressure chart - integer hPa */
-  PCD8544_InitChartData(&WS_PressureChart);
-  WS_PressureChart.decimalPlaces = 0;
-  WS_PressureChart.chartType = PCD8544_CHART_DOT_LINE;
-
-  /* Light intensity chart - integer lux */
-  PCD8544_InitChartData(&WS_LuxChart);
-  WS_LuxChart.decimalPlaces = 0;
-  WS_LuxChart.chartType = PCD8544_CHART_DOT_LINE;
-}
-
-/**
- * @brief Compute averaged temperature from available sensors
- * @param[in] data Measurement data containing sensor readings and status
- * @return Averaged temperature: mean of Si7021 and BMP280 if both OK,
- *         single sensor value if only one OK, or 0.0f if both failed.
- */
-static float ws_avg_temperature(const WS_MeasurementData_t *data) {
-  uint8_t si_ok  = ((data->sensorStatus & WS_SENSOR_ERR_SI7021) == 0U) ? 1U : 0U;
-  uint8_t bmp_ok = ((data->sensorStatus & WS_SENSOR_ERR_BMP280) == 0U) ? 1U : 0U;
-
-  if (si_ok && bmp_ok) {
-    return (data->si7021_temp + data->bmp280_temp) * 0.5f;
-  }
-  if (si_ok) {
-    return data->si7021_temp;
-  }
-  if (bmp_ok) {
-    return data->bmp280_temp;
-  }
-  return 0.0f;
-}
-
-/**
- * @brief Add new measurement data to all charts
- */
-void WS_UI_AddMeasurementToCharts(const WS_MeasurementData_t *data, uint8_t hour, uint8_t minute) {
-  if (data == NULL) return;
-  
-  /* Convert float values to chart units (scaled integers) */
-  float avg_temp = ws_avg_temperature(data);
-  int16_t tempVal = (int16_t)(avg_temp * 10.0f);           /* tenths of C */
-  int16_t humVal = (int16_t)(data->si7021_hum * 10.0f);    /* tenths of % */
-  int16_t pressVal = (int16_t)(data->bmp280_press);        /* hPa integer */
-  int16_t luxVal = (int16_t)(data->tsl2561_lux);             /* lux integer */
-
-  PCD8544_AddChartPoint(&WS_TemperatureChart, tempVal, hour, minute);
-  PCD8544_AddChartPoint(&WS_HumidityChart, humVal, hour, minute);
-  PCD8544_AddChartPoint(&WS_PressureChart, pressVal, hour, minute);
-  PCD8544_AddChartPoint(&WS_LuxChart, luxVal, hour, minute);
-
-  WS_UI.chart_data_dirty = 1U;
-}
-
-/**
- * @brief Display live measurement data (menu function callback)
- * @details When called as menu callback, forces initial render by setting
- *          chart_data_dirty. This ensures screen updates when entering
- *          from menu navigation even if no new measurement data exists.
- */
-void WS_UI_MeasurementDisplay(void) {
-  if (WS_UI.lcd == NULL || WS_UI.ws_ctx == NULL || WS_UI.menu_ctx == NULL) return;
-
-  /* Force render when entering this view from menu or other views.
-   * This fixes the bug where selecting StronaDomyslna from menu
-   * would not show anything if chart_data_dirty was 0. */
-  if (WS_UI.view_state != WS_VIEW_DEFAULT_MEASUREMENT ||
-      !WS_UI.menu_ctx->state.InDefaultMeasurementsView) {
-    WS_UI.chart_data_dirty = 1U;
-    WS_UI.menu_ctx->state.InDefaultMeasurementsView = 1U;
-    WS_UI.view_state = WS_VIEW_DEFAULT_MEASUREMENT;
-    Debug_LogMenuAction("ENTER_DEFAULT_VIEW");
-  }
-
-  /*  Render screen only if new data is available */
-  if (WS_UI.chart_data_dirty == 0U) return;
-  WS_UI.chart_data_dirty = 0U;
-
-  WS_MeasurementData_t measurement;
-  uint8_t hasMeasurement = WS_GetLatestMeasurement(WS_UI.ws_ctx, &measurement) ? 1U : 0U;
-  char value_text[16];
-
-  PCD8544_ClearScreen(WS_UI.lcd);
-  PCD8544_SetFont(WS_UI.lcd, &Font_6x8);
-
-  /* Time display */
-  PCD8544_SetCursor(WS_UI.lcd, 0, 0);
-  if (WS_UI.rtc_now != NULL) {
-    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "%02u:%02u:%02u",
-             WS_UI.rtc_now->hours, WS_UI.rtc_now->minutes, WS_UI.rtc_now->seconds);
-  } else {
-    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "--:--:--");
-  }
-  PCD8544_WriteString(WS_UI.lcd, WS_UI.text_buffer);
-
-  /* Temperature (averaged from available sensors) */
-  PCD8544_SetCursor(WS_UI.lcd, 0, 1);
-  if (hasMeasurement) {
-    float avg_temp = ws_avg_temperature(&measurement);
-    ws_format_fixed(value_text, sizeof(value_text), avg_temp, 2U);
-    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "T:%sC", value_text);
-  } else {
-    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "T:--.--C");
-  }
-  PCD8544_WriteString(WS_UI.lcd, WS_UI.text_buffer);
-
-  /* Humidity */
-  PCD8544_SetCursor(WS_UI.lcd, 0, 2);
-  if (hasMeasurement) {
-    ws_format_fixed(value_text, sizeof(value_text), measurement.si7021_hum, 2U);
-    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "H:%s%%", value_text);
-  } else {
-    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "H:--.--%%");
-  }
-  PCD8544_WriteString(WS_UI.lcd, WS_UI.text_buffer);
-
-  /* Pressure */
-  PCD8544_SetCursor(WS_UI.lcd, 0, 3);
-  if (hasMeasurement) {
-    ws_format_fixed(value_text, sizeof(value_text), measurement.bmp280_press, 2U);
-    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "P:%shPa", value_text);
-  } else {
-    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "P:--.--hPa");
-  }
-  PCD8544_WriteString(WS_UI.lcd, WS_UI.text_buffer);
-
-  /* Light intensity */
-  PCD8544_SetCursor(WS_UI.lcd, 0, 4);
-  if (hasMeasurement) {
-    ws_format_fixed(value_text, sizeof(value_text), measurement.tsl2561_lux, 2U);
-    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "L:%slux", value_text);
-  } else {
-    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "L:--.--lux");
-  }
-  PCD8544_WriteString(WS_UI.lcd, WS_UI.text_buffer);
-  PCD8544_UpdateScreen(WS_UI.lcd);
-}
-
-/**
- * @brief Enter temperature chart view (menu callback)
- */
-void WS_UI_ChartTemperature(void) {
-  if (WS_UI.menu_ctx == NULL || WS_UI.lcd == NULL) return;
-
-  WS_UI.menu_ctx->state.InChartView = 1;
-  WS_UI.menu_ctx->state.ChartViewType = CHART_VIEW_TEMPERATURE;
-
-  PCD8544_ClearBuffer(WS_UI.lcd);
-  PCD8544_DrawChart(WS_UI.lcd, &WS_TemperatureChart);
-  PCD8544_UpdateScreen(WS_UI.lcd);
-}
-
-/**
- * @brief Enter humidity chart view (menu callback)
- */
-void WS_UI_ChartHumidity(void) {
-  if (WS_UI.menu_ctx == NULL || WS_UI.lcd == NULL) return;
-
-  WS_UI.menu_ctx->state.InChartView = 1;
-  WS_UI.menu_ctx->state.ChartViewType = CHART_VIEW_HUMIDITY;
-
-  PCD8544_ClearBuffer(WS_UI.lcd);
-  PCD8544_DrawChart(WS_UI.lcd, &WS_HumidityChart);
-  PCD8544_UpdateScreen(WS_UI.lcd);
-}
-
-/**
- * @brief Enter pressure chart view (menu callback)
- */
-void WS_UI_ChartPressure(void) {
-  if (WS_UI.menu_ctx == NULL || WS_UI.lcd == NULL) return;
-
-  WS_UI.menu_ctx->state.InChartView = 1;
-  WS_UI.menu_ctx->state.ChartViewType = CHART_VIEW_PRESSURE;
-
-  PCD8544_ClearBuffer(WS_UI.lcd);
-  PCD8544_DrawChart(WS_UI.lcd, &WS_PressureChart);
-  PCD8544_UpdateScreen(WS_UI.lcd);
-}
-
-/**
- * @brief Enter light intensity chart view (menu callback)
- */
-void WS_UI_ChartLux(void) {
-  if (WS_UI.menu_ctx == NULL || WS_UI.lcd == NULL) return;
-
-  WS_UI.menu_ctx->state.InChartView = 1;
-  WS_UI.menu_ctx->state.ChartViewType = CHART_VIEW_LUX;
-
-  PCD8544_ClearBuffer(WS_UI.lcd);
-  PCD8544_DrawChart(WS_UI.lcd, &WS_LuxChart);
-  PCD8544_UpdateScreen(WS_UI.lcd);
-}
-
-/**
- * @brief Chart view main task - call in main loop when InChartView == 1
- * @details Redraws chart only when new measurement data has been received,
- *          avoiding unnecessary redraws since chart data changes only on new measurements.
- */
-void WS_UI_ChartViewTask(void) {
-  if (WS_UI.menu_ctx == NULL || WS_UI.lcd == NULL) return;
-
-  /* Encoder button press exits chart view */
-  /* Note: Button handling is done externally via Menu_SetEnterAction */
-
-  if (WS_UI.chart_data_dirty == 0U) return;
-  WS_UI.chart_data_dirty = 0U;
-
-  PCD8544_ClearBuffer(WS_UI.lcd);
-
-  switch (WS_UI.menu_ctx->state.ChartViewType) {
-    case CHART_VIEW_TEMPERATURE:
-      PCD8544_DrawChart(WS_UI.lcd, &WS_TemperatureChart);
-      break;
-    case CHART_VIEW_HUMIDITY:
-      PCD8544_DrawChart(WS_UI.lcd, &WS_HumidityChart);
-      break;
-    case CHART_VIEW_PRESSURE:
-      PCD8544_DrawChart(WS_UI.lcd, &WS_PressureChart);
-      break;
-    case CHART_VIEW_LUX:
-      PCD8544_DrawChart(WS_UI.lcd, &WS_LuxChart);
-      break;
-
-    default:
-      break;
-  }
-
-  PCD8544_UpdateScreen(WS_UI.lcd);
-}
-
-/**
- * @brief Request a new measurement (menu callback)
- */
-void WS_UI_TakeMeasurement(void) {
-  if (WS_UI.ws_ctx == NULL) return;
-  WS_RequestMeasurementForActiveNode(WS_UI.ws_ctx);
-}
-
-/**
- * @brief Convert node state enum to short status string
- */
-static const char* ws_node_state_str(WS_NodeStateEnum_t state) {
-  switch (state) {
-    case WS_NODE_IDLE:           return "OK";
-    case WS_NODE_TX_IN_PROGRESS: return "TX";
-    case WS_NODE_WAIT_RESPONSE:  return "WR";
-    case WS_NODE_DATA_READY:     return "DR";
-    case WS_NODE_ERROR:          return "ER";
-    default:                     return "??";
-  }
-}
-
-/**
- * @brief Display list of measurement stations with their status
- * @note Helper function that renders station status. Used by both menu callback and task.
- */
-static void ws_render_stations_status(void) {
-  if (WS_UI.lcd == NULL || WS_UI.ws_ctx == NULL || WS_UI.text_buffer == NULL) return;
-
-  PCD8544_ClearBuffer(WS_UI.lcd);
-  PCD8544_SetFont(WS_UI.lcd, &Font_6x8);
-
-  /* Header */
-  PCD_8544_DrawCenteredTitle(WS_UI.lcd, "Status");
-
-  /* Display each node below Return */
-  uint8_t row = 1;
-  for (uint8_t i = 0; i < WS_UI.ws_ctx->node_count && row < 6; i++) {
-    const WS_NodeState_t *node = &WS_UI.ws_ctx->nodes[i];
-    
-    /* Determine status indicator */
-    const char *status_str = ws_node_state_str(node->state);
-    char active_marker = (i == WS_UI.ws_ctx->active_node) ? '*' : '!';
-    
-    /* Check if node has valid data */
-    uint8_t has_data = (node->data.si7021_temp != 0.0f || 
-                        node->data.si7021_hum != 0.0f ||
-                        node->data.bmp280_press != 0.0f) ? 1U : 0U;
-
-    uint8_t sensor_err = has_data ? node->data.sensorStatus : 0U;
-
-    PCD8544_SetCursor(WS_UI.lcd, 0, row);
-    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, 
-             "%cS%u:%s%s%s", 
-             active_marker, i + 1, status_str, 
-             has_data ? "+" : "-",
-             sensor_err ? "!" : " ");
-    PCD8544_WriteString(WS_UI.lcd, WS_UI.text_buffer);
-
-    /* Show which sensors failed on an extra row */
-    if (sensor_err && row < 6) {
-      uint8_t err_col = 8;
-      char err_line[16] = " ";
-      
-      if (sensor_err & WS_SENSOR_ERR_SI7021)  
-      { 
-        strncat(err_line, "Si7 ",  sizeof(err_line) - strlen(err_line) - 1U); 
-      }
-
-      if (sensor_err & WS_SENSOR_ERR_BMP280)  
-      { 
-        strncat(err_line, "BMP ",  sizeof(err_line) - strlen(err_line) - 1U); 
-      }
-
-      if (sensor_err & WS_SENSOR_ERR_TSL2561) 
-      { 
-        strncat(err_line, "TSL",   sizeof(err_line) - strlen(err_line) - 1U); 
-      }
-
-      PCD8544_SetCursor(WS_UI.lcd, err_col , row);
-      PCD8544_WriteString(WS_UI.lcd, err_line);
-    }
-
-    row++;
-  }
-
-  /* If no nodes configured */
-  if (WS_UI.ws_ctx->node_count == 0) {
-    PCD8544_SetCursor(WS_UI.lcd, 0, 1);
-    PCD8544_WriteString(WS_UI.lcd, "Brak stacji");
-  }
-
-  PCD8544_UpdateScreen(WS_UI.lcd);
-}
-
-/**
- * @brief Enter stations status view (menu callback)
- * @details Called once when menu item is selected. Sets flag and performs initial draw.
- */
-void WS_UI_StationsStatus(void) {
-  if (WS_UI.menu_ctx == NULL || WS_UI.lcd == NULL) return;
-
-  WS_UI.menu_ctx->state.InStationsStatusView = 1U;
-  ws_render_stations_status();
-}
-
-/**
- * @brief Stations status view main task - call in main loop when InStationsStatusView == 1
- * @details Redraws station status only when new measurement data has been received,
- *          since node states change only during measurement cycles.
- */
-void WS_UI_StationsStatusTask(void) {
-  if (WS_UI.menu_ctx == NULL || WS_UI.lcd == NULL) return;
-
-  if (WS_UI.chart_data_dirty == 0U) return;
-
-  ws_render_stations_status();
-}
-
-/* ============================================================================
- * PUBLIC API - View State Machine
- * ========================================================================== */
-
-/**
- * @brief Exit a dedicated view (chart or stations status) back to menu
- * @details Clears view flags, resets pending actions, and refreshes menu display.
- */
-static void ws_exit_dedicated_view(void) {
-  WS_UI.encoder->ButtonIRQ_Flag = 0;
-  WS_UI.menu_ctx->state.actionPending = 0;
-  WS_UI.menu_ctx->state.currentAction = MENU_ACTION_IDLE;
-  Menu_RefreshDisplay(WS_UI.lcd, WS_UI.menu_ctx);
-  WS_UI.view_state = WS_VIEW_MENU;
-}
-
-/**
- * @brief Switch UI into the default live measurements view
- * @details Leaves chart/status/detail modes, resets pending menu actions,
- *          and forces the measurements screen to redraw on the next pass.
- */
-static void ws_activate_default_measurement_view(void) {
-  WS_UI.menu_ctx->state.InChartView = 0U;
-  WS_UI.menu_ctx->state.InStationsStatusView = 0U;
-  WS_UI.menu_ctx->state.InDetailsView = 0U;
-  WS_UI.menu_ctx->state.InDefaultMeasurementsView = 1U;
-  WS_UI.menu_ctx->state.ChartViewType = CHART_VIEW_NONE;
-  WS_UI.menu_ctx->state.actionPending = 0U;
-  WS_UI.menu_ctx->state.currentAction = MENU_ACTION_IDLE;
-  WS_UI.menu_ctx->state.CurrentDepth = 0U;
-  WS_UI.menu_ctx->state.MenuIndex = 0U;
-  WS_UI.menu_ctx->state.CursorPosOnLCD = 0U;
-
-  if (WS_UI.menu_ctx->defaultMenu != NULL) {
-    WS_UI.menu_ctx->rootMenu = WS_UI.menu_ctx->defaultMenu;
-  }
-
-  WS_UI.chart_data_dirty = 1U;
-  WS_UI.view_state = WS_VIEW_DEFAULT_MEASUREMENT;
-}
-
-/**
- * @brief Main view state machine task - call in main loop
- */
-void WS_UI_ViewTask(void) {
-  if (WS_UI.menu_ctx == NULL || WS_UI.lcd == NULL || WS_UI.encoder == NULL) return;
-
-  uint32_t now = HAL_GetTick();
-
-  if (WS_UI.menu_ctx->state.InScreenSaver != 0U && WS_UI.encoder->ButtonIRQ_Flag != 0U) {
-    WS_UI.encoder->ButtonIRQ_Flag = 0U;
-    WS_UI.last_activity_tick = now;
-    WS_UI.menu_ctx->state.InScreenSaver = 0U;
-    PCD8544_SetBacklight(WS_UI.lcd);
-  }
-
-  /* Screen saver only controls backlight; view rendering continues normally. */
-  if (WS_UI.menu_ctx->state.InScreenSaver == 0U && (now - WS_UI.last_activity_tick) > SCREEN_SAVER_TIMEOUT_MS) {
-    WS_UI.menu_ctx->state.InScreenSaver = 1U;
-    ws_activate_default_measurement_view();
-    PCD8544_ResetBacklight(WS_UI.lcd);
-  }
-
-  switch (WS_UI.view_state) {
-
-    case WS_VIEW_MENU:
-      /* Capture flags before Encoder_Task clears them */
-      if (WS_UI.encoder->ButtonIRQ_Flag || WS_UI.encoder->IRQ_Flag) {
-        WS_UI.last_activity_tick = now;
-      }
-
-      Menu_Task(WS_UI.lcd, WS_UI.menu_ctx);
-      Encoder_Task(WS_UI.encoder, WS_UI.menu_ctx);
-
-      if (WS_UI.menu_ctx->state.InChartView) {
-        WS_UI.view_state = WS_VIEW_CHART;
-      } else if (WS_UI.menu_ctx->state.InStationsStatusView) {
-        WS_UI.view_state = WS_VIEW_STATIONS_STATUS;
-      } else if (WS_UI.menu_ctx->state.InDefaultMeasurementsView) {
-        WS_UI.view_state = WS_VIEW_DEFAULT_MEASUREMENT;
-      }
-      break;
-
-    case WS_VIEW_CHART:
-      WS_UI_ChartViewTask();
-
-      if (WS_UI.encoder->ButtonIRQ_Flag) {
-        WS_UI.last_activity_tick = now;
-        WS_UI.menu_ctx->state.InChartView = 0;
-        WS_UI.menu_ctx->state.ChartViewType = CHART_VIEW_NONE;
-        ws_exit_dedicated_view();
-      }
-      break;
-
-    case WS_VIEW_STATIONS_STATUS:
-      WS_UI_StationsStatusTask();
-
-      if (WS_UI.encoder->ButtonIRQ_Flag) {
-        WS_UI.last_activity_tick = now;
-        WS_UI.menu_ctx->state.InStationsStatusView = 0;
-        ws_exit_dedicated_view();
-      }
-      break;
-
-    case WS_VIEW_DEFAULT_MEASUREMENT:
-      /* Capture flags before Encoder_Task clears them */
-      if (WS_UI.encoder->ButtonIRQ_Flag || WS_UI.encoder->IRQ_Flag) {
-        WS_UI.last_activity_tick = now;
-      }
-
-      Menu_Task(WS_UI.lcd, WS_UI.menu_ctx);
-      Encoder_Task(WS_UI.encoder, WS_UI.menu_ctx);
-
-      if (WS_UI.menu_ctx->state.InChartView) {
-        WS_UI.view_state = WS_VIEW_CHART;
-      } else if (WS_UI.menu_ctx->state.InStationsStatusView) {
-        WS_UI.view_state = WS_VIEW_STATIONS_STATUS;
-      } else if (!WS_UI.menu_ctx->state.InDefaultMeasurementsView) {
-        WS_UI.view_state = WS_VIEW_MENU;
-      } else {
-        WS_UI_MeasurementDisplay();
-      }
-      break;
-
-    default:
-      WS_UI.view_state = WS_VIEW_MENU;
-      break;
+    return;
   }
 }

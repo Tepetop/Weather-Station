@@ -10,7 +10,7 @@
 
 #include <PCD8544_Menu.h>
 #include <string.h>
-#include "weather_station.h"
+#include "weather_station_ui.h"
 #include "main.h"
 
 extern void Menu_EscapeWraper(void);

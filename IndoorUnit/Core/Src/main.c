@@ -211,7 +211,7 @@ int main(void)
   wsRuntime.cmd_size = NRF_CMD_SIZE;
   wsRuntime.payload_size = NRF_PAYLOAD_SIZE;
   wsRuntime.tx_irq_timeout_ms = NRF_TX_IRQ_TIMEOUT_MS;
-  wsRuntime.rx_timeout_ms = 2000U;
+  wsRuntime.rx_timeout_ms = 1500U;
   wsRuntime.huart_pico = &huart2;
 
   /*  If NRF24L01 initialization fails, display error on LCD , go to error handler*/
