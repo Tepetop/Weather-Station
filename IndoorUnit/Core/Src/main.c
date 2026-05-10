@@ -224,7 +224,7 @@ int main(void)
   }
 
   /* Initialize UI context for weather station display functions */
-  WS_UI_Init(&WS_UI, &wsCtx, &wsRuntime, &LCD, &menuContext, &encoder, &rtcNow, g_nrf_message, sizeof(g_nrf_message));
+  WS_UI_Init(&WS_UI, &wsCtx, &wsRuntime, &LCD, &menuContext, &encoder, &rtcNow, g_nrf_message, sizeof(g_nrf_message), &rtc);
 
   /* Initialize debug logging system */
   Debug_Init();

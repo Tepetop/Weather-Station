@@ -3,6 +3,7 @@ import random
 import time
 
 STATIONS = ("S1", "S2", "S3")
+ERROR_SENSORS = ("BMP280", "SI7", "TSL")
 
 
 def _iso_now():
@@ -27,7 +28,8 @@ def _lux_for_hour(hour):
 def _status_roll():
     roll = random.random()
     if roll < 0.03:
-        return "ERR"
+        sensor_index = random.randint(0, len(ERROR_SENSORS) - 1)
+        return "ERR:" + ERROR_SENSORS[sensor_index]
     if roll < 0.12:
         return "WARN"
     return "OK"

@@ -29,6 +29,7 @@ Menu_t Ustawienia;
 		Menu_t powrotPomiar;
 		Menu_t statusPomiarow;
 	Menu_t WykonajPomiar;
+	Menu_t UstawieniaRTC;
 
 /*   																	MENU POMIAROWE														*/
 
@@ -46,7 +47,8 @@ Menu_t Ustawienia = {"Ustawienia", 			NULL,  			  &StronaDomyslna, 		&powrotUsta
 	Menu_t StacjePomiarowe = {"Stacje pom.",&WykonajPomiar,   &Wykresy, 			&powrotPomiar, 	&Ustawienia, 		NULL};
 		Menu_t powrotPomiar = {"Powrot", 	&statusPomiarow,  NULL, 				NULL, 			&StacjePomiarowe, 	Menu_EscapeWraper}; 		// Opcja powrotu do menu Wykresy
 		Menu_t statusPomiarow = {"Status", 	NULL,   	 	  &powrotPomiar, 		NULL, 			&StacjePomiarowe, 	WS_UI_StationsStatus};
-	Menu_t WykonajPomiar = {"Wykonaj pom.",	NULL, 			 &StacjePomiarowe,  	NULL, 			&Ustawienia, 		WS_UI_TakeMeasurement};
+	Menu_t WykonajPomiar = {"Wykonaj pom.",	&UstawieniaRTC,   &StacjePomiarowe,  	NULL, 			&Ustawienia, 		WS_UI_TakeMeasurement};
+	Menu_t UstawieniaRTC = {"Ustaw RTC", 	NULL, 			 &WykonajPomiar,  		NULL, 			&Ustawienia, 		WS_UI_SetRTC};
 
 
 #endif /* INC_PCD8544_MENU_CONFIG_H_ */

@@ -7,7 +7,7 @@
 
 # Generated files
 /docs/
-/.github/
+
 
 # IDE settings
 .vscode/settings.json

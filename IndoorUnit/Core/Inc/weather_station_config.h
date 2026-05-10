@@ -36,13 +36,13 @@ WS_RuntimeConfig_t wsRuntime = {0};
 /*      Assign data to time structures  */
 DS3231_DateTime currentDateTime = {
   .seconds = 0,
-  .minutes = 06,
-  .hours   = 20,
+  .minutes = 6,
+  .hours   = 11,
   .ampm    = DS3231_AM,
   .format  = DS3231_FORMAT_24H,
-  .day     = 7,
-  .date    = 8,
-  .month   = 3,
+  .day     = 6,
+  .date    = 9,
+  .month   = 5,
   .year    = 26,
   .century = false
 };
