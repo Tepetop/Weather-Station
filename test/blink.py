@@ -13,14 +13,16 @@ SSID = "Miminet"
 PASSWORD = "21590801"
 
 # Data mode
-SIMULATE = False  # Set to True to enable simulated data instead of UART reading
+SIMULATE = False
 
 # UART configuration (Pico W UART0: GP0 TX, GP1 RX)
 UART_ID = 0
 UART_BAUDRATE = 115200
-UART_TX_PIN = 1
-UART_RX_PIN = 2
+UART_TX_PIN = 0
+UART_RX_PIN = 1
 MAX_UART_LINE_BYTES = 240
+UART_DATA_PREFIX = "DATA:"
+UART_LOG_PREFIXES = ("LOG:", "INFO:", "DBG:", "TRACE:", "SYS:")
 
 # API and storage settings
 RANGE_SECONDS = {
@@ -71,6 +73,10 @@ STATION_DATA = {}
 INDEX_HTML_BYTES = b""
 
 
+class NotMeasurementFrameError(Exception):
+    pass
+
+
 def _append_ram_log(entry):
     RAM_LOGS.append(entry)
     if len(RAM_LOGS) > RAM_LOG_LIMIT:
@@ -119,17 +125,42 @@ def _parse_limit(raw_limit, fallback):
         return fallback
 
 
+def _sanitize_error_source(raw_source):
+    source = str(raw_source).upper().strip()
+    if not source:
+        return "UNKNOWN"
+
+    allowed = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
+    cleaned = ""
+    for ch in source:
+        if ch in allowed:
+            cleaned += ch
+
+    if not cleaned:
+        return "UNKNOWN"
+    return cleaned[:24]
+
+
 def _normalize_status(raw_status):
     status = str(raw_status).upper().strip()
-    if status in ("OK", "WARN", "ERR"):
-        return status
+
+    if status == "OK":
+        return "OK"
+    if status == "WARN":
+        return "WARN"
+    if status == "ERR":
+        return "ERR:UNKNOWN"
+    if status.startswith("ERR:"):
+        return "ERR:" + _sanitize_error_source(status[4:])
+
     return "WARN"
 
 
 def _status_rank(status):
-    if status == "ERR":
+    normalized = _normalize_status(status)
+    if normalized.startswith("ERR:"):
         return 2
-    if status == "WARN":
+    if normalized == "WARN":
         return 1
     return 0
 
@@ -200,8 +231,31 @@ def _format_entry(payload):
     return entry, epoch
 
 
+def _extract_uart_measurement_frame(line):
+    raw = str(line).strip()
+    if not raw:
+        raise NotMeasurementFrameError("empty line")
+
+    upper = raw.upper()
+    for prefix in UART_LOG_PREFIXES:
+        if upper.startswith(prefix):
+            raise NotMeasurementFrameError("uart log line")
+
+    if upper.startswith(UART_DATA_PREFIX):
+        raw = raw[len(UART_DATA_PREFIX):].strip()
+
+    if raw.count(",") != 7:
+        raise NotMeasurementFrameError("not a measurement frame")
+
+    if len(raw) < 19 or _timestamp_to_epoch(raw[0:19]) is None:
+        raise NotMeasurementFrameError("not a measurement frame")
+
+    return raw
+
+
 def _parse_uart_measurement_line(line):
-    parts = line.strip().split(",")
+    frame = _extract_uart_measurement_frame(line)
+    parts = frame.split(",")
     if len(parts) != 8:
         raise ValueError("expected 8 CSV fields")
 
@@ -685,7 +739,14 @@ async def uart_reading_task():
                                 if line:
                                     try:
                                         _handle_measurement_line(line)
+                                    except NotMeasurementFrameError:
+                                        _append_ram_log({"kind": "uart_log", "line": line})
                                     except Exception as parse_error:
+                                        _append_ram_log({
+                                            "kind": "uart_parse_error",
+                                            "error": str(parse_error),
+                                            "line": line,
+                                        })
                                         print("UART parse error:", parse_error, "| line:", line)
                         else:
                             if len(buffer) < MAX_UART_LINE_BYTES:

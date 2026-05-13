@@ -19,9 +19,6 @@
 #include "ds3231.h"
 
 #include <PCD_LCD/PCD8544.h>
-#include <PCD_LCD/PCD8544_Drawing.h>
-#include <PCD_LCD/PCD8544_Menu.h>
-#include <encoder.h>
 
 /* ============================================================================
  * PUBLIC CONSTANTS
@@ -134,11 +131,6 @@ typedef struct {
   uint8_t rx_addr[5];                  /**< Receive address for this node */
   uint8_t rx_pipe;                     /**< RX pipe number on central (1-5) */
   volatile uint8_t measurement_pending;/**< Flag: measurement request pending */
-  volatile uint8_t awaiting_response;  /**< Flag: waiting for data response */
-  volatile uint8_t tx_in_progress;     /**< Flag: transmission in progress */
-  volatile uint8_t tx_done;            /**< Flag: transmission completed */
-  volatile uint8_t tx_ok;              /**< Flag: transmission successful */
-  volatile uint8_t data_received;      /**< Flag: data received and ready */
   uint32_t tx_start_tick;              /**< Timestamp: TX start time */
   uint32_t response_start_tick;        /**< Timestamp: response wait start */
   uint8_t last_status;                 /**< Last nRF24 status register value */
@@ -156,8 +148,8 @@ typedef struct {
   volatile uint8_t nrf_irq_flag;       /**< Flag: nRF24 interrupt pending */
   uint8_t active_node;                 /**< Index of currently active node */
   uint8_t node_count;                  /**< Total number of managed nodes */
-  volatile uint8_t latest_data_valid;  /**< Flag: latest_data contains valid data */
-  WS_MeasurementData_t latest_data;    /**< Cache of most recent measurement */
+  volatile uint8_t latest_data_valid;  /**< Flag: at least one node has valid data */
+  uint8_t latest_node_index;           /**< Index of node with the latest valid data */
   WS_AppState_t app_state;             /**< Current application state */
   WS_NodeState_t nodes[WS_MAX_NODES];  /**< Array of node state structures */
 } WS_Manager_t;
@@ -281,13 +273,6 @@ bool WS_IsActiveTxTimedOut(const WS_Manager_t *ctx, uint32_t now_tick, uint32_t 
 void WS_HandleActiveTxTimeout(WS_Manager_t *ctx, uint8_t status);
 
 /**
- * @brief Marks that the active node is waiting for a response
- * @param[in,out] ctx Manager context
- * @param[in] now_tick Current tick count (timestamp)
- */
-void WS_MarkActiveResponseWaiting(WS_Manager_t *ctx, uint32_t now_tick);
-
-/**
  * @brief Checks if active node's response wait has timed out
  * @param[in] ctx Manager context
  * @param[in] now_tick Current tick count
@@ -359,140 +344,5 @@ HAL_StatusTypeDef WS_InitRadioAndStart(WS_Manager_t *ctx, const WS_RuntimeConfig
  * @param[in] now_tick Current system tick count (typically HAL_GetTick())
  */
 void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, uint32_t now_tick);
-
-/* ============================================================================
- * PUBLIC API - USER INTERFACE & DISPLAY
- * ========================================================================== */
-
-/**
- * @brief UI runtime context containing references to all required components
- * @details Must be initialized before calling any WS_UI_* functions
- */
-/**
- * @brief View state machine enumeration
- * @details Tracks the active view/screen of the weather station UI
- */
-typedef enum {
-  WS_VIEW_MENU = 0,               /**< Normal menu navigation */
-  WS_VIEW_CHART,                   /**< Chart view active */
-  WS_VIEW_STATIONS_STATUS,         /**< Stations status view active */
-  WS_VIEW_DEFAULT_MEASUREMENT,     /**< Default measurement display active */
-  WS_VIEW_SCREEN_SAVER             /**< Screen saver view active */
-} WS_ViewState_t;
-
-typedef struct {
-  WS_Manager_t *ws_ctx;           /**< Weather station manager context */
-  WS_RuntimeConfig_t *ws_cfg;     /**< Runtime configuration */
-  PCD8544_t *lcd;                 /**< LCD display handle */
-  Menu_Context_t *menu_ctx;       /**< Menu context */
-  Encoder_t *encoder;             /**< Encoder handle for button input */
-  DS3231_DateTime *rtc_now;       /**< Current RTC time */
-  char *text_buffer;              /**< Scratch buffer for text formatting */
-  size_t text_buffer_size;        /**< Size of text buffer */
-  volatile uint8_t chart_data_dirty; /**< Flag: new chart data available, redraw needed */
-  WS_ViewState_t view_state;      /**< Current view state machine state */
-  uint32_t last_activity_tick;    /**< Timestamp of last button press for screen saver */
-} WS_UIContext_t;
-
-/**
- * @brief Chart instances for all measurement types (owned by weather_station.c)
- */
-extern PCD8544_ChartData_t WS_TemperatureChart;
-extern PCD8544_ChartData_t WS_HumidityChart;
-extern PCD8544_ChartData_t WS_PressureChart;
-
-/**
- * @brief Global UI context (must be set before using menu functions)
- */
-extern WS_UIContext_t WS_UI;
-
-/**
- * @brief Initialize UI context with required handles
- * @param[out] ui UI context to initialize
- * @param[in] ws_ctx Weather station manager context
- * @param[in] ws_cfg Weather station runtime config
- * @param[in] lcd LCD display handle
- * @param[in] menu_ctx Menu context
- * @param[in] rtc_now RTC datetime handle
- * @param[in] text_buffer Scratch buffer for text
- * @param[in] text_buffer_size Size of scratch buffer
- */
-void WS_UI_Init(WS_UIContext_t *ui, WS_Manager_t *ws_ctx, WS_RuntimeConfig_t *ws_cfg,
-                PCD8544_t *lcd, Menu_Context_t *menu_ctx, Encoder_t *encoder,
-                DS3231_DateTime *rtc_now, char *text_buffer, size_t text_buffer_size);
-
-/**
- * @brief Initialize all chart data structures with default settings
- */
-void WS_UI_InitCharts(void);
-
-/**
- * @brief Add new measurement data point to all charts
- * @param[in] data Measurement data to add
- * @param[in] hour Hour of measurement (0-23)
- * @param[in] minute Minute of measurement (0-59)
- */
-void WS_UI_AddMeasurementToCharts(const WS_MeasurementData_t *data, uint8_t hour, uint8_t minute);
-
-/**
- * @brief Display live measurement data on LCD (menu function callback)
- * @details Shows temperature, humidity, pressure, light, and time
- */
-void WS_UI_MeasurementDisplay(void);
-
-/**
- * @brief Enter temperature chart view (menu function callback)
- */
-void WS_UI_ChartTemperature(void);
-
-/**
- * @brief Enter humidity chart view (menu function callback)
- */
-void WS_UI_ChartHumidity(void);
-
-/**
- * @brief Enter pressure chart view (menu function callback)
- */
-void WS_UI_ChartPressure(void);
-
-/**
- * @brief Enter light intensivity chart view (menu function callback)
- */
-void WS_UI_ChartLux(void);
-
-/**
- * @brief Chart view main task - update and redraw chart while in view
- * @details Call in main loop when menuContext.state.InChartView == 1
- */
-void WS_UI_ChartViewTask(void);
-
-/**
- * @brief Request a new measurement from the active node (menu function callback)
- */
-void WS_UI_TakeMeasurement(void);
-
-/**
- * @brief Enter stations status view (menu callback)
- * @details Shows list of all configured stations with their current state.
- *          Call once from menu. Use WS_UI_StationsStatusTask() in main loop.
- */
-void WS_UI_StationsStatus(void);
-
-/**
- * @brief Stations status view task
- * @details Call in main loop when menuContext.state.InStationsStatusView == 1
- *          to periodically update station status display.
- */
-void WS_UI_StationsStatusTask(void);
-
-/**
- * @brief Main view state machine task - call in main loop
- * @details Handles all view transitions and updates:
- *          - WS_VIEW_MENU: normal menu + encoder navigation
- *          - WS_VIEW_CHART: chart display with button exit
- *          - WS_VIEW_STATIONS_STATUS: station status with button exit
- *          - WS_VIEW_DEFAULT_MEASUREMENT: live measurements + menu navigation
- */
-void WS_UI_ViewTask(void);
 
 #endif

@@ -454,7 +454,7 @@
         function statusClass(status) {
             const value = String(status || "WARN").toUpperCase();
             if (value === "OK") return "ok";
-            if (value === "ERR") return "err";
+            if (value === "ERR" || value.startsWith("ERR:")) return "err";
             return "warn";
         }
 
@@ -464,6 +464,11 @@
                 return ts.slice(8, 10) + "." + ts.slice(5, 7) + " " + ts.slice(11, 16);
             }
             return ts.slice(11, 16);
+        }
+
+        function displayTimestamp(ts) {
+            if (typeof ts !== "string") return ts || "-";
+            return ts.replace("T", " ");
         }
 
         async function fetchJson(url, options) {
@@ -583,7 +588,7 @@
 
             const last = rows[rows.length - 1];
             target.innerHTML =
-                "timestamp=" + last.timestamp +
+                "timestamp=" + displayTimestamp(last.timestamp) +
                 " | si_temp=" + last.si7021_temp +
                 " | si_hum=" + last.si7021_hum +
                 " | bmp_temp=" + last.bmp280_temp +
@@ -635,7 +640,7 @@
                 const cls = statusClass(row.status);
                 return "<tr>"
                     + "<td>" + row.station_id + "</td>"
-                    + "<td class=\"mono\">" + row.timestamp + "</td>"
+                    + "<td class=\"mono\">" + displayTimestamp(row.timestamp) + "</td>"
                     + "<td>" + row.si7021_temp + "</td>"
                     + "<td>" + row.si7021_hum + "</td>"
                     + "<td>" + row.bmp280_temp + "</td>"

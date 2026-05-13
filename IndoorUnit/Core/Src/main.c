@@ -211,7 +211,7 @@ int main(void)
   wsRuntime.cmd_size = NRF_CMD_SIZE;
   wsRuntime.payload_size = NRF_PAYLOAD_SIZE;
   wsRuntime.tx_irq_timeout_ms = NRF_TX_IRQ_TIMEOUT_MS;
-  wsRuntime.rx_timeout_ms = 2000U;
+  wsRuntime.rx_timeout_ms = 1500U;
   wsRuntime.huart_pico = &huart2;
 
   /*  If NRF24L01 initialization fails, display error on LCD , go to error handler*/
@@ -224,7 +224,7 @@ int main(void)
   }
 
   /* Initialize UI context for weather station display functions */
-  WS_UI_Init(&WS_UI, &wsCtx, &wsRuntime, &LCD, &menuContext, &encoder, &rtcNow, g_nrf_message, sizeof(g_nrf_message));
+  WS_UI_Init(&WS_UI, &wsCtx, &wsRuntime, &LCD, &menuContext, &encoder, &rtcNow, g_nrf_message, sizeof(g_nrf_message), &rtc);
 
   /* Initialize debug logging system */
   Debug_Init();
