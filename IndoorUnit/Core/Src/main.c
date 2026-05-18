@@ -23,6 +23,7 @@
 #include "spi.h"
 #include "tim.h"
 #include "usart.h"
+#include "wwdg.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -97,6 +98,7 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+
   HAL_Init();
 
   /* USER CODE BEGIN Init */
@@ -211,7 +213,8 @@ int main(void)
   wsRuntime.cmd_size = NRF_CMD_SIZE;
   wsRuntime.payload_size = NRF_PAYLOAD_SIZE;
   wsRuntime.tx_irq_timeout_ms = NRF_TX_IRQ_TIMEOUT_MS;
-  wsRuntime.rx_timeout_ms = 1500U;
+  wsRuntime.rx_timeout_ms = NRF_RX_TIMEOUT_MS;
+  wsRuntime.comm_watchdog_timeout_ms = NRF_COMM_WATCHDOG_TIMEOUT_MS;
   wsRuntime.huart_pico = &huart2;
 
   /*  If NRF24L01 initialization fails, display error on LCD , go to error handler*/
@@ -235,6 +238,10 @@ int main(void)
   /*  Initial measurement request */
   WS_RequestMeasurementForActiveNode(&wsCtx);
 
+  /* Start WWDG only after long boot-time initialization is complete. */
+  MX_WWDG_Init();
+  uint32_t wwdg_last_refresh_tick = HAL_GetTick();
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -245,8 +252,10 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
+    uint32_t now_tick = HAL_GetTick();
+
     /*  Process with NRF24  */
-    WS_ProcessEventHandler(&wsCtx, &wsRuntime, HAL_GetTick());
+    WS_ProcessEventHandler(&wsCtx, &wsRuntime, now_tick);
 
     /*    Process with RTC event     */
     DS3231_EventHandler(&rtc, &rtcNow, RTC_alarm1, RTC_alarm2);
@@ -256,6 +265,14 @@ int main(void)
 
     /* View state machine handles chart, status, measurement and menu views */
     WS_UI_ViewTask();
+
+    /* Keep WWDG alive only while communication watchdog is healthy. */
+    uint32_t wwdg_now_tick = HAL_GetTick();
+    if ((wsCtx.comm_watchdog_tripped == 0U) && ((wwdg_now_tick - wwdg_last_refresh_tick) >= WWDG_REFRESH_PERIOD_MS)) 
+    {
+      HAL_WWDG_Refresh(&hwwdg);
+      wwdg_last_refresh_tick = wwdg_now_tick;
+    }
 
     /* Debug heartbeat - logs every minute to detect program hangs */
     Debug_Heartbeat();

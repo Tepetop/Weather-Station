@@ -47,6 +47,53 @@ static void debug_print_timestamped(const char *msg) {
   }
 }
 
+/**
+ * @brief Log reset source flags latched in RCC CSR since previous boot
+ */
+static void debug_log_reset_cause(void) {
+  uint8_t cause_count = 0U;
+
+  Debug_LogHex("LOG:RESET:CSR=", RCC->CSR);
+
+  if (__HAL_RCC_GET_FLAG(RCC_FLAG_WWDGRST) != RESET) {
+    Debug_Log("LOG:RESET:CAUSE=WWDG");
+    cause_count++;
+  }
+
+  if (__HAL_RCC_GET_FLAG(RCC_FLAG_IWDGRST) != RESET) {
+    Debug_Log("LOG:RESET:CAUSE=IWDG");
+    cause_count++;
+  }
+
+  if (__HAL_RCC_GET_FLAG(RCC_FLAG_SFTRST) != RESET) {
+    Debug_Log("LOG:RESET:CAUSE=SOFT");
+    cause_count++;
+  }
+
+  if (__HAL_RCC_GET_FLAG(RCC_FLAG_PORRST) != RESET) {
+    Debug_Log("LOG:RESET:CAUSE=POR_PDR");
+    cause_count++;
+  }
+
+  if (__HAL_RCC_GET_FLAG(RCC_FLAG_PINRST) != RESET) {
+    Debug_Log("LOG:RESET:CAUSE=PIN");
+    cause_count++;
+  }
+
+  if (__HAL_RCC_GET_FLAG(RCC_FLAG_LPWRRST) != RESET) {
+    Debug_Log("LOG:RESET:CAUSE=LPWR");
+    cause_count++;
+  }
+
+  if (cause_count == 0U) {
+    Debug_Log("LOG:RESET:CAUSE=UNKNOWN");
+  } else if (cause_count > 1U) {
+    Debug_LogValue("LOG:RESET:CAUSE_COUNT=", cause_count);
+  }
+
+  __HAL_RCC_CLEAR_RESET_FLAGS();
+}
+
 /* ============================================================================
  * PUBLIC API IMPLEMENTATION
  * ========================================================================== */
@@ -174,6 +221,7 @@ void Debug_Heartbeat(void) {}
 void Debug_LogBoot(void) {
   Debug_Log("LOG:WEATHER STATION BOOT");
   Debug_Log("LOG:Debug logging enabled");
+  debug_log_reset_cause();
 }
 
 #endif /* DEBUG_LOG_ENABLE */

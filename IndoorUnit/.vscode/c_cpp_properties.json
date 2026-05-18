@@ -1,8 +1,8 @@
 {
     "configurations": [
         {
-            "name": "STM32",
-            "compileCommands": "${workspaceFolder}/build/Debug/compile_commands.json",
+            "name": "STM32 Release",
+            "compileCommands": "${workspaceFolder}/build/Release/compile_commands.json",
             "intelliSenseMode": "windows-msvc-x64"
         }
     ],

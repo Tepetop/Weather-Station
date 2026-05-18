@@ -118,6 +118,7 @@ typedef struct {
   uint8_t payload_size;          /**< Data payload size (bytes) */
   uint32_t tx_irq_timeout_ms;    /**< TX interrupt timeout (ms) */
   uint32_t rx_timeout_ms;        /**< RX response timeout (ms) */
+  uint32_t comm_watchdog_timeout_ms; /**< Max allowed time without valid RX data (ms) */
   UART_HandleTypeDef *huart_pico;/**< UART handle for Pico W CSV output (can be NULL) */
 } WS_RuntimeConfig_t;
 
@@ -150,6 +151,10 @@ typedef struct {
   uint8_t node_count;                  /**< Total number of managed nodes */
   volatile uint8_t latest_data_valid;  /**< Flag: at least one node has valid data */
   uint8_t latest_node_index;           /**< Index of node with the latest valid data */
+  uint32_t last_successful_rx_tick;    /**< Tick timestamp of last valid RX payload */
+  DS3231_DateTime last_successful_rx_time; /**< RTC date/time of last valid measurement */
+  volatile uint8_t last_successful_rx_time_valid; /**< 1 when last_successful_rx_time is valid */
+  volatile uint8_t comm_watchdog_tripped; /**< 1 when communication watchdog timed out */
   WS_AppState_t app_state;             /**< Current application state */
   WS_NodeState_t nodes[WS_MAX_NODES];  /**< Array of node state structures */
 } WS_Manager_t;

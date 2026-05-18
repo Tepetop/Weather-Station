@@ -64,6 +64,7 @@ typedef struct
     uint8_t     InChartView;          // Flag indicating chart view is active
 	uint8_t		InScreenSaver;         // Flag indicating screen saver is active
 	uint8_t     InStationsStatusView; // Flag indicating stations status view is active
+	uint8_t     InCentralStatusView;  // Flag indicating central station status view is active
     ChartViewType_t ChartViewType;    // Which chart is being displayed
     // State machine
 	uint8_t 	actionPending;

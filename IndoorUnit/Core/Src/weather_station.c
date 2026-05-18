@@ -37,6 +37,9 @@
 /** @brief Maximum retries before forcing full radio recovery */
 #define WS_MAX_RETRIES 3U
 
+/** @brief Delay used between nRF24 power-down and power-up during recovery */
+#define WS_NRF_POWER_CYCLE_DELAY_MS 5U
+
 /* ============================================================================
  * PRIVATE HELPER FUNCTIONS - LED Control
  * ========================================================================== */
@@ -74,6 +77,40 @@ static void ws_apply_active_node_address(WS_Manager_t *ctx, const WS_RuntimeConf
 
   NRF24_SetTXAddress(cfg->nrf, node->tx_addr, 5U);
   NRF24_SetRXAddress(cfg->nrf, 0U, node->tx_addr, 5U);
+}
+
+/**
+ * @brief Performs a radio power-cycle before reconfiguration
+ * @param[in] cfg Runtime configuration containing nRF24 handle
+ * @details Used during error recovery when reinitialization alone is not enough.
+ */
+static void ws_power_cycle_radio(const WS_RuntimeConfig_t *cfg) {
+  if ((cfg == NULL) || (cfg->nrf == NULL)) {
+    return;
+  }
+
+  (void)NRF24_PowerDown(cfg->nrf);
+  HAL_Delay(WS_NRF_POWER_CYCLE_DELAY_MS);
+  (void)NRF24_PowerUp(cfg->nrf);
+}
+
+/**
+ * @brief Captures RTC date/time of the latest successful measurement
+ * @param[in,out] ctx Weather station manager context
+ * @param[in] cfg Runtime configuration containing RTC snapshot pointer
+ */
+static void ws_capture_last_successful_time(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg) {
+  if (ctx == NULL) {
+    return;
+  }
+
+  if ((cfg == NULL) || (cfg->rtc_now == NULL)) {
+    ctx->last_successful_rx_time_valid = 0U;
+    return;
+  }
+
+  ctx->last_successful_rx_time = *cfg->rtc_now;
+  ctx->last_successful_rx_time_valid = 1U;
 }
 
 /**
@@ -332,6 +369,9 @@ static void ws_handle_irq(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg) {
 
       ctx->latest_data_valid = 1U;
       ctx->latest_node_index = node_idx;
+      ctx->last_successful_rx_tick = HAL_GetTick();
+      ws_capture_last_successful_time(ctx, cfg);
+      ctx->comm_watchdog_tripped = 0U;
 
       ws_set_led(cfg, GPIO_PIN_RESET);
       Debug_LogNrfRxData(node_idx);
@@ -420,6 +460,9 @@ void WS_InitManager(WS_Manager_t *ctx, const uint8_t tx_addrs[][5], const uint8_
   ctx->active_node = 0U;
   ctx->latest_data_valid = 0U;
   ctx->latest_node_index = 0U;
+  ctx->last_successful_rx_tick = 0U;
+  ctx->last_successful_rx_time_valid = 0U;
+  ctx->comm_watchdog_tripped = 0U;
   ctx->app_state = WS_APP_IDLE;
 
   for (uint8_t i = 0U; i < ctx->node_count; i++) {
@@ -711,6 +754,9 @@ void WS_MarkActiveDataReceived(WS_Manager_t *ctx, const WS_MeasurementData_t *da
     memcpy(&node->data, data, sizeof(node->data));
     ctx->latest_data_valid = 1U;
     ctx->latest_node_index = ctx->active_node;
+    ctx->last_successful_rx_tick = HAL_GetTick();
+    ctx->last_successful_rx_time_valid = 0U;
+    ctx->comm_watchdog_tripped = 0U;
   }
   node->last_status = status;
   node->state = WS_NODE_DATA_READY;
@@ -856,8 +902,24 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
     return;
   }
 
+  if (ctx->comm_watchdog_tripped != 0U) {
+    return;
+  }
+
+  if (ctx->last_successful_rx_tick == 0U) {
+    ctx->last_successful_rx_tick = now_tick;
+  }
+
+  if ((cfg->comm_watchdog_timeout_ms != 0U) &&
+      ((now_tick - ctx->last_successful_rx_tick) > cfg->comm_watchdog_timeout_ms)) {
+    ctx->comm_watchdog_tripped = 1U;
+    Debug_Log("LOG:NRF:COMM_WATCHDOG_TRIPPED");
+    return;
+  }
+
   if (ctx->app_state == WS_APP_ERROR_RECOVERY) {
     /* Recover radio state after TX/RX failures (MAX_RT/timeout). */
+    ws_power_cycle_radio(cfg);
     if (WS_InitRadioAndStart(ctx, cfg) == HAL_OK) {
       Debug_Log("LOG:NRF:RECOVERY_OK");
     } else {
@@ -939,7 +1001,9 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
     return;
   }
 
-  if (node->measurement_pending != 0U) {
+  if ((node->measurement_pending != 0U) &&
+      (ctx->app_state == WS_APP_IDLE) &&
+      (node->state == WS_NODE_IDLE)) {
     WS_ConsumePendingForActiveNode(ctx);
     ws_send_measure_command(ctx, cfg, now_tick);
     ctx->app_state = WS_APP_WAIT_TX_IRQ;
