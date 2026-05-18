@@ -19,6 +19,9 @@
 #define NRF_CMD_SIZE     8      // Command payload size
 #define CMD_MEASURE      0x01   // Command to request measurement
 #define NRF_TX_IRQ_TIMEOUT_MS 120U
+#define NRF_RX_TIMEOUT_MS 1500U
+#define NRF_COMM_WATCHDOG_TIMEOUT_MS 600000U
+#define WWDG_REFRESH_PERIOD_MS 10U
 #define WS_NODE_COUNT 1U
 #define RTC_MANUAL_SET_HOLD_MS 1200U
 
