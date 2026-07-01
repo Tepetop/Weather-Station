@@ -88,7 +88,7 @@ void WS_UI_InitCharts(void);
  * @param[in] hour Hour associated with the sample timestamp.
  * @param[in] minute Minute associated with the sample timestamp.
  */
-void WS_UI_AddMeasurementToCharts(const WS_MeasurementData_t *data, uint8_t hour, uint8_t minute);
+void WS_UI_AddMeasurementToCharts(const WS_NodeReadings_t *data, uint8_t hour, uint8_t minute);
 
 /**
  * @brief Renders the default live measurement screen.

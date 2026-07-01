@@ -1,6 +1,7 @@
 #include "weather_station_ui.h"
 
 #include "debug_log.h"
+#include "ws_protocol.h"
 
 #include <PCD_LCD/PCD8544_fonts.h>
 
@@ -84,18 +85,20 @@ static void ws_ui_format_fixed(char *dst, size_t dst_size, float value, uint8_t 
 /**
  * @brief Compute averaged temperature from available sensors
  */
-static float ws_avg_temperature(const WS_MeasurementData_t *data) {
-  uint8_t si_ok = ((data->sensorStatus & WS_SENSOR_ERR_SI7021) == 0U) ? 1U : 0U;
-  uint8_t bmp_ok = ((data->sensorStatus & WS_SENSOR_ERR_BMP280) == 0U) ? 1U : 0U;
+static float ws_avg_temperature(const WS_NodeReadings_t *data) {
+  float si_temp = 0.0f;
+  float bmp_temp = 0.0f;
+  uint8_t si_ok = WS_Reading_Get(data, WS_CH_SI7021_TEMP, &si_temp) ? 1U : 0U;
+  uint8_t bmp_ok = WS_Reading_Get(data, WS_CH_BMP280_TEMP, &bmp_temp) ? 1U : 0U;
 
   if (si_ok && bmp_ok) {
-    return (data->si7021_temp + data->bmp280_temp) * 0.5f;
+    return (si_temp + bmp_temp) * 0.5f;
   }
   if (si_ok) {
-    return data->si7021_temp;
+    return si_temp;
   }
   if (bmp_ok) {
-    return data->bmp280_temp;
+    return bmp_temp;
   }
   return 0.0f;
 }
@@ -206,11 +209,9 @@ static void ws_render_stations_status(void) {
     const char *status_str = ws_node_state_str(node->state);
     char active_marker = (i == WS_UI.ws_ctx->active_node) ? '*' : '!';
 
-    uint8_t has_data = ((node->data.si7021_temp != 0.0f) ||
-                        (node->data.si7021_hum != 0.0f) ||
-                        (node->data.bmp280_press != 0.0f)) ? 1U : 0U;
+    uint8_t has_data = (node->data.count > 0U) ? 1U : 0U;
 
-    uint8_t sensor_err = has_data ? node->data.sensorStatus : 0U;
+    uint8_t sensor_err = has_data ? node->data.sensor_status : 0U;
 
     PCD8544_SetCursor(WS_UI.lcd, 0, row);
     snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size,
@@ -552,16 +553,19 @@ void WS_UI_InitCharts(void) {
  * @param[in] hour Sample hour for chart X axis.
  * @param[in] minute Sample minute for chart X axis.
  */
-void WS_UI_AddMeasurementToCharts(const WS_MeasurementData_t *data, uint8_t hour, uint8_t minute) {
+void WS_UI_AddMeasurementToCharts(const WS_NodeReadings_t *data, uint8_t hour, uint8_t minute) {
   if (data == NULL) {
     return;
   }
 
+  float hum = 0.0f;
+  float press = 0.0f;
+  float lux = 0.0f;
   float avg_temp = ws_avg_temperature(data);
   int16_t tempVal = (int16_t)(avg_temp * 10.0f);
-  int16_t humVal = (int16_t)(data->si7021_hum * 10.0f);
-  int16_t pressVal = (int16_t)(data->bmp280_press);
-  int16_t luxVal = (int16_t)(data->tsl2561_lux);
+  int16_t humVal = WS_Reading_Get(data, WS_CH_SI7021_HUM, &hum) ? (int16_t)(hum * 10.0f) : 0;
+  int16_t pressVal = WS_Reading_Get(data, WS_CH_BMP280_PRESS, &press) ? (int16_t)press : 0;
+  int16_t luxVal = WS_Reading_Get(data, WS_CH_TSL2561_LUX, &lux) ? (int16_t)lux : 0;
 
   PCD8544_AddChartPoint(&WS_TemperatureChart, tempVal, hour, minute);
   PCD8544_AddChartPoint(&WS_HumidityChart, humVal, hour, minute);
@@ -592,9 +596,10 @@ void WS_UI_MeasurementDisplay(void) {
   }
   WS_UI.chart_data_dirty = 0U;
 
-  WS_MeasurementData_t measurement;
+  WS_NodeReadings_t measurement;
   uint8_t hasMeasurement = WS_GetLatestMeasurement(WS_UI.ws_ctx, &measurement) ? 1U : 0U;
   char value_text[16];
+  float reading_value = 0.0f;
 
   PCD8544_ClearScreen(WS_UI.lcd);
   PCD8544_SetFont(WS_UI.lcd, &Font_6x8);
@@ -619,8 +624,8 @@ void WS_UI_MeasurementDisplay(void) {
   PCD8544_WriteString(WS_UI.lcd, WS_UI.text_buffer);
 
   PCD8544_SetCursor(WS_UI.lcd, 0, 2);
-  if (hasMeasurement != 0U) {
-    ws_ui_format_fixed(value_text, sizeof(value_text), measurement.si7021_hum, 2U);
+  if ((hasMeasurement != 0U) && WS_Reading_Get(&measurement, WS_CH_SI7021_HUM, &reading_value)) {
+    ws_ui_format_fixed(value_text, sizeof(value_text), reading_value, 2U);
     snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "H:%s%%", value_text);
   } else {
     snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "H:--.--%%");
@@ -628,8 +633,8 @@ void WS_UI_MeasurementDisplay(void) {
   PCD8544_WriteString(WS_UI.lcd, WS_UI.text_buffer);
 
   PCD8544_SetCursor(WS_UI.lcd, 0, 3);
-  if (hasMeasurement != 0U) {
-    ws_ui_format_fixed(value_text, sizeof(value_text), measurement.bmp280_press, 2U);
+  if ((hasMeasurement != 0U) && WS_Reading_Get(&measurement, WS_CH_BMP280_PRESS, &reading_value)) {
+    ws_ui_format_fixed(value_text, sizeof(value_text), reading_value, 2U);
     snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "P:%shPa", value_text);
   } else {
     snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "P:--.--hPa");
@@ -637,8 +642,8 @@ void WS_UI_MeasurementDisplay(void) {
   PCD8544_WriteString(WS_UI.lcd, WS_UI.text_buffer);
 
   PCD8544_SetCursor(WS_UI.lcd, 0, 4);
-  if (hasMeasurement != 0U) {
-    ws_ui_format_fixed(value_text, sizeof(value_text), measurement.tsl2561_lux, 2U);
+  if ((hasMeasurement != 0U) && WS_Reading_Get(&measurement, WS_CH_TSL2561_LUX, &reading_value)) {
+    ws_ui_format_fixed(value_text, sizeof(value_text), reading_value, 2U);
     snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "L:%slux", value_text);
   } else {
     snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "L:--.--lux");

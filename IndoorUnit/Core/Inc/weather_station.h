@@ -17,6 +17,7 @@
 
 #include "NRF24L01.h"
 #include "ds3231.h"
+#include "ws_protocol.h"
 
 #include <PCD_LCD/PCD8544.h>
 
@@ -72,32 +73,13 @@ typedef enum {
  * ========================================================================== */
 
 /**
- * @brief Sensor error flags (bitwise)
- * @details Matches Sensor_Error_t in OutdoorUnit. Each bit indicates a
- *          sensor failure on the remote measurement station.
+ * @brief Sensor error flags (bitwise) — defined in ws_protocol.h as WS_SensorError_t
  */
-typedef enum {
-  WS_SENSOR_OK       = 0,        /**< All sensors operational */
-  WS_SENSOR_ERR_SI7021  = (1 << 0), /**< SI7021 (temp/humidity) error */
-  WS_SENSOR_ERR_BMP280  = (1 << 1), /**< BMP280 (pressure/temp) error */
-  WS_SENSOR_ERR_TSL2561 = (1 << 2)  /**< TSL2561 (light) error */
-} WS_SensorError_t;
 
 /**
- * @brief Measurement data structure for radio transmission
- * @details Contains sensor readings from outdoor unit. Layout must match
- *          Measurement_Data_t in OutdoorUnit exactly (unpacked, 24 bytes).
- *          The struct is NOT packed — both sides use ARM Cortex-M3 with
- *          identical GCC ABI, so natural alignment is consistent.
+ * @brief Measurement readings from an outdoor node (tagged channel values)
  */
-typedef struct {
-  float si7021_temp;             /**< Temperature from SI7021 sensor (°C) */
-  float si7021_hum;              /**< Humidity from SI7021 sensor (%) */
-  float bmp280_temp;             /**< Temperature from BMP280 sensor (°C) */
-  float bmp280_press;            /**< Pressure from BMP280 sensor (hPa) */
-  float tsl2561_lux;             /**< Light intensity from TSL2561 (lux) */
-  uint8_t sensorStatus;          /**< Bitwise sensor health flags (WS_SensorError_t) */
-} WS_MeasurementData_t;
+typedef WS_Readings_t WS_NodeReadings_t;
 
 /**
  * @brief Runtime configuration structure
@@ -137,7 +119,7 @@ typedef struct {
   uint8_t last_status;                 /**< Last nRF24 status register value */
   uint8_t retry_count;                 /**< Retry counter for failures */
   WS_NodeStateEnum_t state;            /**< Current node state */
-  WS_MeasurementData_t data;           /**< Latest measurement data */
+  WS_NodeReadings_t data;              /**< Latest measurement readings */
 } WS_NodeState_t;
 
 /**
@@ -303,7 +285,7 @@ void WS_HandleActiveRxTimeout(WS_Manager_t *ctx, uint8_t status);
  * @param[in] data Received measurement data (can be NULL for status-only)
  * @param[in] status nRF24 status register value
  */
-void WS_MarkActiveDataReceived(WS_Manager_t *ctx, const WS_MeasurementData_t *data, uint8_t status);
+void WS_MarkActiveDataReceived(WS_Manager_t *ctx, const WS_NodeReadings_t *data, uint8_t status);
 
 /**
  * @brief Checks and consumes data ready flag for the active node
@@ -318,7 +300,7 @@ bool WS_ConsumeActiveDataReady(WS_Manager_t *ctx);
  * @param[out] out_data Buffer to receive measurement data
  * @return true if valid data was copied, false if no valid data available
  */
-bool WS_GetLatestMeasurement(const WS_Manager_t *ctx, WS_MeasurementData_t *out_data);
+bool WS_GetLatestMeasurement(const WS_Manager_t *ctx, WS_NodeReadings_t *out_data);
 
 /* ============================================================================
  * PUBLIC API - NODE SCHEDULING

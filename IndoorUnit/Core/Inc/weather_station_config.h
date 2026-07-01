@@ -8,6 +8,7 @@
 #include "NRF24L01.h"
 #include "weather_station.h"
 #include "weather_station_ui.h"
+#include "ws_protocol.h"
 
 
 #define IRQ_FLAG_SET 1
@@ -15,7 +16,7 @@
 
 /* NRF24L01 configuration */
 #define NRF_CHANNEL      76      // 2476 MHz
-#define NRF_PAYLOAD_SIZE 24     // Measurement data payload size (must match OutdoorUnit)
+#define NRF_PAYLOAD_SIZE WS_PROTOCOL_MAX_PAYLOAD
 #define NRF_CMD_SIZE     8      // Command payload size
 #define CMD_MEASURE      0x01   // Command to request measurement
 #define NRF_TX_IRQ_TIMEOUT_MS 120U

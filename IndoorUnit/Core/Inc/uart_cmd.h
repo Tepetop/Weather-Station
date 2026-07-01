@@ -1,0 +1,19 @@
+/**
+ * @file uart_cmd.h
+ * @brief UART command parser for Pico W / remote measure requests
+ */
+
+#ifndef UART_CMD_H
+#define UART_CMD_H
+
+#include <stdint.h>
+
+#include "usart.h"
+#include "weather_station.h"
+
+#define UART_CMD_TARGET_ACTIVE 0xFFU
+
+void UartCmd_Init(UART_HandleTypeDef *huart);
+void UartCmd_Process(WS_Manager_t *ws);
+
+#endif /* UART_CMD_H */

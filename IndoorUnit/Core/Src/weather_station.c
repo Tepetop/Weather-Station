@@ -10,6 +10,7 @@
 #include "weather_station.h"
 #include "weather_station_ui.h"
 #include "debug_log.h"
+#include "ws_protocol.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -206,26 +207,18 @@ static void ws_send_measurement_uart(const WS_Manager_t *ctx, const WS_RuntimeCo
   }
 
   const WS_NodeState_t *node = &ctx->nodes[node_idx];
-  char si7021_temp_text[16];
-  char si7021_hum_text[16];
-  char bmp280_temp_text[16];
-  char bmp280_press_text[16];
-  char tsl2561_lux_text[16];
   char status_text[40];
-  char line[128];
+  char line[160];
+  char channel_part[24];
   uint8_t year = 0U;
   uint8_t month = 0U;
   uint8_t date = 0U;
   uint8_t hours = 0U;
   uint8_t minutes = 0U;
   uint8_t seconds = 0U;
+  int line_len = 0;
 
-  ws_format_fixed(si7021_temp_text, sizeof(si7021_temp_text), node->data.si7021_temp, 2U);
-  ws_format_fixed(si7021_hum_text, sizeof(si7021_hum_text), node->data.si7021_hum, 2U);
-  ws_format_fixed(bmp280_temp_text, sizeof(bmp280_temp_text), node->data.bmp280_temp, 2U);
-  ws_format_fixed(bmp280_press_text, sizeof(bmp280_press_text), node->data.bmp280_press, 2U);
-  ws_format_fixed(tsl2561_lux_text, sizeof(tsl2561_lux_text), node->data.tsl2561_lux, 2U);
-  ws_format_sensor_status(status_text, sizeof(status_text), node->data.sensorStatus);
+  ws_format_sensor_status(status_text, sizeof(status_text), node->data.sensor_status);
 
   if (cfg->rtc_now != NULL) {
     year = cfg->rtc_now->year;
@@ -236,23 +229,32 @@ static void ws_send_measurement_uart(const WS_Manager_t *ctx, const WS_RuntimeCo
     seconds = cfg->rtc_now->seconds;
   }
 
-  int line_len = snprintf(
+  line_len = snprintf(
       line,
       sizeof(line),
-      "DATA:20%02u-%02u-%02uT%02u:%02u:%02u,S%u,%s,%s,%s,%s,%s,%s\n",
+      "DATA:20%02u-%02u-%02uT%02u:%02u:%02u,S%u",
       (unsigned int)year,
       (unsigned int)month,
       (unsigned int)date,
       (unsigned int)hours,
       (unsigned int)minutes,
       (unsigned int)seconds,
-      (unsigned int)node_idx,
-      si7021_temp_text,
-      si7021_hum_text,
-      bmp280_temp_text,
-      bmp280_press_text,
-      tsl2561_lux_text,
-      status_text);
+      (unsigned int)node_idx);
+
+  for (uint8_t i = 0U; (i < node->data.count) && (line_len > 0); i++) {
+    char value_text[16];
+    ws_format_fixed(value_text, sizeof(value_text), node->data.readings[i].value, 2U);
+    snprintf(channel_part, sizeof(channel_part), ",%02X:%s",
+             (unsigned int)node->data.readings[i].channel_id, value_text);
+    if (((size_t)line_len + strlen(channel_part) + strlen(status_text) + 2U) >= sizeof(line)) {
+      break;
+    }
+    line_len += snprintf(line + line_len, sizeof(line) - (size_t)line_len, "%s", channel_part);
+  }
+
+  if (line_len > 0) {
+  line_len += snprintf(line + line_len, sizeof(line) - (size_t)line_len, ",%s\n", status_text);
+  }
 
   if ((line_len <= 0) || ((size_t)line_len >= sizeof(line))) {
     return;
@@ -357,9 +359,11 @@ static void ws_handle_irq(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg) {
     /* Map pipe to node index: pipe 1 → node 0, pipe 2 → node 1, etc. */
     uint8_t node_idx = pipe - 1U;
     if ((pipe >= 1U) && (node_idx < ctx->node_count) &&
-        (payload_len >= sizeof(WS_MeasurementData_t))) {
-      WS_MeasurementData_t measurement;
-      memcpy(&measurement, rx_data, sizeof(WS_MeasurementData_t));
+        (payload_len >= WS_PROTOCOL_HEADER_SIZE)) {
+      WS_NodeReadings_t measurement;
+      if (!WS_Protocol_Decode(rx_data, payload_len, &measurement)) {
+        return;
+      }
 
       WS_NodeState_t *rx_node = &ctx->nodes[node_idx];
       memcpy(&rx_node->data, &measurement, sizeof(measurement));
@@ -744,7 +748,7 @@ void WS_HandleActiveRxTimeout(WS_Manager_t *ctx, uint8_t status) {
  *          Sets data_received flag and updates state to DATA_READY.
  *          Called from interrupt handler when valid payload is received.
  */
-void WS_MarkActiveDataReceived(WS_Manager_t *ctx, const WS_MeasurementData_t *data, uint8_t status) {
+void WS_MarkActiveDataReceived(WS_Manager_t *ctx, const WS_NodeReadings_t *data, uint8_t status) {
   WS_NodeState_t *node = WS_GetActiveNode(ctx);
   if (node == NULL) {
     return;
@@ -811,7 +815,7 @@ void WS_ScheduleNextNode(WS_Manager_t *ctx) {
  *          Useful for display updates when you need the most recent reading
  *          regardless of which node it came from.
  */
-bool WS_GetLatestMeasurement(const WS_Manager_t *ctx, WS_MeasurementData_t *out_data) {
+bool WS_GetLatestMeasurement(const WS_Manager_t *ctx, WS_NodeReadings_t *out_data) {
   if ((ctx == NULL) || (out_data == NULL) || (ctx->latest_data_valid == 0U) ||
       (ctx->latest_node_index >= ctx->node_count)) {
     return false;
