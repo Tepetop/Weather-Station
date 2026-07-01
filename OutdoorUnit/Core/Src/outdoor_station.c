@@ -11,12 +11,14 @@
 #include "iwdg.h"
 #include "spi.h"
 #include "usart.h"
+#include "ws_protocol.h"
 
 /* Measurement context for sensor data acquisition */
 static Measurement_Context_t measCtx;
 
 /* Data buffer for NRF transmission */
-Measurement_Data_t txData;
+uint8_t txPayload[WS_PROTOCOL_MAX_PAYLOAD];
+uint8_t txPayloadLen;
 
 /* Message buffer for UART transfer */
 char Message[128];
@@ -60,6 +62,11 @@ HAL_StatusTypeDef OutdoorStation_Init(void)
 #endif
 
   if (OutdoorStation_InitCommunication() != HAL_OK)
+  {
+    return HAL_ERROR;
+  }
+
+  if (!WS_Protocol_SelfCheck())
   {
     return HAL_ERROR;
   }
@@ -470,8 +477,17 @@ static void OutdoorStation_HandleIRQ(void)
 
 static void OutdoorStation_SendMeasurementData(void)
 {
-  /* Get measurement data including sensor status flags */
-  Measurement_GetData(&measCtx, &txData);
+  uint8_t wire[NRF_PAYLOAD_SIZE] = {0};
+
+  txPayloadLen = Measurement_EncodePayload(&measCtx, txPayload, sizeof(txPayload));
+  if (txPayloadLen == 0U)
+  {
+    /* ponytail: header-only frame still carries sensor_status */
+    WS_Readings_t readings = {.sensor_status = measCtx.data.sensorStatus, .count = 0U};
+    (void)WS_Protocol_Encode(&readings, txPayload, sizeof(txPayload), &txPayloadLen);
+  }
+
+  memcpy(wire, txPayload, txPayloadLen);
 
   /* Prepare TX state */
   outLink.irq_flag = 0;
@@ -484,7 +500,7 @@ static void OutdoorStation_SendMeasurementData(void)
   NRF24_SetMode(&nrf, NRF24_MODE_STANDBY);
   NRF24_FlushTX(&nrf);
   NRF24_ClearIRQ(&nrf, NRF24_STATUS_IRQ_MASK);
-  NRF24_WritePayload(&nrf, (uint8_t *)&txData, sizeof(Measurement_Data_t));
+  NRF24_WritePayload(&nrf, wire, NRF_PAYLOAD_SIZE);
   NRF24_SetMode(&nrf, NRF24_MODE_TX);
 }
 

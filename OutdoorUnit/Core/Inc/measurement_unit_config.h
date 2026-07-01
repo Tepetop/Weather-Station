@@ -9,6 +9,7 @@
 #include "bmp280.h"
 #include "measurement.h"
 #include "NRF24L01.h"
+#include "ws_protocol.h"
 
 
 
@@ -31,7 +32,7 @@
  * NRF24L01 Configuration
  * ============================================================================ */
 #define NRF_CHANNEL               76U     /**< RF channel: 2476 MHz (must match IndoorUnit) */
-#define NRF_PAYLOAD_SIZE          24U     /**< sizeof(Measurement_Data_t) with padding */
+#define NRF_PAYLOAD_SIZE          WS_PROTOCOL_MAX_PAYLOAD
 #define NRF_CMD_SIZE              8U      /**< Command payload size */
 #define CMD_MEASURE               0x01U   /**< Command to request measurement */
 #define NRF_TX_TIMEOUT_MS         120U    /**< TX timeout in milliseconds */
@@ -43,6 +44,16 @@
  * ============================================================================ */
 #define OUTDOOR_MEAS_MAX_RETRIES  3U      /**< Max measurement retry attempts */
 #define OUTDOOR_MEAS_TIMEOUT_MS   2000U   /**< Measurement cycle timeout */
+
+/** Channels transmitted by this outdoor unit (edit per station hardware). */
+static const uint8_t ENABLED_CHANNELS[] = {
+  WS_CH_SI7021_TEMP,
+  WS_CH_SI7021_HUM,
+  WS_CH_BMP280_TEMP,
+  WS_CH_BMP280_PRESS,
+  WS_CH_TSL2561_LUX,
+};
+#define ENABLED_CHANNEL_COUNT ((uint8_t)(sizeof(ENABLED_CHANNELS) / sizeof(ENABLED_CHANNELS[0])))
 
 
 /* ============================================================================
@@ -92,7 +103,8 @@ typedef enum {
 /* ============================================================================
  * External Variables (defined in outdoor_station.c)
  * ============================================================================ */
-extern Measurement_Data_t txData;     /**< Data buffer for NRF transmission */
+extern uint8_t txPayload[WS_PROTOCOL_MAX_PAYLOAD]; /**< NRF TX wire buffer */
+extern uint8_t txPayloadLen;                     /**< Encoded payload length */
 extern char Message[128];             /**< Message buffer for UART transfer */
 extern uint8_t Length;                /**< Message length */
 

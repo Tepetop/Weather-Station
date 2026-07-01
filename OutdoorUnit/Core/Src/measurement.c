@@ -6,6 +6,7 @@
  */
 
 #include "measurement.h"
+#include "measurement_unit_config.h"
 #include "stm32f1xx_hal_def.h"
 #include "stm32f1xx_hal_dma.h"
 #include <stdio.h>
@@ -592,21 +593,66 @@ HAL_StatusTypeDef Measurement_ReinitSensor(Measurement_Context_t *ctx, Sensor_Er
 }
 
 /**
- * @brief   Formats the latest measurement data into CSV format
- * @param   ctx     Pointer to measurement context structure
- * @param   buffer  Pointer to buffer where CSV string will be stored
- * @param   len     Maximum length of the buffer
- * @retval  None
- * @note    Output format: "si7021_temp,si7021_hum,bmp280_temp,bmp280_press,tsl2561_lux,sensor_status"
+ * @brief   Returns channel value from internal measurement cache
  */
-void Measurement_GetCSV(const Measurement_Context_t *ctx, char *buffer, uint16_t len) {
-    if (ctx == NULL || buffer == NULL || len == 0) {
-        return;
+static float Measurement_GetChannelValue(const Measurement_Data_t *data, uint8_t channel_id) {
+    switch (channel_id) {
+        case WS_CH_SI7021_TEMP:
+            return data->si7021_temp;
+        case WS_CH_SI7021_HUM:
+            return data->si7021_hum;
+        case WS_CH_BMP280_TEMP:
+            return data->bmp280_temp;
+        case WS_CH_BMP280_PRESS:
+            return data->bmp280_press;
+        case WS_CH_TSL2561_LUX:
+            return data->tsl2561_lux;
+        default:
+            return 0.0f;
     }
-    snprintf(buffer, len, "%f,%f,%f,%f,%f,%d",             
-             ctx->data.si7021_temp, ctx->data.si7021_hum,
-             ctx->data.bmp280_temp, ctx->data.bmp280_press,
-             ctx->data.tsl2561_lux, ctx->data.sensorStatus);
+}
+
+bool Measurement_BuildReadings(const Measurement_Context_t *ctx, WS_Readings_t *out) {
+    if ((ctx == NULL) || (out == NULL)) {
+        return false;
+    }
+
+    memset(out, 0, sizeof(*out));
+    out->sensor_status = ctx->data.sensorStatus;
+
+    for (uint8_t i = 0U; i < ENABLED_CHANNEL_COUNT; i++) {
+        uint8_t channel_id = ENABLED_CHANNELS[i];
+        uint8_t err_mask = WS_ChannelSensorError(channel_id);
+
+        if ((err_mask != 0U) && ((ctx->data.sensorStatus & err_mask) != 0U)) {
+            continue;
+        }
+
+        if (out->count >= WS_MAX_READINGS) {
+            break;
+        }
+
+        out->readings[out->count].channel_id = channel_id;
+        out->readings[out->count].value = Measurement_GetChannelValue(&ctx->data, channel_id);
+        out->count++;
+    }
+
+    return (out->count > 0U);
+}
+
+uint8_t Measurement_EncodePayload(const Measurement_Context_t *ctx, uint8_t *buf, uint8_t buf_size) {
+    WS_Readings_t readings;
+    uint8_t encoded_len = 0U;
+
+    if (!Measurement_BuildReadings(ctx, &readings)) {
+        return 0U;
+    }
+
+    if (!WS_Protocol_Encode(&readings, buf, buf_size, &encoded_len)) {
+        return 0U;
+    }
+
+    return encoded_len;
 }
 
 /**

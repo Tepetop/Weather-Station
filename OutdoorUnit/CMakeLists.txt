@@ -42,9 +42,12 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined library search paths
 )
 
+set(WS_COMMON_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../Common)
+
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
+    ${WS_COMMON_DIR}/src/ws_protocol.c
     Core/Src/bmp280.c
     Core/Src/si7021.c
     Core/Src/TSL2561.c
@@ -56,6 +59,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
+    ${WS_COMMON_DIR}/include
     Core/Inc
 )
 
