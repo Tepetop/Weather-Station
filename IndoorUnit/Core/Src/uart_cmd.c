@@ -12,8 +12,10 @@
 
 static UART_HandleTypeDef *uart_cmd_huart;
 static char uart_cmd_line[UART_CMD_LINE_MAX];
+static char uart_cmd_pending_line[UART_CMD_LINE_MAX];
 static uint8_t uart_cmd_line_len;
 static uint8_t uart_cmd_rx_byte;
+static volatile uint8_t uart_cmd_line_ready;
 static volatile uint8_t uart_cmd_measure_pending;
 static volatile uint8_t uart_cmd_target_node;
 
@@ -73,13 +75,26 @@ static void uart_cmd_handle_line(const char *line) {
   uart_cmd_reply("ERR:UNKNOWN\n");
 }
 
+static void uart_cmd_queue_line(void) {
+  if (uart_cmd_line_len == 0U) {
+    return;
+  }
+
+  if (uart_cmd_line_ready != 0U) {
+    uart_cmd_reset_line();
+    return;
+  }
+
+  uart_cmd_line[uart_cmd_line_len] = '\0';
+  (void)strncpy(uart_cmd_pending_line, uart_cmd_line, UART_CMD_LINE_MAX - 1U);
+  uart_cmd_pending_line[UART_CMD_LINE_MAX - 1U] = '\0';
+  uart_cmd_line_ready = 1U;
+  uart_cmd_reset_line();
+}
+
 static void uart_cmd_on_byte(uint8_t byte) {
   if ((byte == '\r') || (byte == '\n')) {
-    if (uart_cmd_line_len > 0U) {
-      uart_cmd_line[uart_cmd_line_len] = '\0';
-      uart_cmd_handle_line(uart_cmd_line);
-    }
-    uart_cmd_reset_line();
+    uart_cmd_queue_line();
     return;
   }
 
@@ -91,9 +106,34 @@ static void uart_cmd_on_byte(uint8_t byte) {
   uart_cmd_line[uart_cmd_line_len++] = (char)byte;
 }
 
+static void uart_cmd_process_ready_line(void) {
+  char line_copy[UART_CMD_LINE_MAX];
+  uint8_t ready = 0U;
+
+  if (uart_cmd_line_ready == 0U) {
+    return;
+  }
+
+  uint32_t primask = __get_PRIMASK();
+  __disable_irq();
+  if (uart_cmd_line_ready != 0U) {
+    (void)strncpy(line_copy, uart_cmd_pending_line, UART_CMD_LINE_MAX - 1U);
+    line_copy[UART_CMD_LINE_MAX - 1U] = '\0';
+    uart_cmd_line_ready = 0U;
+    ready = 1U;
+  }
+  __set_PRIMASK(primask);
+
+  if (ready != 0U) {
+    uart_cmd_handle_line(line_copy);
+  }
+}
+
 void UartCmd_Init(UART_HandleTypeDef *huart) {
   uart_cmd_huart = huart;
   uart_cmd_reset_line();
+  uart_cmd_pending_line[0] = '\0';
+  uart_cmd_line_ready = 0U;
   uart_cmd_measure_pending = 0U;
   uart_cmd_target_node = UART_CMD_TARGET_ACTIVE;
 
@@ -103,6 +143,8 @@ void UartCmd_Init(UART_HandleTypeDef *huart) {
 }
 
 void UartCmd_Process(WS_Manager_t *ws) {
+  uart_cmd_process_ready_line();
+
   if ((ws == NULL) || (uart_cmd_measure_pending == 0U)) {
     return;
   }
@@ -130,5 +172,18 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
   }
 
   uart_cmd_on_byte(uart_cmd_rx_byte);
+  (void)HAL_UART_Receive_IT(huart, &uart_cmd_rx_byte, 1U);
+}
+
+/* On any RX error (overrun/framing/noise) the HAL aborts interrupt reception
+ * and does not re-arm it, which permanently stops receiving commands from the
+ * Pico W. Clear the error flags, drop the partial line and re-arm RX. */
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
+  if ((huart == NULL) || (huart != uart_cmd_huart)) {
+    return;
+  }
+
+  __HAL_UART_CLEAR_OREFLAG(huart);
+  uart_cmd_reset_line();
   (void)HAL_UART_Receive_IT(huart, &uart_cmd_rx_byte, 1U);
 }
