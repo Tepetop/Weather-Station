@@ -1,23 +1,24 @@
 /**
  * @file uart_cmd.c
  * @brief Line-based UART commands: CMD:MEASURE, CMD:MEASURE:N, CMD:PING
+ *
+ * Fully interrupt-driven: bytes are received via USART2 RX interrupt and a
+ * completed line is parsed and executed directly in the ISR. Queuing a
+ * measurement only sets the measurement_pending flag consumed by the radio
+ * state machine (WS_ProcessEventHandler), so no UART polling is needed.
  */
 
 #include "uart_cmd.h"
 
-#include <stdio.h>
 #include <string.h>
 
 #define UART_CMD_LINE_MAX 40U
 
 static UART_HandleTypeDef *uart_cmd_huart;
+static WS_Manager_t *uart_cmd_ws;
 static char uart_cmd_line[UART_CMD_LINE_MAX];
-static char uart_cmd_pending_line[UART_CMD_LINE_MAX];
 static uint8_t uart_cmd_line_len;
 static uint8_t uart_cmd_rx_byte;
-static volatile uint8_t uart_cmd_line_ready;
-static volatile uint8_t uart_cmd_measure_pending;
-static volatile uint8_t uart_cmd_target_node;
 
 static void uart_cmd_reply(const char *msg) {
   if ((uart_cmd_huart == NULL) || (msg == NULL)) {
@@ -31,70 +32,92 @@ static void uart_cmd_reset_line(void) {
   uart_cmd_line[0] = '\0';
 }
 
-static void uart_cmd_handle_line(const char *line) {
-  if (line == NULL) {
+/**
+ * @brief Queue a measurement for the active (or given) node.
+ * @param target Node index or UART_CMD_TARGET_ACTIVE
+ *
+ * Safe to call from ISR context: WS_RequestMeasurementForActiveNode only
+ * sets measurement_pending and resets app_state to IDLE. WS_APP_DATA_READY
+ * is a terminal state after a finished measurement, so it also counts as
+ * ready for a new request.
+ */
+static void uart_cmd_request_measure(uint8_t target) {
+  WS_Manager_t *ws = uart_cmd_ws;
+
+  if (ws == NULL) {
+    uart_cmd_reply("ERR:BUSY\n");
     return;
   }
 
+  if ((ws->comm_watchdog_tripped != 0U) ||
+      ((ws->app_state != WS_APP_IDLE) && (ws->app_state != WS_APP_DATA_READY))) {
+    uart_cmd_reply("ERR:BUSY\n");
+    return;
+  }
+
+  if (target != UART_CMD_TARGET_ACTIVE) {
+    if (target >= ws->node_count) {
+      uart_cmd_reply("ERR:UNKNOWN\n");
+      return;
+    }
+    ws->active_node = target;
+  }
+
+  WS_NodeState_t *node = WS_GetActiveNode(ws);
+  if ((node == NULL) || (node->state != WS_NODE_IDLE) || (node->measurement_pending != 0U)) {
+    uart_cmd_reply("ERR:BUSY\n");
+    return;
+  }
+
+  WS_RequestMeasurementForActiveNode(ws);
+  uart_cmd_reply("ACK:MEASURE:QUEUED\n");
+}
+
+static void uart_cmd_handle_line(const char *line) {
   if (strcmp(line, "CMD:PING") == 0) {
     uart_cmd_reply("ACK:PING\n");
     return;
   }
 
   if (strcmp(line, "CMD:MEASURE") == 0) {
-    if (uart_cmd_measure_pending != 0U) {
-      uart_cmd_reply("ERR:BUSY\n");
-      return;
-    }
-    uart_cmd_target_node = UART_CMD_TARGET_ACTIVE;
-    uart_cmd_measure_pending = 1U;
-    uart_cmd_reply("ACK:MEASURE:QUEUED\n");
+    uart_cmd_request_measure(UART_CMD_TARGET_ACTIVE);
     return;
   }
 
   if (strncmp(line, "CMD:MEASURE:", 12) == 0) {
-    if (uart_cmd_measure_pending != 0U) {
-      uart_cmd_reply("ERR:BUSY\n");
-      return;
-    }
+    const char *p = line + 12;
     unsigned int node = 0U;
-    if (sscanf(line + 12, "%u", &node) != 1) {
+
+    if (*p == '\0') {
       uart_cmd_reply("ERR:UNKNOWN\n");
       return;
+    }
+    while (*p != '\0') {
+      if ((*p < '0') || (*p > '9') || (node > WS_MAX_NODES)) {
+        uart_cmd_reply("ERR:UNKNOWN\n");
+        return;
+      }
+      node = (node * 10U) + (unsigned int)(*p - '0');
+      p++;
     }
     if (node >= WS_MAX_NODES) {
       uart_cmd_reply("ERR:UNKNOWN\n");
       return;
     }
-    uart_cmd_target_node = (uint8_t)node;
-    uart_cmd_measure_pending = 1U;
-    uart_cmd_reply("ACK:MEASURE:QUEUED\n");
+    uart_cmd_request_measure((uint8_t)node);
     return;
   }
 
   uart_cmd_reply("ERR:UNKNOWN\n");
 }
 
-static void uart_cmd_queue_line(void) {
-  if (uart_cmd_line_len == 0U) {
-    return;
-  }
-
-  if (uart_cmd_line_ready != 0U) {
-    uart_cmd_reset_line();
-    return;
-  }
-
-  uart_cmd_line[uart_cmd_line_len] = '\0';
-  (void)strncpy(uart_cmd_pending_line, uart_cmd_line, UART_CMD_LINE_MAX - 1U);
-  uart_cmd_pending_line[UART_CMD_LINE_MAX - 1U] = '\0';
-  uart_cmd_line_ready = 1U;
-  uart_cmd_reset_line();
-}
-
 static void uart_cmd_on_byte(uint8_t byte) {
   if ((byte == '\r') || (byte == '\n')) {
-    uart_cmd_queue_line();
+    if (uart_cmd_line_len > 0U) {
+      uart_cmd_line[uart_cmd_line_len] = '\0';
+      uart_cmd_handle_line(uart_cmd_line);
+    }
+    uart_cmd_reset_line();
     return;
   }
 
@@ -106,64 +129,14 @@ static void uart_cmd_on_byte(uint8_t byte) {
   uart_cmd_line[uart_cmd_line_len++] = (char)byte;
 }
 
-static void uart_cmd_process_ready_line(void) {
-  char line_copy[UART_CMD_LINE_MAX];
-  uint8_t ready = 0U;
-
-  if (uart_cmd_line_ready == 0U) {
-    return;
-  }
-
-  uint32_t primask = __get_PRIMASK();
-  __disable_irq();
-  if (uart_cmd_line_ready != 0U) {
-    (void)strncpy(line_copy, uart_cmd_pending_line, UART_CMD_LINE_MAX - 1U);
-    line_copy[UART_CMD_LINE_MAX - 1U] = '\0';
-    uart_cmd_line_ready = 0U;
-    ready = 1U;
-  }
-  __set_PRIMASK(primask);
-
-  if (ready != 0U) {
-    uart_cmd_handle_line(line_copy);
-  }
-}
-
-void UartCmd_Init(UART_HandleTypeDef *huart) {
+void UartCmd_Init(UART_HandleTypeDef *huart, WS_Manager_t *ws) {
   uart_cmd_huart = huart;
+  uart_cmd_ws = ws;
   uart_cmd_reset_line();
-  uart_cmd_pending_line[0] = '\0';
-  uart_cmd_line_ready = 0U;
-  uart_cmd_measure_pending = 0U;
-  uart_cmd_target_node = UART_CMD_TARGET_ACTIVE;
 
   if (huart != NULL) {
     (void)HAL_UART_Receive_IT(huart, &uart_cmd_rx_byte, 1U);
   }
-}
-
-void UartCmd_Process(WS_Manager_t *ws) {
-  uart_cmd_process_ready_line();
-
-  if ((ws == NULL) || (uart_cmd_measure_pending == 0U)) {
-    return;
-  }
-
-  WS_NodeState_t *node = WS_GetActiveNode(ws);
-  if ((node == NULL) || (node->state != WS_NODE_IDLE) || (ws->app_state != WS_APP_IDLE)) {
-    return;
-  }
-
-  if (uart_cmd_target_node != UART_CMD_TARGET_ACTIVE) {
-    if (uart_cmd_target_node >= ws->node_count) {
-      uart_cmd_measure_pending = 0U;
-      return;
-    }
-    ws->active_node = uart_cmd_target_node;
-  }
-
-  uart_cmd_measure_pending = 0U;
-  WS_RequestMeasurementForActiveNode(ws);
 }
 
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {

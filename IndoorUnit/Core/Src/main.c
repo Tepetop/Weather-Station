@@ -233,7 +233,7 @@ int main(void)
   /* Initialize debug logging system */
   Debug_Init();
 
-  UartCmd_Init(&huart2);
+  UartCmd_Init(&huart2, &wsCtx);
 
   /* Force initial measurement display render (show time + placeholders) */
   WS_UI.chart_data_dirty = 1U;
@@ -259,8 +259,6 @@ int main(void)
 
     /*  Process with NRF24  */
     WS_ProcessEventHandler(&wsCtx, &wsRuntime, now_tick);
-
-    UartCmd_Process(&wsCtx);
 
     /*    Process with RTC event     */
     DS3231_EventHandler(&rtc, &rtcNow, RTC_alarm1, RTC_alarm2);
