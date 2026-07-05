@@ -278,8 +278,9 @@ int main(void)
     }
 
     /* Debug heartbeat - logs every minute to detect program hangs */
-    Debug_Heartbeat();
-
+    #ifdef DEBUG_LOG_HEARTBEAT
+        Debug_Heartbeat();
+    #endif
   }
   /* USER CODE END 3 */
 }
@@ -368,13 +369,17 @@ static void NRF_DelayUs(uint32_t us) {
 /* RTC alarm function assign to callback */
 void RTC_alarm1(void){
   WS_UI.chart_data_dirty = 1U;
-  //Debug_LogRtcAlarm1();
+#ifdef DEBUG_LOG_RTC1_EVENTS
+  Debug_LogRtcAlarm1();
+#endif
 }
 
 /* RTC alarm function assign to callback */
 void RTC_alarm2(void){
   WS_RequestMeasurementForActiveNode(&wsCtx);
+#ifdef DEBUG_LOG_RTC2_EVENTS
   Debug_LogRtcAlarm2();
+#endif
 }
 
 /*      Encoder button function to assign to callback     */

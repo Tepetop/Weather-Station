@@ -28,7 +28,8 @@
  * @details Comment out specific categories to reduce log verbosity
  */
 #ifdef DEBUG_LOG_ENABLE
-  #define DEBUG_LOG_RTC_EVENTS      /* RTC alarm triggers */
+  #define DEBUG_LOG_RTC1_EVENTS      /* RTC alarm 1triggers */
+  #define DEBUG_LOG_RTC2_EVENTS      /* RTC alarm 2 triggers */
   #define DEBUG_LOG_NRF_EVENTS      /* NRF TX/RX events */
   #define DEBUG_LOG_MENU_EVENTS     /* Menu navigation events */
   #define DEBUG_LOG_HEARTBEAT       /* Periodic main loop heartbeat */
