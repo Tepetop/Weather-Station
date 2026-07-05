@@ -28,7 +28,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "outdoor_station.h"
-
+#include "debug_log.h"
 
 /* USER CODE END Includes */
 
@@ -108,6 +108,8 @@ int main(void)
   MX_IWDG_Init();
   /* USER CODE BEGIN 2 */
 
+  Debug_Init();
+
   if (OutdoorStation_Init() != HAL_OK)
   {
     Error_Handler_WithName("OutdoorStation_Init");
@@ -125,7 +127,10 @@ int main(void)
 
     OutdoorStation_Process();
     HAL_IWDG_Refresh(&hiwdg);
-    
+
+#ifdef DEBUG_LOG_HEARTBEAT
+    Debug_Heartbeat();
+#endif
 
   }
   /* USER CODE END 3 */
