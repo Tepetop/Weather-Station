@@ -15,6 +15,7 @@
 #include "TSL2561.h"
 #include "stm32_hal_legacy.h"
 #include "stm32f1xx_hal_def.h"
+#include "ws_protocol.h"
 
 /* ============================================================================
  * Configuration
@@ -156,14 +157,22 @@ void Measurement_SleepSensors(Measurement_Context_t *ctx);
 void Measurement_WakeupSensors(Measurement_Context_t *ctx);
 
 /**
- * @brief   Formats the latest measurement data into CSV format
- * @param   ctx     Pointer to measurement context structure
- * @param   buffer  Pointer to buffer where CSV string will be stored
- * @param   len     Maximum length of the buffer
- * @retval  None
- * @note    Output format: "temp1,hum,temp2,press,lux"
+ * @brief   Builds tagged readings from the latest measurement context data
+ * @param   ctx   Pointer to measurement context structure
+ * @param   out   Output readings structure
+ * @retval  true  At least one reading encoded
+ * @retval  false Invalid parameters or no channels available
  */
-void Measurement_GetCSV(const Measurement_Context_t *ctx, char *buffer, uint16_t len);
+bool Measurement_BuildReadings(const Measurement_Context_t *ctx, WS_Readings_t *out);
+
+/**
+ * @brief   Encodes measurement data into nRF24 wire buffer
+ * @param   ctx       Pointer to measurement context structure
+ * @param   buf       Destination buffer
+ * @param   buf_size  Buffer capacity
+ * @retval  Encoded length in bytes, 0 on failure
+ */
+uint8_t Measurement_EncodePayload(const Measurement_Context_t *ctx, uint8_t *buf, uint8_t buf_size);
 
 /**
  * @brief   Gets the latest measurement data directly

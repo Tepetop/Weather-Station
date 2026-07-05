@@ -11,12 +11,15 @@
 #include "iwdg.h"
 #include "spi.h"
 #include "usart.h"
+#include "ws_protocol.h"
+#include "debug_log.h"
 
 /* Measurement context for sensor data acquisition */
 static Measurement_Context_t measCtx;
 
 /* Data buffer for NRF transmission */
-Measurement_Data_t txData;
+uint8_t txPayload[WS_PROTOCOL_MAX_PAYLOAD];
+uint8_t txPayloadLen;
 
 /* Message buffer for UART transfer */
 char Message[128];
@@ -36,10 +39,10 @@ const uint8_t NRF_TX_ADDR[5] = {0xC2 + NODE_ID, 0xC2, 0xC2, 0xC2, 0xC2};
 /* NRF RX address (multiceiver - derived from NODE_ID) */
 const uint8_t NRF_RX_ADDR[5] = {0xE7 + NODE_ID, 0xE7, 0xE7, 0xE7, 0xE7};
 
-static void UartLog(char *msg);
 #if CHECK_I2C_DEVICES
 static HAL_StatusTypeDef I2C_CheckAddress(I2C_HandleTypeDef *i2c);
 #endif
+
 static void Outdoor_LedOn(void);
 static void Outdoor_LedOff(void);
 static void NRF_DelayUs(uint32_t us);
@@ -60,6 +63,11 @@ HAL_StatusTypeDef OutdoorStation_Init(void)
 #endif
 
   if (OutdoorStation_InitCommunication() != HAL_OK)
+  {
+    return HAL_ERROR;
+  }
+
+  if (!WS_Protocol_SelfCheck())
   {
     return HAL_ERROR;
   }
@@ -90,28 +98,19 @@ HAL_StatusTypeDef OutdoorStation_Init(void)
     Error_Handler_WithName("Failed to initialize sensors");
   }
 
-#if USE_UART_LOGGING
-/*      Some UART logging if enabled*/
-  if (measCtx.sensorErrorCode == ERROR_SENSORS_NONE)
+  Debug_LogSystemReady(measCtx.sensorErrorCode);
+  if (measCtx.sensorErrorCode & ERROR_TSL2561)
   {
-    UartLog("System initialized\r\n");
+    Debug_LogSensorError(ERROR_TSL2561, "TSL2561");
   }
-  else
+  if (measCtx.sensorErrorCode & ERROR_BMP280)
   {
-    if (measCtx.sensorErrorCode & ERROR_TSL2561)
-    {
-      UartLog("TSL2561 sensor failed\r\n");
-    }
-    if (measCtx.sensorErrorCode & ERROR_BMP280)
-    {
-      UartLog("BMP280 sensor failed\r\n");
-    }
-    if (measCtx.sensorErrorCode & ERROR_SI7021)
-    {
-      UartLog("SI7021 sensor failed\r\n");
-    }
+    Debug_LogSensorError(ERROR_BMP280, "BMP280");
   }
-#endif
+  if (measCtx.sensorErrorCode & ERROR_SI7021)
+  {
+    Debug_LogSensorError(ERROR_SI7021, "SI7021");
+  }
 
   /* Start in RX mode, waiting for commands */
   NRF24_FlushRX(&nrf);
@@ -150,9 +149,7 @@ void OutdoorStation_Process(void)
         Outdoor_LedOn();
 #endif
 
-#if USE_UART_LOGGING
-        UartLog("CMD: Measure request\r\n");
-#endif
+        Debug_LogMeasCmd();
 
         outLink.state = OUT_LINK_MEASURING;
       }
@@ -177,9 +174,7 @@ void OutdoorStation_Process(void)
         OutdoorStation_SendMeasurementData();
         outLink.state = OUT_LINK_TX_SENDING;
 
-#if USE_UART_LOGGING
-        UartLog("MEAS: Done, sending data\r\n");
-#endif
+        Debug_LogMeasDone();
 
         break;
       }
@@ -193,9 +188,7 @@ void OutdoorStation_Process(void)
           OutdoorStation_SendMeasurementData();
           outLink.state = OUT_LINK_TX_SENDING;
 
-#if USE_UART_LOGGING
-          UartLog("MEAS: No sensors available, sending error status\r\n");
-#endif
+          Debug_LogMeasNoSensors();
 
           break;
         }
@@ -205,14 +198,7 @@ void OutdoorStation_Process(void)
           outLink.meas_retry_count++;
           outLink.meas_started = 0;
           Measurement_Init(&measCtx, &hi2c2);
-
-#if USE_UART_LOGGING
-          {
-            char msg[40];
-            sprintf(msg, "MEAS: Retry %d/%d\r\n", outLink.meas_retry_count, OUTDOOR_MEAS_MAX_RETRIES);
-            UartLog(msg);
-          }
-#endif
+          Debug_LogMeasRetry(outLink.meas_retry_count, OUTDOOR_MEAS_MAX_RETRIES);
 
         }
         else
@@ -220,9 +206,7 @@ void OutdoorStation_Process(void)
           /* Max retries exhausted - send whatever data we have with error flags */
           OutdoorStation_SendMeasurementData();
           outLink.state = OUT_LINK_TX_SENDING;
-#if USE_UART_LOGGING
-          UartLog("MEAS: Max retries, sending partial\r\n");
-#endif
+          Debug_LogMeasMaxRetries();
         }
         break;
       }
@@ -233,9 +217,7 @@ void OutdoorStation_Process(void)
         OutdoorStation_SendMeasurementData();
         outLink.state = OUT_LINK_TX_SENDING;
 
-#if USE_UART_LOGGING
-        UartLog("MEAS: Timeout, sending partial\r\n");
-#endif
+        Debug_LogMeasTimeout();
 
       }
       break;
@@ -257,20 +239,14 @@ void OutdoorStation_Process(void)
         outLink.tx_done = 0;
         outLink.tx_in_progress = 0;
 
-#if USE_UART_LOGGING
-        UartLog(outLink.tx_ok ? "TX: OK\r\n" : "TX: FAIL (no ACK)\r\n");
-#endif
+        Debug_LogNrfTxResult(outLink.tx_ok);
 
 #if USE_LED_INDICATOR
         Outdoor_LedOff();
 #endif
 
 #if USE_TIMER_PROFILING
-        {
-          char timeBuf[50];
-          snprintf(timeBuf, sizeof(timeBuf), "Time elapsed: %lu ms\r\n", (HAL_GetTick() - outLink.tx_start_tick));
-          UartLog(timeBuf);
-        }
+        Debug_LogElapsedMs(HAL_GetTick() - outLink.tx_start_tick);
 #endif
 
         OutdoorStation_StartReceive();
@@ -282,16 +258,10 @@ void OutdoorStation_Process(void)
       if (outLink.tx_in_progress && (HAL_GetTick() - outLink.tx_start_tick) > NRF_TX_TIMEOUT_MS)
       {
 
-#if USE_UART_LOGGING
-        UartLog("TX: Timeout\r\n");
-#endif
+        Debug_LogNrfTimeout();
 
 #if USE_TIMER_PROFILING
-        {
-          char timeBuf[50];
-          snprintf(timeBuf, sizeof(timeBuf), "Time elapsed: %lu ms\r\n", (HAL_GetTick() - outLink.tx_start_tick));
-          UartLog(timeBuf);
-        }
+        Debug_LogElapsedMs(HAL_GetTick() - outLink.tx_start_tick);
 #endif
 
         outLink.state = OUT_LINK_RECOVERY;
@@ -317,9 +287,7 @@ void OutdoorStation_Process(void)
 
       OutdoorStation_StartReceive();
       outLink.state = OUT_LINK_IDLE;
-#if USE_UART_LOGGING
-      UartLog("Recovery complete\r\n");
-#endif
+      Debug_LogRecovery();
       break;
 
     default:
@@ -341,12 +309,6 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
  * Internal helpers
  * ============================================================================ */
 
-static void UartLog(char *msg)
-{
-  uint16_t len = (uint16_t)strlen(msg);
-  HAL_UART_Transmit(&huart1, (uint8_t *)msg, len, HAL_MAX_DELAY);
-}
-
 #if CHECK_I2C_DEVICES
 static HAL_StatusTypeDef I2C_CheckAddress(I2C_HandleTypeDef *i2c)
 {
@@ -354,8 +316,7 @@ static HAL_StatusTypeDef I2C_CheckAddress(I2C_HandleTypeDef *i2c)
   {
     if (HAL_OK == HAL_I2C_IsDeviceReady(i2c, addr << 1, 1, 100))
     {
-      sprintf(Message, "Found I2C device at address: 0x%02X\n\r", addr);
-      UartLog(Message);
+      Debug_LogI2cDevice(addr);
     }
   }
   return HAL_OK;
@@ -393,9 +354,7 @@ static HAL_StatusTypeDef OutdoorStation_InitCommunication(void)
                  NRF_CE_GPIO_Port, NRF_CE_Pin, NRF_IRQ_GPIO_Port, NRF_IRQ_Pin,
                  NRF_DelayUs) != HAL_OK)
   {
-#if USE_UART_LOGGING
-    UartLog("NRF24 Init FAILED!\r\n");
-#endif
+    Debug_LogNrfInit(0U);
     return HAL_ERROR;
   }
 
@@ -419,9 +378,8 @@ static HAL_StatusTypeDef OutdoorStation_InitCommunication(void)
   NRF24_EnablePipe(&nrf, 1, 1);
   NRF24_SetPayloadSize(&nrf, 0, NRF_PAYLOAD_SIZE);
   NRF24_SetPayloadSize(&nrf, 1, NRF_CMD_SIZE);
-#if USE_UART_LOGGING
-  UartLog("NRF24 Init OK - Listening for commands...\r\n");
-#endif
+  Debug_LogNrfInit(1U);
+  Debug_LogNrfListening();
   return HAL_OK;
 }
 
@@ -470,8 +428,17 @@ static void OutdoorStation_HandleIRQ(void)
 
 static void OutdoorStation_SendMeasurementData(void)
 {
-  /* Get measurement data including sensor status flags */
-  Measurement_GetData(&measCtx, &txData);
+  uint8_t wire[NRF_PAYLOAD_SIZE] = {0};
+
+  txPayloadLen = Measurement_EncodePayload(&measCtx, txPayload, sizeof(txPayload));
+  if (txPayloadLen == 0U)
+  {
+    /* ponytail: header-only frame still carries sensor_status */
+    WS_Readings_t readings = {.sensor_status = measCtx.data.sensorStatus, .count = 0U};
+    (void)WS_Protocol_Encode(&readings, txPayload, sizeof(txPayload), &txPayloadLen);
+  }
+
+  memcpy(wire, txPayload, txPayloadLen);
 
   /* Prepare TX state */
   outLink.irq_flag = 0;
@@ -484,7 +451,7 @@ static void OutdoorStation_SendMeasurementData(void)
   NRF24_SetMode(&nrf, NRF24_MODE_STANDBY);
   NRF24_FlushTX(&nrf);
   NRF24_ClearIRQ(&nrf, NRF24_STATUS_IRQ_MASK);
-  NRF24_WritePayload(&nrf, (uint8_t *)&txData, sizeof(Measurement_Data_t));
+  NRF24_WritePayload(&nrf, wire, NRF_PAYLOAD_SIZE);
   NRF24_SetMode(&nrf, NRF24_MODE_TX);
 }
 

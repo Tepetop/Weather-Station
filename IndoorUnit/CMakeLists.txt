@@ -45,6 +45,7 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
+    Core/Src/ws_protocol.c
     Core/Src/PCD_LCD/PCD8544.c
     Core/Src/PCD_LCD/PCD8544_Menu.c
     Core/Src/PCD_LCD/PCD8544_fonts.c
@@ -56,6 +57,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/weather_station.c
     Core/Src/weather_station_ui.c
     Core/Src/debug_log.c
+    Core/Src/uart_cmd.c
 )
 
 # Add include paths
