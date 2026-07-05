@@ -257,6 +257,9 @@ int main(void)
 
     uint32_t now_tick = HAL_GetTick();
 
+    /* Flush buffered UART reply first so ACK reaches Pico before NRF logs. */
+    UartCmd_FlushReply();
+
     /*  Process with NRF24  */
     WS_ProcessEventHandler(&wsCtx, &wsRuntime, now_tick);
 
@@ -276,9 +279,6 @@ int main(void)
       HAL_WWDG_Refresh(&hwwdg);
       wwdg_last_refresh_tick = wwdg_now_tick;
     }
-
-    /* Send buffered UART command reply (ACK/ERR queued inside RX ISR). */
-    UartCmd_FlushReply();
 
     /* Debug heartbeat - logs every minute to detect program hangs */
     #ifdef DEBUG_LOG_HEARTBEAT

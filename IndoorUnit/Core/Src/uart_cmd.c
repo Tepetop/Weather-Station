@@ -31,10 +31,13 @@ static void uart_cmd_reply(const char *msg) {
     return;
   }
   uint8_t i = 0U;
-  while ((msg[i] != '\0') && (i < (UART_CMD_REPLY_MAX - 1U))) {
+  while ((msg[i] != '\0') && (msg[i] != '\r') && (msg[i] != '\n') &&
+         (i < (UART_CMD_REPLY_MAX - 3U))) {
     uart_cmd_pending_reply[i] = msg[i];
     i++;
   }
+  uart_cmd_pending_reply[i++] = '\r';
+  uart_cmd_pending_reply[i++] = '\n';
   uart_cmd_pending_reply[i] = '\0';
   uart_cmd_reply_pending = 1U;
 }
@@ -57,19 +60,19 @@ static void uart_cmd_request_measure(uint8_t target) {
   WS_Manager_t *ws = uart_cmd_ws;
 
   if (ws == NULL) {
-    uart_cmd_reply("ERR:BUSY\n");
+    uart_cmd_reply("ERR:BUSY");
     return;
   }
 
   if ((ws->comm_watchdog_tripped != 0U) ||
       ((ws->app_state != WS_APP_IDLE) && (ws->app_state != WS_APP_DATA_READY))) {
-    uart_cmd_reply("ERR:BUSY\n");
+    uart_cmd_reply("ERR:BUSY");
     return;
   }
 
   if (target != UART_CMD_TARGET_ACTIVE) {
     if (target >= ws->node_count) {
-      uart_cmd_reply("ERR:UNKNOWN\n");
+      uart_cmd_reply("ERR:UNKNOWN");
       return;
     }
     ws->active_node = target;
@@ -77,17 +80,17 @@ static void uart_cmd_request_measure(uint8_t target) {
 
   WS_NodeState_t *node = WS_GetActiveNode(ws);
   if ((node == NULL) || (node->state != WS_NODE_IDLE) || (node->measurement_pending != 0U)) {
-    uart_cmd_reply("ERR:BUSY\n");
+    uart_cmd_reply("ERR:BUSY");
     return;
   }
 
   WS_RequestMeasurementForActiveNode(ws);
-  uart_cmd_reply("ACK:MEASURE:QUEUED\n");
+  uart_cmd_reply("ACK:MEASURE:QUEUED");
 }
 
 static void uart_cmd_handle_line(const char *line) {
   if (strcmp(line, "CMD:PING") == 0) {
-    uart_cmd_reply("ACK:PING\n");
+    uart_cmd_reply("ACK:PING");
     return;
   }
 
@@ -101,26 +104,26 @@ static void uart_cmd_handle_line(const char *line) {
     unsigned int node = 0U;
 
     if (*p == '\0') {
-      uart_cmd_reply("ERR:UNKNOWN\n");
+      uart_cmd_reply("ERR:UNKNOWN");
       return;
     }
     while (*p != '\0') {
       if ((*p < '0') || (*p > '9') || (node > WS_MAX_NODES)) {
-        uart_cmd_reply("ERR:UNKNOWN\n");
+        uart_cmd_reply("ERR:UNKNOWN");
         return;
       }
       node = (node * 10U) + (unsigned int)(*p - '0');
       p++;
     }
     if (node >= WS_MAX_NODES) {
-      uart_cmd_reply("ERR:UNKNOWN\n");
+      uart_cmd_reply("ERR:UNKNOWN");
       return;
     }
     uart_cmd_request_measure((uint8_t)node);
     return;
   }
 
-  uart_cmd_reply("ERR:UNKNOWN\n");
+  uart_cmd_reply("ERR:UNKNOWN");
 }
 
 static void uart_cmd_on_byte(uint8_t byte) {

@@ -253,7 +253,7 @@ static void ws_send_measurement_uart(const WS_Manager_t *ctx, const WS_RuntimeCo
   }
 
   if (line_len > 0) {
-  line_len += snprintf(line + line_len, sizeof(line) - (size_t)line_len, ",%s\n", status_text);
+    line_len += snprintf(line + line_len, sizeof(line) - (size_t)line_len, ",%s\r\n", status_text);
   }
 
   if ((line_len <= 0) || ((size_t)line_len >= sizeof(line))) {
