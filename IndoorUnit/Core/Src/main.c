@@ -277,6 +277,9 @@ int main(void)
       wwdg_last_refresh_tick = wwdg_now_tick;
     }
 
+    /* Send buffered UART command reply (ACK/ERR queued inside RX ISR). */
+    UartCmd_FlushReply();
+
     /* Debug heartbeat - logs every minute to detect program hangs */
     #ifdef DEBUG_LOG_HEARTBEAT
         Debug_Heartbeat();

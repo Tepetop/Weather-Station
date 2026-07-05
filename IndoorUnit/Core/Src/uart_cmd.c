@@ -12,7 +12,8 @@
 
 #include <string.h>
 
-#define UART_CMD_LINE_MAX 40U
+#define UART_CMD_LINE_MAX  40U
+#define UART_CMD_REPLY_MAX 32U
 
 static UART_HandleTypeDef *uart_cmd_huart;
 static WS_Manager_t *uart_cmd_ws;
@@ -20,11 +21,22 @@ static char uart_cmd_line[UART_CMD_LINE_MAX];
 static uint8_t uart_cmd_line_len;
 static uint8_t uart_cmd_rx_byte;
 
+/* Pending reply written in ISR, sent from main loop by UartCmd_FlushReply(). */
+static volatile char    uart_cmd_pending_reply[UART_CMD_REPLY_MAX];
+static volatile uint8_t uart_cmd_reply_pending;
+
+/* Called from ISR: store response in buffer, do NOT call HAL_UART_Transmit. */
 static void uart_cmd_reply(const char *msg) {
-  if ((uart_cmd_huart == NULL) || (msg == NULL)) {
+  if (msg == NULL) {
     return;
   }
-  (void)HAL_UART_Transmit(uart_cmd_huart, (uint8_t *)msg, (uint16_t)strlen(msg), 100U);
+  uint8_t i = 0U;
+  while ((msg[i] != '\0') && (i < (UART_CMD_REPLY_MAX - 1U))) {
+    uart_cmd_pending_reply[i] = msg[i];
+    i++;
+  }
+  uart_cmd_pending_reply[i] = '\0';
+  uart_cmd_reply_pending = 1U;
 }
 
 static void uart_cmd_reset_line(void) {
@@ -146,6 +158,26 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
 
   uart_cmd_on_byte(uart_cmd_rx_byte);
   (void)HAL_UART_Receive_IT(huart, &uart_cmd_rx_byte, 1U);
+}
+
+/**
+ * @brief Send pending UART reply from main-loop context.
+ *
+ * Call once per main-loop iteration. Transmits the ACK/ERR response that was
+ * buffered inside the RX ISR, avoiding a blocking HAL_UART_Transmit call from
+ * interrupt context on the shared huart2 line.
+ */
+void UartCmd_FlushReply(void) {
+  if (uart_cmd_reply_pending == 0U) {
+    return;
+  }
+  uart_cmd_reply_pending = 0U;
+  if (uart_cmd_huart != NULL) {
+    (void)HAL_UART_Transmit(uart_cmd_huart,
+                            (uint8_t *)uart_cmd_pending_reply,
+                            (uint16_t)strlen((const char *)uart_cmd_pending_reply),
+                            100U);
+  }
 }
 
 /* On any RX error (overrun/framing/noise) the HAL aborts interrupt reception

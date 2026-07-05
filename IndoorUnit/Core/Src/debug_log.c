@@ -131,18 +131,17 @@ void Debug_LogHex(const char *msg, uint32_t value) {
   }
 }
 
-#ifdef DEBUG_LOG_RTC_EVENTS
 void Debug_LogRtcAlarm1(void) {
+#ifdef DEBUG_LOG_RTC1_EVENTS
   Debug_Log("LOG:RTC:ALM1 (screen update)");
+#endif
 }
 
 void Debug_LogRtcAlarm2(void) {
+#ifdef DEBUG_LOG_RTC2_EVENTS
   Debug_Log("LOG:RTC:ALM2 (measurement trigger)");
-}
-#else
-void Debug_LogRtcAlarm1(void) {}
-void Debug_LogRtcAlarm2(void) {}
 #endif
+}
 
 #ifdef DEBUG_LOG_NRF_EVENTS
 void Debug_LogNrfTxStart(uint8_t node_idx) {

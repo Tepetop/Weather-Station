@@ -14,5 +14,6 @@
 #define UART_CMD_TARGET_ACTIVE 0xFFU
 
 void UartCmd_Init(UART_HandleTypeDef *huart, WS_Manager_t *ws);
+void UartCmd_FlushReply(void);
 
 #endif /* UART_CMD_H */
