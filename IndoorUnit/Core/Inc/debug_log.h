@@ -32,7 +32,7 @@
   #define DEBUG_LOG_NRF_EVENTS      /* NRF TX/RX events */
   #define DEBUG_LOG_MENU_EVENTS     /* Menu navigation events */
   #define DEBUG_LOG_HEARTBEAT       /* Periodic main loop heartbeat */
-  //#define DEBUG_LOG_VIEW_EVENTS   /* View state machine transitions (verbose) */
+  #define DEBUG_LOG_VIEW_EVENTS   /* View state machine transitions (verbose) */
 #endif
 
 /**
