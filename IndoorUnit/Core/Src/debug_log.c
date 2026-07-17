@@ -14,7 +14,7 @@
 
 /* External RTC time reference */
 extern DS3231_DateTime rtcNow;
-extern UART_HandleTypeDef huart2;
+extern UART_HandleTypeDef huart1;
 
 /* ============================================================================
  * PRIVATE VARIABLES
@@ -32,7 +32,7 @@ static uint32_t heartbeat_count = 0;
  * @brief Send buffer contents via UART (blocking)
  */
 static void debug_send(const char *str, uint16_t len) {
-  HAL_UART_Transmit(&huart2, (uint8_t *)str, len, 100);
+  HAL_UART_Transmit(&huart1, (uint8_t *)str, len, 100);
 }
 
 /**

@@ -2,7 +2,7 @@
  * @file uart_cmd.c
  * @brief Line-based UART commands: CMD:MEASURE, CMD:MEASURE:N, CMD:PING
  *
- * Fully interrupt-driven: bytes are received via USART2 RX interrupt and a
+ * Fully interrupt-driven: bytes are received via USART1 RX interrupt and a
  * completed line is parsed and executed directly in the ISR. Queuing a
  * measurement only sets the measurement_pending flag consumed by the radio
  * state machine (WS_ProcessEventHandler), so no UART polling is needed.
@@ -168,7 +168,7 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
  *
  * Call once per main-loop iteration. Transmits the ACK/ERR response that was
  * buffered inside the RX ISR, avoiding a blocking HAL_UART_Transmit call from
- * interrupt context on the shared huart2 line.
+ * interrupt context on the shared huart1 line.
  */
 void UartCmd_FlushReply(void) {
   if (uart_cmd_reply_pending == 0U) {
