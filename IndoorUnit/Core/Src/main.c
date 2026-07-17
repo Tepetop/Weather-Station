@@ -120,7 +120,7 @@ int main(void)
   MX_I2C2_Init();
   MX_TIM1_Init();
   MX_SPI2_Init();
-  MX_USART2_UART_Init();
+  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
   bool rtcManualSetRequested = RTC_IsManualSetRequestedAtBoot();
 
@@ -189,7 +189,7 @@ int main(void)
    * --------------------------------------------------------------- */
 
   /* 1. Initialize nRF24L01 driver handle. */
-  if (NRF24_Init(&nrf, &hspi2,SPI2_CS_GPIO_Port, SPI2_CS_Pin, SPI2_CE_GPIO_Port, SPI2_CE_Pin, SPI2_IRQ_GPIO_Port, SPI2_IRQ_Pin, NRF_DelayUs) != HAL_OK) 
+  if (NRF24_Init(&nrf, &hspi2, NRF_CS_GPIO_Port, NRF_CS_Pin, NRF_CE_GPIO_Port, NRF_CE_Pin, NRF_IRQ_GPIO_Port, NRF_IRQ_Pin, NRF_DelayUs) != HAL_OK) 
   {
     PCD8544_SetFont(&LCD, &Font_6x8);
     PCD8544_SetCursor(&LCD, 0, 0);
@@ -216,7 +216,7 @@ int main(void)
   wsRuntime.tx_irq_timeout_ms = NRF_TX_IRQ_TIMEOUT_MS;
   wsRuntime.rx_timeout_ms = NRF_RX_TIMEOUT_MS;
   wsRuntime.comm_watchdog_timeout_ms = NRF_COMM_WATCHDOG_TIMEOUT_MS;
-  wsRuntime.huart_pico = &huart2;
+  wsRuntime.huart_pico = &huart1;
 
   /*  If NRF24L01 initialization fails, display error on LCD , go to error handler*/
   if (WS_InitRadioAndStart(&wsCtx, &wsRuntime) != HAL_OK) {
@@ -233,7 +233,7 @@ int main(void)
   /* Initialize debug logging system */
   Debug_Init();
 
-  UartCmd_Init(&huart2, &wsCtx);
+  UartCmd_Init(&huart1, &wsCtx);
 
   /* Force initial measurement display render (show time + placeholders) */
   WS_UI.chart_data_dirty = 1U;
@@ -348,7 +348,7 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
   DS3231_IRQHandler(&rtc, GPIO_Pin);
 
   /* NRF24L01 IRQ pin (active low) */
-  if (GPIO_Pin == SPI2_IRQ_Pin)
+  if (GPIO_Pin == NRF_IRQ_Pin)
   {
     WS_SetIrqFlag(&wsCtx);
   }
