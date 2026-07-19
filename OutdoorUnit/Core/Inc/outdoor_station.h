@@ -9,10 +9,21 @@
 #define OUTDOO_RSTATION_H
 
 #include "main.h"
+#include "measurement.h"
 
 /* ============================================================================
  * Public API Functions
  * ============================================================================ */
+
+/**
+ * @brief   Runs one blocking measurement cycle using the station context
+ * @param   data        Filled with latest readings on success (may be NULL)
+ * @param   timeout_ms  Maximum wait time for the cycle
+ * @retval  HAL_OK      Cycle finished in MEAS_SLEEP
+ * @retval  HAL_ERROR   Invalid state, start failure, timeout, or MEAS_ERROR
+ */
+HAL_StatusTypeDef OutdoorStation_RunMeasurementCycle(Measurement_Data_t *data,
+                                                     uint32_t timeout_ms);
 
 /**
  * @brief   Initializes outdoor unit hardware and sensors

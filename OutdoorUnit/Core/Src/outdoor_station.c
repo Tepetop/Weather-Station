@@ -70,6 +70,46 @@ static void OutdoorStation_InitLink(void);
  * Public API
  * ============================================================================ */
 
+
+HAL_StatusTypeDef OutdoorStation_RunMeasurementCycle(Measurement_Data_t *data,
+                                                     uint32_t timeout_ms)
+{
+  uint32_t start_tick = HAL_GetTick();
+
+  if (measCtx.state != MEAS_IDLE && measCtx.state != MEAS_SLEEP)
+  {
+    return HAL_ERROR;
+  }
+
+  if (Measurement_Start(&measCtx) != HAL_OK)
+  {
+    return HAL_ERROR;
+  }
+
+  while (measCtx.state != MEAS_SLEEP && measCtx.state != MEAS_ERROR)
+  {
+    Measurement_Process(&measCtx);
+    HAL_IWDG_Refresh(&hiwdg);
+
+    if ((HAL_GetTick() - start_tick) > timeout_ms)
+    {
+      return HAL_ERROR;
+    }
+  }
+
+  if (measCtx.state != MEAS_SLEEP)
+  {
+    return HAL_ERROR;
+  }
+
+  if (data != NULL)
+  {
+    Measurement_GetData(&measCtx, data);
+  }
+
+  return HAL_OK;
+}
+
 /**
  * @brief   Initializes outdoor unit hardware and sensors
  * @retval  HAL_OK     Initialization successful
@@ -153,12 +193,12 @@ HAL_StatusTypeDef OutdoorStation_Init(void)
  */
 void OutdoorStation_Process(void)
 {
-  OutdoorStation_TryReinitNrf();
+  // OutdoorStation_TryReinitNrf();
 
-  if (!nrf_available)
-  {
-    return;
-  }
+  // if (!nrf_available)
+  // {
+  //   return;
+  // }
 
   /* ---- Always handle pending IRQ first ---- */
   if (outLink.irq_flag)

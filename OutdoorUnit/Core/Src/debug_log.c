@@ -206,7 +206,7 @@ void Debug_LogSystemReady(uint8_t sensor_error_code) {
   if (sensor_error_code == 0U) {
     Debug_Log("LOG:INIT:SYSTEM_OK");
   } else {
-    Debug_LogHex("LOG:INIT:SENSOR_ERRORS=0x", sensor_error_code);
+    Debug_LogHex(" ", sensor_error_code);
   }
 }
 

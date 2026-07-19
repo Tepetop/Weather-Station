@@ -131,6 +131,10 @@ uint8_t WS_ChannelSensorError(uint8_t channel_id) {
     case WS_CH_BMP280_TEMP:
     case WS_CH_BMP280_PRESS:
       return (uint8_t)WS_SENSOR_ERR_BMP280;
+    case WS_CH_BME280_TEMP:
+    case WS_CH_BME280_PRESS:
+    case WS_CH_BME280_HUM:
+      return (uint8_t)WS_SENSOR_ERR_BME280;
     case WS_CH_TSL2561_LUX:
       return (uint8_t)WS_SENSOR_ERR_TSL2561;
     default:

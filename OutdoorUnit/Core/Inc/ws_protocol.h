@@ -5,8 +5,11 @@
  * nRF24 binary frame (max 32 B):
  *   [version][sensor_status][count][channel_id+float] * count
  *
- * UART line to Pico (example):
- *   DATA:2026-05-09T11:06:01,S0,01:23.45,02:65.20,04:1013.25,OK\n
+ * UART line to Pico (example, BMP280 station):
+ *   DATA:2026-05-09T11:06:01,S0,01:23.45,02:65.20,03:18.10,04:1013.25,05:120.0,OK\n
+ *
+ * Channel registry uses distinct IDs for BMP280 (0x03–0x04) and BME280 (0x06–0x08).
+ * sensor_status bits align with measurement.h Sensor_Error_t (Si7021, BMP280, TSL2561, BME280).
  */
 
 #ifndef WS_PROTOCOL_H
@@ -24,32 +27,35 @@
 #define WS_PROTOCOL_HEADER_SIZE  3U
 /** @brief Size of one reading record: channel_id (1 B) + float (4 B) */
 #define WS_PROTOCOL_RECORD_SIZE  5U
-/** @brief Maximum number of readings per frame */
+/**
+ * @brief Maximum number of readings per frame
+ * @note 32 B payload allows at most 5 records: 3 + 5 * 5 = 28 B
+ */
 #define WS_MAX_READINGS          5U
 
 /**
  * @brief Channel IDs: sensor type + physical quantity (fixed registry)
  */
 typedef enum {
-  WS_CH_SI7021_TEMP  = 0x01U,  /**< Si7021 temperature (°C) */
-  WS_CH_SI7021_HUM   = 0x02U,  /**< Si7021 relative humidity (%) */
-  WS_CH_BMP280_TEMP  = 0x03U,  /**< BMP280 temperature (°C) */
-  WS_CH_BMP280_PRESS = 0x04U,  /**< BMP280 pressure (hPa) */
-  WS_CH_TSL2561_LUX  = 0x05U,  /**< TSL2561 illuminance (lux) */
-  WS_CH_BME280_TEMP  = 0x06U,  /**< BME280 temperature (°C) */
-  WS_CH_BME280_PRESS = 0x07U,  /**< BME280 pressure (hPa) */
-  WS_CH_BME280_HUM   = 0x08U,  /**< BME280 relative humidity (%) */
+  WS_CH_SI7021_TEMP   = 0x01U,  /**< Si7021 temperature (°C) */
+  WS_CH_SI7021_HUM    = 0x02U,  /**< Si7021 relative humidity (%) */
+  WS_CH_BMP280_TEMP   = 0x03U,  /**< BMP280 temperature (°C) */
+  WS_CH_BMP280_PRESS  = 0x04U,  /**< BMP280 pressure (hPa) */
+  WS_CH_TSL2561_LUX   = 0x05U,  /**< TSL2561 illuminance (lux) */
+  WS_CH_BME280_TEMP   = 0x06U,  /**< BME280 temperature (°C) */
+  WS_CH_BME280_PRESS  = 0x07U,  /**< BME280 pressure (hPa) */
+  WS_CH_BME280_HUM    = 0x08U,  /**< BME280 relative humidity (%) */
 } WS_ChannelId_t;
 
 /**
- * @brief Sensor error flags (bitwise, matches legacy ERROR_SI7021 etc.)
+ * @brief Sensor error flags (bitwise, matches measurement.h Sensor_Error_t)
  */
 typedef enum {
-  WS_SENSOR_ERR_NONE    = 0U,           /**< No sensor errors */
-  WS_SENSOR_ERR_SI7021  = (1U << 0),    /**< Si7021 error */
-  WS_SENSOR_ERR_BMP280  = (1U << 1),    /**< BMP280 error */
-  WS_SENSOR_ERR_TSL2561 = (1U << 2),    /**< TSL2561 error */
-  WS_SENSOR_ERR_BME280  = (1U << 3),    /**< BME280 error */
+  WS_SENSOR_ERR_NONE     = 0U,          /**< No sensor errors */
+  WS_SENSOR_ERR_SI7021   = (1U << 0),   /**< Si7021 error */
+  WS_SENSOR_ERR_BMP280   = (1U << 1),   /**< BMP280 error */
+  WS_SENSOR_ERR_TSL2561  = (1U << 2),   /**< TSL2561 error */
+  WS_SENSOR_ERR_BME280   = (1U << 3),   /**< BME280 error */
 } WS_SensorError_t;
 
 /** @brief Alias for healthy sensor status (no error bits set) */

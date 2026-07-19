@@ -89,11 +89,6 @@ static uint32_t measurementWakeupTick;
 #endif
 #define ALL_SENSORS_INIT    (MEAS_MASK_SI7021 | MEAS_MASK_BMP280 | MEAS_MASK_TSL2561 | MEAS_MASK_BME280)
 
-/** @brief Wire-protocol error bit for the active barometric sensor (BMP280/BME280 channels) */
-#if defined(BMP280_H) || defined(BME280_H)
-#define MEAS_BARO_WIRE_ERROR    ERROR_BMP280
-#endif
-
 /* ============================================================================
  * Private Function Prototypes
  * ============================================================================ */
@@ -452,7 +447,7 @@ static void Measurement_ReadBME280(Measurement_Context_t *ctx) {
     uint32_t timeout_ms;
 
     if (!(ctx->sensorsInitialized & SENSOR_BME280_INIT)) {
-        ctx->data.sensorStatus |= MEAS_BARO_WIRE_ERROR;
+        ctx->data.sensorStatus |= ERROR_BME280;
         ctx->sensorErrorCode |= ERROR_BME280;
         return;
     }
@@ -460,7 +455,7 @@ static void Measurement_ReadBME280(Measurement_Context_t *ctx) {
     BME280_SetCtrlHum(&hbme280, BME280_OVERSAMPLING_X16);
     if (BME280_SetCtrlMeasSimple(&hbme280, BME280_OVERSAMPLING_X16, BME280_MODE_FORCED) != HAL_OK ||
         BME280_ApplySettings(&hbme280) != HAL_OK) {
-        ctx->data.sensorStatus |= MEAS_BARO_WIRE_ERROR;
+        ctx->data.sensorStatus |= ERROR_BME280;
         ctx->sensorErrorCode |= ERROR_BME280;
         ctx->sensorsInitialized &= ~SENSOR_BME280_INIT;
         return;
@@ -468,7 +463,7 @@ static void Measurement_ReadBME280(Measurement_Context_t *ctx) {
 
     timeout_ms = BME280_GetMeasurementDurationMs(&hbme280, 1U) + 5U;
     if (BME280_WaitForMeasurement(&hbme280, timeout_ms) != HAL_OK) {
-        ctx->data.sensorStatus |= MEAS_BARO_WIRE_ERROR;
+        ctx->data.sensorStatus |= ERROR_BME280;
         ctx->sensorErrorCode |= ERROR_BME280;
         ctx->sensorsInitialized &= ~SENSOR_BME280_INIT;
         return;
@@ -479,7 +474,7 @@ static void Measurement_ReadBME280(Measurement_Context_t *ctx) {
         ctx->data.bme280_press = hbme280.data.pressure;
         ctx->data.bme280_hum = hbme280.data.humidity;
     } else {
-        ctx->data.sensorStatus |= MEAS_BARO_WIRE_ERROR;
+        ctx->data.sensorStatus |= ERROR_BME280;
         ctx->sensorErrorCode |= ERROR_BME280;
         ctx->sensorsInitialized &= ~SENSOR_BME280_INIT;
     }
@@ -792,7 +787,7 @@ HAL_StatusTypeDef Measurement_ReinitSensor(Measurement_Context_t *ctx, Sensor_Er
         case ERROR_BME280:
             if (Measurement_InitBME280(ctx) == HAL_OK) {
                 ctx->sensorErrorCode &= ~ERROR_BME280;
-                ctx->data.sensorStatus &= ~MEAS_BARO_WIRE_ERROR;
+                ctx->data.sensorStatus &= ~ERROR_BME280;
                 result = HAL_OK;
             }
             break;
@@ -826,10 +821,12 @@ static float Measurement_GetChannelValue(const Measurement_Data_t *data, uint8_t
             return data->bmp280_press;
 #endif
 #ifdef BME280_H
-        case WS_CH_BMP280_TEMP:
+        case WS_CH_BME280_TEMP:
             return data->bme280_temp;
-        case WS_CH_BMP280_PRESS:
+        case WS_CH_BME280_PRESS:
             return data->bme280_press;
+        case WS_CH_BME280_HUM:
+            return data->bme280_hum;
 #endif
 #ifdef TSL2561_H
         case WS_CH_TSL2561_LUX:

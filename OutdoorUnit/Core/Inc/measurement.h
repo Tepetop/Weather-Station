@@ -11,12 +11,10 @@
 
 #include "main.h"
 
-#include "si7021.h"
-#include "TSL2561.h"
-
-/* Barometric sensor driver — include exactly one header below. */
-#include "bme280.h"
+// #include "si7021.h"
+// #include "TSL2561.h"
 // #include "bmp280.h"
+#include "bme280.h"
 
 #if defined(BMP280_H) && defined(BME280_H)
 #error "Include only one barometric driver: bmp280.h or bme280.h"

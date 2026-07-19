@@ -51,14 +51,35 @@
 #define OUTDOOR_MEAS_MAX_RETRIES  3U      /**< Max measurement retry attempts */
 #define OUTDOOR_MEAS_TIMEOUT_MS   2000U   /**< Measurement cycle timeout */
 
-/** Channels transmitted by this outdoor unit (edit per station hardware). */
+/**
+ * @brief Channels transmitted by this outdoor unit (edit per station hardware).
+ * @note  Barometric channels follow the driver selected in measurement.h
+ *        (bmp280.h or bme280.h). Frame size allows at most WS_MAX_READINGS (5)
+ *        entries — to add WS_CH_BME280_HUM, drop another channel first.
+ */
+#if defined(BMP280_H)
 static const uint8_t ENABLED_CHANNELS[] = {
-  WS_CH_SI7021_TEMP,
-  WS_CH_SI7021_HUM,
-  WS_CH_BMP280_TEMP,
-  WS_CH_BMP280_PRESS,
-  WS_CH_TSL2561_LUX,
+    WS_CH_SI7021_TEMP,
+    WS_CH_SI7021_HUM,
+    WS_CH_BMP280_TEMP,
+    WS_CH_BMP280_PRESS,
+    WS_CH_TSL2561_LUX,
 };
+#elif defined(BME280_H)
+static const uint8_t ENABLED_CHANNELS[] = {
+    WS_CH_SI7021_TEMP,
+    WS_CH_SI7021_HUM,
+    WS_CH_BME280_TEMP,
+    WS_CH_BME280_PRESS,
+    WS_CH_TSL2561_LUX,
+};
+#else
+static const uint8_t ENABLED_CHANNELS[] = {
+    WS_CH_SI7021_TEMP,
+    WS_CH_SI7021_HUM,
+    WS_CH_TSL2561_LUX,
+};
+#endif
 /** @brief Number of channels listed in ENABLED_CHANNELS */
 #define ENABLED_CHANNEL_COUNT ((uint8_t)(sizeof(ENABLED_CHANNELS) / sizeof(ENABLED_CHANNELS[0])))
 
