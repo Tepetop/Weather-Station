@@ -908,3 +908,43 @@ uint8_t NRF24_GetCarrierDetect(NRF24_Handle_t *handle) {
     return val & 0x01;
 }
 
+/**
+* @brief Verifies that an nRF24L01+ responds on SPI.
+*
+* Checks the fixed STATUS upper nibble (0xE) and performs a write-read
+* test on RF_CH. Floating MISO without a chip typically returns 0x00/0xFF.
+*
+* @param handle Pointer to the nRF24 handle structure.
+* @return HAL_OK if the device is present, HAL_ERROR otherwise.
+*/
+HAL_StatusTypeDef NRF24_IsPresent(NRF24_Handle_t *handle) {
+    if (handle == NULL) {
+        return HAL_ERROR;
+    }
+
+    uint8_t status = NRF24_GetStatus(handle);
+    if ((status & 0xF0U) != 0xE0U) {
+        return HAL_ERROR;
+    }
+
+    uint8_t original_ch;
+    if (NRF24_ReadReg(handle, NRF24_REG_RF_CH, &original_ch) != HAL_OK) {
+        return HAL_ERROR;
+    }
+
+    const uint8_t test_ch = 0x55U;
+    if (NRF24_WriteReg(handle, NRF24_REG_RF_CH, test_ch) != HAL_OK) {
+        return HAL_ERROR;
+    }
+
+    uint8_t readback;
+    if (NRF24_ReadReg(handle, NRF24_REG_RF_CH, &readback) != HAL_OK) {
+        (void)NRF24_WriteReg(handle, NRF24_REG_RF_CH, original_ch);
+        return HAL_ERROR;
+    }
+
+    (void)NRF24_WriteReg(handle, NRF24_REG_RF_CH, original_ch);
+
+    return (readback == test_ch) ? HAL_OK : HAL_ERROR;
+}
+

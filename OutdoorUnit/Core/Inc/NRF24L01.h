@@ -177,5 +177,6 @@ HAL_StatusTypeDef NRF24_PowerUp(NRF24_Handle_t *handle);
 HAL_StatusTypeDef NRF24_PowerDown(NRF24_Handle_t *handle);
 uint8_t NRF24_GetObserveTX(NRF24_Handle_t *handle);
 uint8_t NRF24_GetCarrierDetect(NRF24_Handle_t *handle);
+HAL_StatusTypeDef NRF24_IsPresent(NRF24_Handle_t *handle);
 
 #endif

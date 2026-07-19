@@ -46,6 +46,7 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
     Core/Src/ws_protocol.c
+    Core/Src/bme280.c
     Core/Src/bmp280.c
     Core/Src/si7021.c
     Core/Src/TSL2561.c

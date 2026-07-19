@@ -2,7 +2,7 @@
  * @file    measurement.h
  * @brief   Measurement module for multi-sensor data acquisition
  * @details Provides state machine-based measurement management for
- *          Si7021, BMP280 and TSL2561 sensors with error handling
+ *          Si7021, BMP280/BME280 and TSL2561 sensors with error handling
  *          and power management capabilities.
  */
 
@@ -10,9 +10,16 @@
 #define MEASUREMENT_H
 
 #include "main.h"
-#include "si7021.h"
-#include "bmp280.h"
-#include "TSL2561.h"
+
+// #include "si7021.h"
+// #include "TSL2561.h"
+// #include "bmp280.h"
+#include "bme280.h"
+
+#if defined(BMP280_H) && defined(BME280_H)
+#error "Include only one barometric driver: bmp280.h or bme280.h"
+#endif
+
 #include "stm32_hal_legacy.h"
 #include "stm32f1xx_hal_def.h"
 #include "ws_protocol.h"
@@ -41,7 +48,8 @@ typedef enum {
     ERROR_SI7021            = (1 << 0),  /**< Si7021 sensor error (0x01) */
     ERROR_BMP280            = (1 << 1),  /**< BMP280 sensor error (0x02) */
     ERROR_TSL2561           = (1 << 2),  /**< TSL2561 sensor error (0x04) */
-    ERROR_ALL_SENSORS       = (ERROR_SI7021 | ERROR_BMP280 | ERROR_TSL2561) /**< All sensors error (0x07) */
+    ERROR_BME280            = (1 << 3),  /**< BME280 sensor error (0x08) */
+    ERROR_ALL_SENSORS       = (ERROR_SI7021 | ERROR_BMP280 | ERROR_TSL2561 | ERROR_BME280) /**< All sensors error (0x0F) */
 } Sensor_Error_t;
 
 /**
@@ -63,11 +71,22 @@ typedef enum {
  * @brief Structure to hold all sensor measurement data
  */
 typedef struct {
+#ifdef SI7021_H
     float si7021_temp;      /**< Si7021 temperature in degrees Celsius */
     float si7021_hum;       /**< Si7021 relative humidity in percent */
+#endif
+#ifdef BMP280_H
     float bmp280_temp;      /**< BMP280 temperature in degrees Celsius */
     float bmp280_press;     /**< BMP280 pressure in hPa */
+#endif
+#ifdef TSL2561_H
     float tsl2561_lux;      /**< TSL2561 illuminance in lux */
+#endif
+#ifdef BME280_H
+    float bme280_temp;      /**< BME280 temperature in degrees Celsius */
+    float bme280_press;     /**< BME280 pressure in hPa */
+    float bme280_hum;       /**< BME280 relative humidity in percent */
+#endif
     uint8_t sensorStatus;   /**< Bitwise sensor health flags (Sensor_Error_t). 0 = all OK */
 } Measurement_Data_t;
 

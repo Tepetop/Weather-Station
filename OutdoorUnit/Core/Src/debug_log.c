@@ -150,6 +150,27 @@ void Debug_LogNrfInit(uint8_t success) {
   Debug_Log(success ? "LOG:NRF:INIT_OK" : "LOG:NRF:INIT_FAIL");
 }
 
+void Debug_LogNrfInitRetry(uint8_t attempt, uint8_t max) {
+  int len = snprintf(debug_buffer, sizeof(debug_buffer),
+                     "LOG:NRF:INIT_RETRY %u/%u", attempt, max);
+  if (len > 0 && len < (int)sizeof(debug_buffer)) {
+    debug_buffer[len] = '\0';
+    Debug_Log(debug_buffer);
+  }
+}
+
+void Debug_LogNrfUnavailable(void) {
+  Debug_Log("LOG:NRF:UNAVAILABLE");
+}
+
+void Debug_LogNrfReinitAttempt(void) {
+  Debug_Log("LOG:NRF:REINIT_ATTEMPT");
+}
+
+void Debug_LogNrfReinitOk(void) {
+  Debug_Log("LOG:NRF:REINIT_OK");
+}
+
 void Debug_LogNrfListening(void) {
   Debug_Log("LOG:NRF:LISTENING");
 }
@@ -167,6 +188,13 @@ void Debug_LogNrfTimeout(void) {
 }
 #else
 void Debug_LogNrfInit(uint8_t success) { (void)success; }
+void Debug_LogNrfInitRetry(uint8_t attempt, uint8_t max) {
+  (void)attempt;
+  (void)max;
+}
+void Debug_LogNrfUnavailable(void) {}
+void Debug_LogNrfReinitAttempt(void) {}
+void Debug_LogNrfReinitOk(void) {}
 void Debug_LogNrfListening(void) {}
 void Debug_LogNrfRxCmd(void) {}
 void Debug_LogNrfTxResult(uint8_t success) { (void)success; }
@@ -178,7 +206,7 @@ void Debug_LogSystemReady(uint8_t sensor_error_code) {
   if (sensor_error_code == 0U) {
     Debug_Log("LOG:INIT:SYSTEM_OK");
   } else {
-    Debug_LogHex("LOG:INIT:SENSOR_ERRORS=0x", sensor_error_code);
+    Debug_LogHex(" ", sensor_error_code);
   }
 }
 

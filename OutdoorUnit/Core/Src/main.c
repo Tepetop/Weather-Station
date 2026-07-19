@@ -29,6 +29,11 @@
 /* USER CODE BEGIN Includes */
 #include "outdoor_station.h"
 #include "debug_log.h"
+#include "measurement.h"
+#include "measurement_unit_config.h"
+
+#include <stdio.h>
+#include <string.h>
 
 /* USER CODE END Includes */
 
@@ -53,17 +58,75 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+uint32_t meastimer = 0U; /* Timestamp of last measurement command */
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
-
+static void TestBmeMeasurements(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+#if USE_UART_LOGGING
+static void TestBme_LogMetric(const char *name, float value, const char *unit)
+{
+  int32_t centi = (int32_t)(value * 100.0f + ((value >= 0.0f) ? 0.5f : -0.5f));
+  int32_t whole = centi / 100;
+  int32_t frac = centi % 100;
+
+  if (frac < 0)
+  {
+    frac = -frac;
+  }
+
+  char line[80];
+  int len = snprintf(line, sizeof(line), "TEST:BME:%s=%ld.%02ld %s\r\n",
+                     name, (long)whole, (long)frac, unit);
+  if (len > 0 && len < (int)sizeof(line))
+  {
+    HAL_UART_Transmit(&huart1, (uint8_t *)line, (uint16_t)len, 100);
+  }
+}
+#else
+static void TestBme_LogMetric(const char *name, float value, const char *unit)
+{
+  (void)name;
+  (void)value;
+  (void)unit;
+}
+#endif
+
+static void TestBmeMeasurements(void)
+{
+  Measurement_Data_t data;
+
+  Debug_Log("TEST:BME:start");
+
+  if (OutdoorStation_RunMeasurementCycle(&data, OUTDOOR_MEAS_TIMEOUT_MS) != HAL_OK)
+  {
+    Debug_Log("TEST:BME:ERROR=cycle");
+    return;
+  }
+
+#ifdef BME280_H
+  if (data.sensorStatus & ERROR_BME280)
+  {
+    Debug_Log("TEST:BME:ERROR=sensor");
+    return;
+  }
+
+  TestBme_LogMetric("temp", data.bme280_temp, "degC");
+  TestBme_LogMetric("press", data.bme280_press, "hPa");
+  TestBme_LogMetric("hum", data.bme280_hum, "%");
+#else
+  Debug_Log("TEST:BME:ERROR=not_configured");
+#endif
+
+  Debug_Log("TEST:BME:done");
+}
 
 /* USER CODE END 0 */
 
@@ -114,7 +177,7 @@ int main(void)
   {
     Error_Handler_WithName("OutdoorStation_Init");
   }
-
+  meastimer = HAL_GetTick();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -127,6 +190,11 @@ int main(void)
 
     OutdoorStation_Process();
     HAL_IWDG_Refresh(&hiwdg);
+    if(HAL_GetTick() - meastimer >= 10000u)
+    {
+      meastimer = HAL_GetTick();
+      TestBmeMeasurements();
+    }
 
 #ifdef DEBUG_LOG_HEARTBEAT
     Debug_Heartbeat();

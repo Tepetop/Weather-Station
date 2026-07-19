@@ -53,6 +53,10 @@ void Debug_Heartbeat(void);
 void Debug_LogBoot(void);
 
 void Debug_LogNrfInit(uint8_t success);
+void Debug_LogNrfInitRetry(uint8_t attempt, uint8_t max);
+void Debug_LogNrfUnavailable(void);
+void Debug_LogNrfReinitAttempt(void);
+void Debug_LogNrfReinitOk(void);
 void Debug_LogNrfListening(void);
 void Debug_LogNrfRxCmd(void);
 void Debug_LogNrfTxResult(uint8_t success);
@@ -82,6 +86,10 @@ void Debug_LogElapsedMs(uint32_t ms);
 #define Debug_LogBoot()
 
 #define Debug_LogNrfInit(success)
+#define Debug_LogNrfInitRetry(attempt, max)
+#define Debug_LogNrfUnavailable()
+#define Debug_LogNrfReinitAttempt()
+#define Debug_LogNrfReinitOk()
 #define Debug_LogNrfListening()
 #define Debug_LogNrfRxCmd()
 #define Debug_LogNrfTxResult(success)
