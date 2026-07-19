@@ -16,14 +16,25 @@
  * Private Variables
  * ============================================================================ */
 
+#ifdef si7021.h
 /** @brief Si7021 sensor handle */
 static Si7021_t hsi7021;
+#endif
 
-/** @brief BMP280 sensor handle */
-static BMP280_t hbmp280;
+#ifdef bmp280.h
+// /** @brief BMP280 sensor handle */
+ static BMP280_t hbmp280;
+#endif
 
+#ifdef bme280.h
+/** @brief BME280 sensor handle */
+static BME280_t hbme280;
+#endif
+
+#ifdef tsl2561.h
 /** @brief TSL2561 sensor handle */
-static TSL2561_t htsl2561;
+ static TSL2561_t htsl2561;
+#endif
 
 /** @brief I2C handle for sensor communication */
 static I2C_HandleTypeDef *measurement_hi2c;
@@ -35,17 +46,28 @@ static uint32_t measurementWakeupTick;
  * Sensor Initialization Flags
  * ============================================================================ */
 
+#ifdef si7021.h
 /** @brief Si7021 initialization flag */
 #define SENSOR_SI7021_INIT  (1 << 0)
+#endif
 
+#ifdef bmp280.h
 /** @brief BMP280 initialization flag */
 #define SENSOR_BMP280_INIT  (1 << 1)
+#endif
 
+#ifdef tsl2561.h
 /** @brief TSL2561 initialization flag */
 #define SENSOR_TSL2561_INIT (1 << 2)
+#endif
+
+#ifdef bme280.h
+/** @brief BME280 initialization flag */
+#define SENSOR_BME280_INIT  (1 << 3)
+#endif
 
 /** @brief All sensors initialization mask */
-#define ALL_SENSORS_INIT    (SENSOR_SI7021_INIT | SENSOR_BMP280_INIT | SENSOR_TSL2561_INIT)
+#define ALL_SENSORS_INIT    (SENSOR_SI7021_INIT | SENSOR_BMP280_INIT | SENSOR_TSL2561_INIT | SENSOR_BME280_INIT)
 
 /* ============================================================================
  * Private Function Prototypes
@@ -144,7 +166,7 @@ HAL_StatusTypeDef Measurement_Start(Measurement_Context_t *ctx) {
 /* ============================================================================
  * Private Sensor Initialization Functions
  * ============================================================================ */
-
+#ifdef si7021.h
 /**
  * @brief   Initialize Si7021 temperature/humidity sensor
  * @param   ctx  Pointer to measurement context structure
@@ -158,7 +180,9 @@ static HAL_StatusTypeDef Measurement_InitSi7021(Measurement_Context_t *ctx) {
     ctx->sensorsInitialized |= SENSOR_SI7021_INIT;
     return HAL_OK;
 }
+#endif
 
+#ifdef bmp280.h
 /**
  * @brief   Initialize BMP280 pressure/temperature sensor
  * @param   ctx  Pointer to measurement context structure
@@ -176,7 +200,9 @@ static HAL_StatusTypeDef Measurement_InitBMP280(Measurement_Context_t *ctx) {
     ctx->sensorsInitialized |= SENSOR_BMP280_INIT;
     return HAL_OK;
 }
+#endif
 
+#ifdef tsl2561.h
 /**
  * @brief   Initialize TSL2561 light sensor
  * @param   ctx  Pointer to measurement context structure
@@ -192,9 +218,30 @@ static HAL_StatusTypeDef Measurement_InitTSL2561(Measurement_Context_t *ctx) {
     ctx->sensorsInitialized |= SENSOR_TSL2561_INIT;
     return HAL_OK;
 }
+#endif
+
+#ifdef bme280.h
+/**
+ * @brief   Initialize BME280 temperature/pressure/humidity sensor
+ * @param   ctx  Pointer to measurement context structure
+ * @retval  HAL_OK     Initialization successful
+ * @retval  HAL_ERROR  Initialization failed
+ */
+static HAL_StatusTypeDef Measurement_InitBME280(Measurement_Context_t *ctx) {
+    if (BME280_Init(&hbme280, measurement_hi2c, 0x76) != HAL_OK) {
+        return HAL_ERROR;
+    }
+    /* Configure for low power - use FORCED mode instead of NORMAL
+     * In FORCED mode, sensor takes one measurement and goes back to sleep */
+    BME280_SetCtrlMeas(&hbme280, BME280_OVERSAMPLING_X16, BME280_MODE_SLEEP);
+    BME280_SetConfig(&hbme280, BME280_STANDBY_500_MS, BME280_FILTER_16);
+    ctx->sensorsInitialized |= SENSOR_BME280_INIT;
+    return HAL_OK;
+}
+#endif
 
 /**
- * @brief   Initialize all sensors (Si7021, BMP280, TSL2561)
+ * @brief   Initialize all sensors (Si7021, BMP280, TSL2561, BME280)
  * @param   ctx  Pointer to measurement context structure
  * @retval  None
  * @details Attempts to initialize all sensors that are not yet initialized.
@@ -204,28 +251,43 @@ static void Measurement_InitializeSensors(Measurement_Context_t *ctx) {
     /* Reset error code before initialization */
     ctx->sensorErrorCode = ERROR_SENSORS_NONE;
     ctx->data.sensorStatus = ERROR_SENSORS_NONE;
-    
+
+#ifdef si7021.h 
     /* Initialize Si7021 */
     if (!(ctx->sensorsInitialized & SENSOR_SI7021_INIT)) {
         if (Measurement_InitSi7021(ctx) != HAL_OK) {
             ctx->sensorErrorCode |= ERROR_SI7021;
         }
     }
+#endif
 
+#ifdef bmp280.h
     /* Initialize BMP280 */
     if (!(ctx->sensorsInitialized & SENSOR_BMP280_INIT)) {
         if (Measurement_InitBMP280(ctx) != HAL_OK) {
             ctx->sensorErrorCode |= ERROR_BMP280;
         }
     }
+#endif
 
+#ifdef tsl2561.h
     /* Initialize TSL2561 */
     if (!(ctx->sensorsInitialized & SENSOR_TSL2561_INIT)) {
         if (Measurement_InitTSL2561(ctx) != HAL_OK) {
             ctx->sensorErrorCode |= ERROR_TSL2561;
         }
     }
-    
+#endif
+
+#ifdef bme280.h
+    /* Initialize BME280 */
+    if (!(ctx->sensorsInitialized & SENSOR_BME280_INIT)) {
+        if (Measurement_InitBME280(ctx) != HAL_OK) {
+            ctx->sensorErrorCode |= ERROR_BME280;
+        }
+    }
+#endif
+
     /* Transition to next state based on initialization result */
     if (ctx->sensorErrorCode != ERROR_SENSORS_NONE) {
         ctx->initRetryCount++;
@@ -251,6 +313,7 @@ static void Measurement_InitializeSensors(Measurement_Context_t *ctx) {
  * Private Sensor Reading Functions
  * ============================================================================ */
 
+#ifdef si7021.h
 /**
  * @brief   Read Si7021 temperature and humidity sensor
  * @param   ctx  Pointer to measurement context structure
@@ -274,7 +337,9 @@ static void Measurement_ReadSi7021(Measurement_Context_t *ctx) {
         ctx->sensorsInitialized &= ~SENSOR_SI7021_INIT;
     }
 }
+#endif
 
+#ifdef bmp280.h
 /**
  * @brief   Read BMP280 temperature and pressure sensor
  * @param   ctx  Pointer to measurement context structure
@@ -308,7 +373,9 @@ static void Measurement_ReadBMP280(Measurement_Context_t *ctx) {
         ctx->sensorsInitialized &= ~SENSOR_BMP280_INIT;
     }
 }
+#endif
 
+#ifdef tsl2561.h
 /**
  * @brief   Read TSL2561 light intensity sensor
  * @param   ctx  Pointer to measurement context structure
@@ -331,6 +398,7 @@ static void Measurement_ReadTSL2561(Measurement_Context_t *ctx) {
         ctx->sensorsInitialized &= ~SENSOR_TSL2561_INIT;
     }
 }
+#endif
 
 /**
  * @brief   Perform all measurements sequentially
@@ -338,9 +406,22 @@ static void Measurement_ReadTSL2561(Measurement_Context_t *ctx) {
  * @retval  None
  */
 static void Measurement_ReadAllSensors(Measurement_Context_t *ctx) {
+#ifdef si7021.h
     Measurement_ReadSi7021(ctx);
+#endif
+
+#ifdef bmp280.h
     Measurement_ReadBMP280(ctx);
+#endif
+
+#ifdef tsl2561.h
     Measurement_ReadTSL2561(ctx);
+#endif
+
+#ifdef bme280.h
+    Measurement_ReadBME280(ctx);
+#endif
+
     /* All sensors read, measurement cycle complete */
     ctx->state = MEAS_DONE;
 }
@@ -352,23 +433,29 @@ static void Measurement_ReadAllSensors(Measurement_Context_t *ctx) {
  */
 static void Measurement_HandleError(Measurement_Context_t *ctx) {
     /* Try to reinitialize failed sensors */
+#ifdef si7021.h
     if (ctx->sensorErrorCode & ERROR_SI7021) {
         if (Measurement_InitSi7021(ctx) == HAL_OK) {
             ctx->sensorErrorCode &= ~ERROR_SI7021;
         }
     }
-    
+#endif
+
+#ifdef bmp280.h
     if (ctx->sensorErrorCode & ERROR_BMP280) {
         if (Measurement_InitBMP280(ctx) == HAL_OK) {
             ctx->sensorErrorCode &= ~ERROR_BMP280;
         }
     }
-    
+#endif
+
+#ifdef tsl2561.h
     if (ctx->sensorErrorCode & ERROR_TSL2561) {
         if (Measurement_InitTSL2561(ctx) == HAL_OK) {
             ctx->sensorErrorCode &= ~ERROR_TSL2561;
         }
     }
+#endif
 }
 
 /* ============================================================================
@@ -387,16 +474,20 @@ void Measurement_SleepSensors(Measurement_Context_t *ctx) {
     
     /* Si7021 - automatically goes to standby after measurement, no explicit sleep needed */
     /* Si7021 is already in standby mode after measurement - no additional action needed */
-    
+
+#ifdef bmp280.h
     /* BMP280 - set to sleep mode */
     if (ctx->sensorsInitialized & SENSOR_BMP280_INIT) {
         BMP280_SetMode(&hbmp280, BMP280_MODE_SLEEP);
     }
-    
+#endif
+
+#ifdef tsl2561.h
     /* TSL2561 - power off */
     if (ctx->sensorsInitialized & SENSOR_TSL2561_INIT) {
         TSL2561_PowerOff(&htsl2561);
     }
+#endif
 }
 
 /**
@@ -415,6 +506,7 @@ void Measurement_WakeupSensors(Measurement_Context_t *ctx) {
     /* BMP280 - will be woken up in forced mode during measurement */
     /* No explicit wake-up needed here */
     
+#ifdef tsl2561.h
     /* TSL2561 - power on */
     if (ctx->sensorsInitialized & SENSOR_TSL2561_INIT) {
         if (TSL2561_PowerOn(&htsl2561) != HAL_OK) {
@@ -422,6 +514,7 @@ void Measurement_WakeupSensors(Measurement_Context_t *ctx) {
             ctx->sensorErrorCode |= ERROR_TSL2561;
         }
     }
+#endif
 }
 
 /* ============================================================================
