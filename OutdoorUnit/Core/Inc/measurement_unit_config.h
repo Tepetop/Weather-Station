@@ -6,7 +6,7 @@
  * ============================================================================ */
 #include "si7021.h"
 #include "TSL2561.h"
-#include "bmp280.h"
+#include "bme280.h"
 #include "measurement.h"
 #include "NRF24L01.h"
 #include "ws_protocol.h"

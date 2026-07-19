@@ -10,10 +10,9 @@
 #define MEASUREMENT_H
 
 #include "main.h"
-//#include "si7021.h"
+#include "si7021.h"
 #include "bme280.h"
-//#include "bmp280.h"
-//#include "TSL2561.h"
+#include "TSL2561.h"
 #include "stm32_hal_legacy.h"
 #include "stm32f1xx_hal_def.h"
 #include "ws_protocol.h"
@@ -65,18 +64,18 @@ typedef enum {
  * @brief Structure to hold all sensor measurement data
  */
 typedef struct {
-#ifdef si7021.h
+#ifdef SI7021_H
     float si7021_temp;      /**< Si7021 temperature in degrees Celsius */
     float si7021_hum;       /**< Si7021 relative humidity in percent */
 #endif
-#ifdef bmp280.h
+#ifdef BMP280_H
     float bmp280_temp;      /**< BMP280 temperature in degrees Celsius */
     float bmp280_press;     /**< BMP280 pressure in hPa */
 #endif
-#ifdef tsl2561.h
+#ifdef TSL2561_H
     float tsl2561_lux;      /**< TSL2561 illuminance in lux */
 #endif
-#ifdef bme280.h
+#ifdef BME280_H
     float bme280_temp;      /**< BME280 temperature in degrees Celsius */
     float bme280_press;     /**< BME280 pressure in hPa */
     float bme280_hum;       /**< BME280 relative humidity in percent */
