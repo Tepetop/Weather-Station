@@ -88,19 +88,37 @@ static void ws_ui_format_fixed(char *dst, size_t dst_size, float value, uint8_t 
 static float ws_avg_temperature(const WS_NodeReadings_t *data) {
   float si_temp = 0.0f;
   float bmp_temp = 0.0f;
+  float bme_temp = 0.0f;
+  float sum = 0.0f;
+  uint8_t count = 0U;
   uint8_t si_ok = WS_Reading_Get(data, WS_CH_SI7021_TEMP, &si_temp) ? 1U : 0U;
   uint8_t bmp_ok = WS_Reading_Get(data, WS_CH_BMP280_TEMP, &bmp_temp) ? 1U : 0U;
+  uint8_t bme_ok = WS_Reading_Get(data, WS_CH_BME280_TEMP, &bme_temp) ? 1U : 0U;
 
-  if (si_ok && bmp_ok) {
-    return (si_temp + bmp_temp) * 0.5f;
-  }
   if (si_ok) {
-    return si_temp;
+    sum += si_temp;
+    count++;
   }
   if (bmp_ok) {
-    return bmp_temp;
+    sum += bmp_temp;
+    count++;
   }
-  return 0.0f;
+  if (bme_ok) {
+    sum += bme_temp;
+    count++;
+  }
+
+  return (count > 0U) ? (sum / (float)count) : 0.0f;
+}
+
+static bool ws_get_humidity(const WS_NodeReadings_t *data, float *value) {
+  return WS_Reading_Get(data, WS_CH_SI7021_HUM, value) ||
+         WS_Reading_Get(data, WS_CH_BME280_HUM, value);
+}
+
+static bool ws_get_pressure(const WS_NodeReadings_t *data, float *value) {
+  return WS_Reading_Get(data, WS_CH_BMP280_PRESS, value) ||
+         WS_Reading_Get(data, WS_CH_BME280_PRESS, value);
 }
 
 /**
@@ -223,7 +241,7 @@ static void ws_render_stations_status(void) {
 
     if (sensor_err != 0U) {
       uint8_t err_col = 8U;
-      char err_line[16] = " ";
+      char err_line[20] = " ";
 
       if ((sensor_err & WS_SENSOR_ERR_SI7021) != 0U) {
         strncat(err_line, "Si7 ", sizeof(err_line) - strlen(err_line) - 1U);
@@ -234,7 +252,11 @@ static void ws_render_stations_status(void) {
       }
 
       if ((sensor_err & WS_SENSOR_ERR_TSL2561) != 0U) {
-        strncat(err_line, "TSL", sizeof(err_line) - strlen(err_line) - 1U);
+        strncat(err_line, "TSL ", sizeof(err_line) - strlen(err_line) - 1U);
+      }
+
+      if ((sensor_err & WS_SENSOR_ERR_BME280) != 0U) {
+        strncat(err_line, "BME", sizeof(err_line) - strlen(err_line) - 1U);
       }
 
       PCD8544_SetCursor(WS_UI.lcd, err_col, row);
@@ -563,8 +585,8 @@ void WS_UI_AddMeasurementToCharts(const WS_NodeReadings_t *data, uint8_t hour, u
   float lux = 0.0f;
   float avg_temp = ws_avg_temperature(data);
   int16_t tempVal = (int16_t)(avg_temp * 10.0f);
-  int16_t humVal = WS_Reading_Get(data, WS_CH_SI7021_HUM, &hum) ? (int16_t)(hum * 10.0f) : 0;
-  int16_t pressVal = WS_Reading_Get(data, WS_CH_BMP280_PRESS, &press) ? (int16_t)press : 0;
+  int16_t humVal = ws_get_humidity(data, &hum) ? (int16_t)(hum * 10.0f) : 0;
+  int16_t pressVal = ws_get_pressure(data, &press) ? (int16_t)press : 0;
   int16_t luxVal = WS_Reading_Get(data, WS_CH_TSL2561_LUX, &lux) ? (int16_t)lux : 0;
 
   PCD8544_AddChartPoint(&WS_TemperatureChart, tempVal, hour, minute);
@@ -624,7 +646,7 @@ void WS_UI_MeasurementDisplay(void) {
   PCD8544_WriteString(WS_UI.lcd, WS_UI.text_buffer);
 
   PCD8544_SetCursor(WS_UI.lcd, 0, 2);
-  if ((hasMeasurement != 0U) && WS_Reading_Get(&measurement, WS_CH_SI7021_HUM, &reading_value)) {
+  if ((hasMeasurement != 0U) && ws_get_humidity(&measurement, &reading_value)) {
     ws_ui_format_fixed(value_text, sizeof(value_text), reading_value, 2U);
     snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "H:%s%%", value_text);
   } else {
@@ -633,7 +655,7 @@ void WS_UI_MeasurementDisplay(void) {
   PCD8544_WriteString(WS_UI.lcd, WS_UI.text_buffer);
 
   PCD8544_SetCursor(WS_UI.lcd, 0, 3);
-  if ((hasMeasurement != 0U) && WS_Reading_Get(&measurement, WS_CH_BMP280_PRESS, &reading_value)) {
+  if ((hasMeasurement != 0U) && ws_get_pressure(&measurement, &reading_value)) {
     ws_ui_format_fixed(value_text, sizeof(value_text), reading_value, 2U);
     snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "P:%shPa", value_text);
   } else {

@@ -151,6 +151,18 @@ static void ws_format_fixed(char *dst, size_t dst_size, float value, uint8_t dec
 }
 
 /**
+ * @brief Appends one sensor name to an ERR status string
+ */
+static void ws_append_sensor_status(char *dst, size_t dst_size, const char *sensor_name) {
+  size_t used = strlen(dst);
+  if (used >= dst_size) {
+    return;
+  }
+
+  snprintf(dst + used, dst_size - used, "%c%s", (used == 3U) ? ':' : ',', sensor_name);
+}
+
+/**
  * @brief Formats sensor status bitmask to Pico W status text
  * @param[out] dst Destination buffer
  * @param[in] dst_size Destination buffer size
@@ -158,40 +170,30 @@ static void ws_format_fixed(char *dst, size_t dst_size, float value, uint8_t dec
  */
 static void ws_format_sensor_status(char *dst, size_t dst_size, uint8_t sensor_status) {
   uint8_t known_status = sensor_status &
-      ((uint8_t)WS_SENSOR_ERR_SI7021 | (uint8_t)WS_SENSOR_ERR_BMP280 | (uint8_t)WS_SENSOR_ERR_TSL2561);
+      ((uint8_t)WS_SENSOR_ERR_SI7021 | (uint8_t)WS_SENSOR_ERR_BMP280 |
+       (uint8_t)WS_SENSOR_ERR_TSL2561 | (uint8_t)WS_SENSOR_ERR_BME280);
 
   if ((dst == NULL) || (dst_size == 0U)) {
     return;
   }
 
-  switch (known_status) {
-    case (uint8_t)WS_SENSOR_OK:
-      snprintf(dst, dst_size, "OK");
-      break;
-    case (uint8_t)WS_SENSOR_ERR_SI7021:
-      snprintf(dst, dst_size, "ERR:SI7021");
-      break;
-    case (uint8_t)WS_SENSOR_ERR_BMP280:
-      snprintf(dst, dst_size, "ERR:BMP280");
-      break;
-    case (uint8_t)WS_SENSOR_ERR_TSL2561:
-      snprintf(dst, dst_size, "ERR:TSL2561");
-      break;
-    case (uint8_t)(WS_SENSOR_ERR_SI7021 | WS_SENSOR_ERR_BMP280):
-      snprintf(dst, dst_size, "ERR:SI7021,BMP280");
-      break;
-    case (uint8_t)(WS_SENSOR_ERR_SI7021 | WS_SENSOR_ERR_TSL2561):
-      snprintf(dst, dst_size, "ERR:SI7021,TSL2561");
-      break;
-    case (uint8_t)(WS_SENSOR_ERR_BMP280 | WS_SENSOR_ERR_TSL2561):
-      snprintf(dst, dst_size, "ERR:BMP280,TSL2561");
-      break;
-    case (uint8_t)(WS_SENSOR_ERR_SI7021 | WS_SENSOR_ERR_BMP280 | WS_SENSOR_ERR_TSL2561):
-      snprintf(dst, dst_size, "ERR:SI7021,BMP280,TSL2561");
-      break;
-    default:
-      snprintf(dst, dst_size, "ERR:UNKNOWN");
-      break;
+  if (known_status == (uint8_t)WS_SENSOR_OK) {
+    snprintf(dst, dst_size, "OK");
+    return;
+  }
+
+  snprintf(dst, dst_size, "ERR");
+  if ((known_status & (uint8_t)WS_SENSOR_ERR_SI7021) != 0U) {
+    ws_append_sensor_status(dst, dst_size, "SI7021");
+  }
+  if ((known_status & (uint8_t)WS_SENSOR_ERR_BMP280) != 0U) {
+    ws_append_sensor_status(dst, dst_size, "BMP280");
+  }
+  if ((known_status & (uint8_t)WS_SENSOR_ERR_TSL2561) != 0U) {
+    ws_append_sensor_status(dst, dst_size, "TSL2561");
+  }
+  if ((known_status & (uint8_t)WS_SENSOR_ERR_BME280) != 0U) {
+    ws_append_sensor_status(dst, dst_size, "BME280");
   }
 }
 

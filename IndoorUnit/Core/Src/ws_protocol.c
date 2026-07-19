@@ -95,6 +95,10 @@ uint8_t WS_ChannelSensorError(uint8_t channel_id) {
     case WS_CH_BMP280_TEMP:
     case WS_CH_BMP280_PRESS:
       return (uint8_t)WS_SENSOR_ERR_BMP280;
+    case WS_CH_BME280_TEMP:
+    case WS_CH_BME280_PRESS:
+    case WS_CH_BME280_HUM:
+      return (uint8_t)WS_SENSOR_ERR_BME280;
     case WS_CH_TSL2561_LUX:
       return (uint8_t)WS_SENSOR_ERR_TSL2561;
     default:
@@ -108,7 +112,7 @@ bool WS_Protocol_SelfCheck(void) {
       .count = 2U,
       .readings = {
           {.channel_id = WS_CH_SI7021_TEMP, .value = 21.5f},
-          {.channel_id = WS_CH_BMP280_PRESS, .value = 1013.25f},
+          {.channel_id = WS_CH_BME280_HUM, .value = 54.25f},
       },
   };
   uint8_t buf[WS_PROTOCOL_MAX_PAYLOAD];
@@ -128,11 +132,11 @@ bool WS_Protocol_SelfCheck(void) {
   }
 
   float temp = 0.0f;
-  float press = 0.0f;
+  float humidity = 0.0f;
   if (!WS_Reading_Get(&out, WS_CH_SI7021_TEMP, &temp) || (temp != 21.5f)) {
     return false;
   }
-  if (!WS_Reading_Get(&out, WS_CH_BMP280_PRESS, &press) || (press != 1013.25f)) {
+  if (!WS_Reading_Get(&out, WS_CH_BME280_HUM, &humidity) || (humidity != 54.25f)) {
     return false;
   }
 

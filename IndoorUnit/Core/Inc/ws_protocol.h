@@ -24,11 +24,14 @@
 
 /** Channel IDs: sensor type + physical quantity (fixed registry). */
 typedef enum {
-  WS_CH_SI7021_TEMP  = 0x01U,
-  WS_CH_SI7021_HUM   = 0x02U,
-  WS_CH_BMP280_TEMP  = 0x03U,
-  WS_CH_BMP280_PRESS = 0x04U,
-  WS_CH_TSL2561_LUX  = 0x05U,
+  WS_CH_SI7021_TEMP   = 0x01U,
+  WS_CH_SI7021_HUM    = 0x02U,
+  WS_CH_BMP280_TEMP   = 0x03U,
+  WS_CH_BMP280_PRESS  = 0x04U,
+  WS_CH_TSL2561_LUX   = 0x05U,
+  WS_CH_BME280_TEMP   = 0x06U,
+  WS_CH_BME280_PRESS  = 0x07U,
+  WS_CH_BME280_HUM    = 0x08U,
 } WS_ChannelId_t;
 
 /** Sensor error flags (bitwise, matches legacy ERROR_SI7021 etc.). */
@@ -37,6 +40,7 @@ typedef enum {
   WS_SENSOR_ERR_SI7021  = (1U << 0),
   WS_SENSOR_ERR_BMP280  = (1U << 1),
   WS_SENSOR_ERR_TSL2561 = (1U << 2),
+  WS_SENSOR_ERR_BME280  = (1U << 3),
 } WS_SensorError_t;
 
 #define WS_SENSOR_OK WS_SENSOR_ERR_NONE
