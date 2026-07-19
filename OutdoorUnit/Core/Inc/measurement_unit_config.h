@@ -1,12 +1,17 @@
+/**
+ * @file    measurement_unit_config.h
+ * @brief   Outdoor unit runtime configuration and link state definitions
+ * @details Feature flags, NRF24 parameters, measurement timeouts, enabled
+ *          sensor channels, and OutdoorLink state machine types for the
+ *          STM32F103 outdoor measurement unit.
+ */
+
 #ifndef MEASUREMENT_UNIT_CONFIG_H
 #define MEASUREMENT_UNIT_CONFIG_H
 
 /* ============================================================================
  * Includes
  * ============================================================================ */
-#include "si7021.h"
-#include "TSL2561.h"
-#include "bme280.h"
 #include "measurement.h"
 #include "NRF24L01.h"
 #include "ws_protocol.h"
@@ -38,6 +43,7 @@
 #define NRF_TX_TIMEOUT_MS         120U    /**< TX timeout in milliseconds */
 #define NRF_INIT_MAX_RETRIES      3U      /**< Max NRF init retry attempts */
 #define NRF_INIT_RETRY_DELAY_MS   200U    /**< Delay between init retries */
+#define NRF_REINIT_INTERVAL_MS    10000U  /**< Periodic reinit when NRF is missing */
 
 /* ============================================================================
  * Measurement Configuration
@@ -53,6 +59,7 @@ static const uint8_t ENABLED_CHANNELS[] = {
   WS_CH_BMP280_PRESS,
   WS_CH_TSL2561_LUX,
 };
+/** @brief Number of channels listed in ENABLED_CHANNELS */
 #define ENABLED_CHANNEL_COUNT ((uint8_t)(sizeof(ENABLED_CHANNELS) / sizeof(ENABLED_CHANNELS[0])))
 
 

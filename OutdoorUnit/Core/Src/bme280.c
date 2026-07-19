@@ -2,8 +2,21 @@
  ******************************************************************************
  * @file    bme280.c
  * @brief   BME280 temperature, pressure and humidity sensor driver (I2C)
- * @details Implements register I/O, calibration unpacking, datasheet
- *          compensation formulas and convenience read helpers.
+ * @details Implements register I/O (blocking, DMA and interrupt), calibration
+ *          unpacking, datasheet compensation formulas and convenience helpers.
+ *
+ * BLOCKING usage:
+ *   BME280_GetTemperaturePressureHumidity(&dev);
+ *
+ * DMA / interrupt usage (burst read T/P/H):
+ *   uint8_t buf[8];
+ *   BME280_ReadRawTemperaturePressureHumidity(&dev, buf, sizeof(buf), BME280_IO_DMA);
+ *   // In HAL_I2C_MemRxCpltCallback:
+ *   BME280_HandleMemRxCplt(&dev);
+ *   BME280_ParseRawTemperaturePressureHumidity(&dev, buf);
+ *   BME280_CompensateAll(&dev);
+ *
+ * IT usage is identical except pass BME280_IO_IT instead of BME280_IO_DMA.
  ******************************************************************************
  */
 #include "bme280.h"
@@ -152,6 +165,34 @@ static HAL_StatusTypeDef bme280_WriteData(BME280_t *dev, BME280_Registers reg, u
 }
 
 /**
+ * @brief   Marks a DMA/IT transfer as started on the device handle
+ * @param   dev  Device handle
+ * @retval  HAL_OK if idle, HAL_BUSY if a transfer is already active
+ */
+static HAL_StatusTypeDef bme280_BeginAsyncIo(BME280_t *dev)
+{
+    if (dev->io_busy != 0U) {
+        return HAL_BUSY;
+    }
+
+    dev->io_busy = 1U;
+    return HAL_OK;
+}
+
+/**
+ * @brief   Clears busy flag and invokes optional transfer callback
+ * @param   dev     Device handle
+ * @param   status  Transfer result passed to the callback
+ */
+static void bme280_EndAsyncIo(BME280_t *dev, HAL_StatusTypeDef status)
+{
+    dev->io_busy = 0U;
+    if (dev->transfer_cb != NULL) {
+        dev->transfer_cb(dev, status);
+    }
+}
+
+/**
  * @brief   Reads chip ID and checks it against BME280_CHIP_ID
  * @param   dev  Device handle
  * @retval  HAL_OK if ID matches, HAL_ERROR otherwise
@@ -296,6 +337,8 @@ HAL_StatusTypeDef BME280_Init(BME280_t *dev, I2C_HandleTypeDef *i2c_handle, uint
 
     dev->i2c_handle = i2c_handle;
     dev->address = (uint8_t)(address << 1);
+    dev->io_busy = 0U;
+    dev->transfer_cb = NULL;
     dev->calibration.t_fine = 0;
     dev->settings.osrs_h = BME280_OVERSAMPLING_X1;
     dev->settings.osrs_t = BME280_OVERSAMPLING_X1;
@@ -561,9 +604,7 @@ HAL_StatusTypeDef BME280_GetStatus(BME280_t *dev, uint8_t *measuring, uint8_t *i
         return HAL_ERROR;
     }
 
-    *measuring = (status_reg >> 3) & 0x01U;
-    *im_update = status_reg & 0x01U;
-    return HAL_OK;
+    return BME280_ParseStatus(&status_reg, measuring, im_update);
 }
 
 /**
@@ -623,28 +664,165 @@ uint32_t BME280_GetMeasurementDurationMs(const BME280_t *dev, uint8_t use_max_ti
  * ============================================================================ */
 
 /**
- * @brief   Reads raw register data using blocking or DMA I2C
- * @param   dev     Pointer to device handle
- * @param   reg     Start register address
- * @param   buffer  Destination buffer
- * @param   size    Number of bytes to read
- * @param   mode    Blocking or DMA transfer mode
- * @retval  HAL_OK     Transfer started/completed successfully
- * @retval  HAL_ERROR  Null pointer or I2C failure
+ * @brief   Reads raw register data using blocking, DMA or interrupt I2C
  */
 HAL_StatusTypeDef BME280_ReadRawData(BME280_t *dev, BME280_Registers reg, uint8_t *buffer,
                                      uint16_t size, BME280_IoMode mode)
 {
+    HAL_StatusTypeDef status;
+
     if ((dev == NULL) || (buffer == NULL)) {
         return HAL_ERROR;
     }
 
     if (mode == BME280_IO_DMA) {
-        return HAL_I2C_Mem_Read_DMA(dev->i2c_handle, dev->address, reg, I2C_MEMADD_SIZE_8BIT,
-                                    buffer, size);
+        status = bme280_BeginAsyncIo(dev);
+        if (status != HAL_OK) {
+            return status;
+        }
+
+        status = HAL_I2C_Mem_Read_DMA(dev->i2c_handle, dev->address, reg, I2C_MEMADD_SIZE_8BIT,
+                                      buffer, size);
+        if (status != HAL_OK) {
+            bme280_EndAsyncIo(dev, status);
+        }
+        return status;
+    }
+
+    if (mode == BME280_IO_IT) {
+        status = bme280_BeginAsyncIo(dev);
+        if (status != HAL_OK) {
+            return status;
+        }
+
+        status = HAL_I2C_Mem_Read_IT(dev->i2c_handle, dev->address, reg, I2C_MEMADD_SIZE_8BIT,
+                                     buffer, size);
+        if (status != HAL_OK) {
+            bme280_EndAsyncIo(dev, status);
+        }
+        return status;
     }
 
     return bme280_ReadData(dev, reg, buffer, size);
+}
+
+/**
+ * @brief   Writes a single register using blocking, DMA or interrupt I2C
+ */
+HAL_StatusTypeDef BME280_WriteRawData(BME280_t *dev, BME280_Registers reg, const uint8_t *value,
+                                      BME280_IoMode mode)
+{
+    HAL_StatusTypeDef status;
+
+    if ((dev == NULL) || (value == NULL)) {
+        return HAL_ERROR;
+    }
+
+    if (mode == BME280_IO_DMA) {
+        status = bme280_BeginAsyncIo(dev);
+        if (status != HAL_OK) {
+            return status;
+        }
+
+        status = HAL_I2C_Mem_Write_DMA(dev->i2c_handle, dev->address, reg, I2C_MEMADD_SIZE_8BIT,
+                                       (uint8_t *)value, 1U);
+        if (status != HAL_OK) {
+            bme280_EndAsyncIo(dev, status);
+        }
+        return status;
+    }
+
+    if (mode == BME280_IO_IT) {
+        status = bme280_BeginAsyncIo(dev);
+        if (status != HAL_OK) {
+            return status;
+        }
+
+        status = HAL_I2C_Mem_Write_IT(dev->i2c_handle, dev->address, reg, I2C_MEMADD_SIZE_8BIT,
+                                      (uint8_t *)value, 1U);
+        if (status != HAL_OK) {
+            bme280_EndAsyncIo(dev, status);
+        }
+        return status;
+    }
+
+    return HAL_I2C_Mem_Write(dev->i2c_handle, dev->address, reg, I2C_MEMADD_SIZE_8BIT,
+                             (uint8_t *)value, 1U, HAL_MAX_DELAY);
+}
+
+/**
+ * @brief   Returns whether a DMA/IT transfer is in progress on this handle
+ */
+uint8_t BME280_IsBusy(const BME280_t *dev)
+{
+    if (dev == NULL) {
+        return 0U;
+    }
+
+    return dev->io_busy;
+}
+
+/**
+ * @brief   Registers an optional callback for DMA/IT transfer completion
+ */
+void BME280_SetTransferCallback(BME280_t *dev, BME280_TransferCallback_t cb)
+{
+    if (dev == NULL) {
+        return;
+    }
+
+    dev->transfer_cb = cb;
+}
+
+/**
+ * @brief   Call from HAL_I2C_MemRxCpltCallback when a BME280 DMA/IT read finishes
+ */
+void BME280_HandleMemRxCplt(BME280_t *dev)
+{
+    if (dev == NULL) {
+        return;
+    }
+
+    bme280_EndAsyncIo(dev, HAL_OK);
+}
+
+/**
+ * @brief   Call from HAL_I2C_MemTxCpltCallback when a BME280 DMA/IT write finishes
+ */
+void BME280_HandleMemTxCplt(BME280_t *dev)
+{
+    if (dev == NULL) {
+        return;
+    }
+
+    bme280_EndAsyncIo(dev, HAL_OK);
+}
+
+/**
+ * @brief   Call from HAL_I2C_ErrorCallback when a BME280 DMA/IT transfer fails
+ */
+void BME280_HandleError(BME280_t *dev)
+{
+    if (dev == NULL) {
+        return;
+    }
+
+    bme280_EndAsyncIo(dev, HAL_ERROR);
+}
+
+/**
+ * @brief   Parses a STATUS register byte into measuring / im_update flags
+ */
+HAL_StatusTypeDef BME280_ParseStatus(const uint8_t *status_reg, uint8_t *measuring,
+                                     uint8_t *im_update)
+{
+    if ((status_reg == NULL) || (measuring == NULL) || (im_update == NULL)) {
+        return HAL_ERROR;
+    }
+
+    *measuring = (*status_reg >> 3) & 0x01U;
+    *im_update = *status_reg & 0x01U;
+    return HAL_OK;
 }
 
 /**

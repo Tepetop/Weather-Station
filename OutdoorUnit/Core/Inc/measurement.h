@@ -2,7 +2,7 @@
  * @file    measurement.h
  * @brief   Measurement module for multi-sensor data acquisition
  * @details Provides state machine-based measurement management for
- *          Si7021, BMP280 and TSL2561 sensors with error handling
+ *          Si7021, BMP280/BME280 and TSL2561 sensors with error handling
  *          and power management capabilities.
  */
 
@@ -10,9 +10,18 @@
 #define MEASUREMENT_H
 
 #include "main.h"
+
 #include "si7021.h"
-#include "bme280.h"
 #include "TSL2561.h"
+
+/* Barometric sensor driver — include exactly one header below. */
+#include "bme280.h"
+// #include "bmp280.h"
+
+#if defined(BMP280_H) && defined(BME280_H)
+#error "Include only one barometric driver: bmp280.h or bme280.h"
+#endif
+
 #include "stm32_hal_legacy.h"
 #include "stm32f1xx_hal_def.h"
 #include "ws_protocol.h"

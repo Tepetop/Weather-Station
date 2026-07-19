@@ -1,12 +1,18 @@
 /**
  * @file ws_protocol.c
- * @brief Encode/decode for Weather Station measurement payloads
+ * @brief Encode/decode implementation for Weather Station measurement payloads
+ * @details Binary frame layout: [version][sensor_status][count][channel+float]×count
  */
 
 #include "ws_protocol.h"
 
 #include <string.h>
 
+/**
+ * @brief   Calculates encoded frame size for a given reading count
+ * @param   count  Number of readings (clamped to WS_MAX_READINGS)
+ * @retval  uint8_t  Required buffer size in bytes
+ */
 uint8_t WS_Protocol_MaxEncodedSize(uint8_t count) {
   if (count > WS_MAX_READINGS) {
     count = WS_MAX_READINGS;
@@ -14,6 +20,15 @@ uint8_t WS_Protocol_MaxEncodedSize(uint8_t count) {
   return (uint8_t)(WS_PROTOCOL_HEADER_SIZE + (count * WS_PROTOCOL_RECORD_SIZE));
 }
 
+/**
+ * @brief   Encodes readings into binary wire format
+ * @param   in       Source readings structure
+ * @param   buf      Destination buffer
+ * @param   buf_size Buffer capacity
+ * @param   out_len  Receives encoded length on success
+ * @retval  true     Encoding successful
+ * @retval  false    Invalid parameters or buffer too small
+ */
 bool WS_Protocol_Encode(const WS_Readings_t *in, uint8_t *buf, uint8_t buf_size, uint8_t *out_len) {
   if ((in == NULL) || (buf == NULL) || (out_len == NULL) || (in->count > WS_MAX_READINGS)) {
     return false;
@@ -38,6 +53,14 @@ bool WS_Protocol_Encode(const WS_Readings_t *in, uint8_t *buf, uint8_t buf_size,
   return true;
 }
 
+/**
+ * @brief   Decodes binary wire format into readings structure
+ * @param   buf  Source buffer
+ * @param   len  Buffer length in bytes
+ * @param   out  Destination readings structure
+ * @retval  true     Decoding successful
+ * @retval  false    Invalid parameters, version mismatch, or truncated frame
+ */
 bool WS_Protocol_Decode(const uint8_t *buf, uint8_t len, WS_Readings_t *out) {
   if ((buf == NULL) || (out == NULL) || (len < WS_PROTOCOL_HEADER_SIZE)) {
     return false;
@@ -70,6 +93,14 @@ bool WS_Protocol_Decode(const uint8_t *buf, uint8_t len, WS_Readings_t *out) {
   return true;
 }
 
+/**
+ * @brief   Looks up a channel value in decoded readings
+ * @param   r          Readings structure to search
+ * @param   channel_id Channel ID to find (WS_ChannelId_t)
+ * @param   out_value  Optional output for the value (may be NULL)
+ * @retval  true       Channel found
+ * @retval  false      Channel not present or invalid readings pointer
+ */
 bool WS_Reading_Get(const WS_Readings_t *r, uint8_t channel_id, float *out_value) {
   if (r == NULL) {
     return false;
@@ -87,6 +118,11 @@ bool WS_Reading_Get(const WS_Readings_t *r, uint8_t channel_id, float *out_value
   return false;
 }
 
+/**
+ * @brief   Maps a channel ID to its sensor error flag
+ * @param   channel_id  Channel ID (WS_ChannelId_t)
+ * @retval  uint8_t     WS_SensorError_t bit for the owning sensor, or 0
+ */
 uint8_t WS_ChannelSensorError(uint8_t channel_id) {
   switch (channel_id) {
     case WS_CH_SI7021_TEMP:
@@ -102,6 +138,11 @@ uint8_t WS_ChannelSensorError(uint8_t channel_id) {
   }
 }
 
+/**
+ * @brief   Runs encode/decode round-trip self-test at startup
+ * @retval  true   Self-check passed
+ * @retval  false  Encode, decode, or value verification failed
+ */
 bool WS_Protocol_SelfCheck(void) {
   WS_Readings_t in = {
       .sensor_status = 0U,

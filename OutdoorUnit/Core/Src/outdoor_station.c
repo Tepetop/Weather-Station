@@ -1,3 +1,10 @@
+/**
+ * @file    outdoor_station.c
+ * @brief   Outdoor unit application implementation for STM32F103
+ * @details Manages NRF24 communication, measurement command handling, sensor
+ *          data encoding, and the OutdoorLink state machine.
+ */
+
 #include "main.h"
 #include "outdoor_station.h"
 
@@ -14,29 +21,35 @@
 #include "ws_protocol.h"
 #include "debug_log.h"
 
-/* Measurement context for sensor data acquisition */
+/** @brief Measurement context for sensor data acquisition */
 static Measurement_Context_t measCtx;
 
-/* Data buffer for NRF transmission */
+/** @brief NRF TX wire buffer (encoded measurement payload) */
 uint8_t txPayload[WS_PROTOCOL_MAX_PAYLOAD];
+/** @brief Length of encoded payload in txPayload */
 uint8_t txPayloadLen;
 
-/* Message buffer for UART transfer */
+/** @brief Message buffer for UART transfer */
 char Message[128];
 
-/* Message length */
+/** @brief Message length for UART transfer */
 uint8_t Length;
 
-/* NRF24L01 handle instance */
+/** @brief NRF24L01 handle instance */
 NRF24_Handle_t nrf;
 
-/* OutdoorLink state machine context */
+/** @brief OutdoorLink state machine context */
 OutdoorLinkContext_t outLink = {0};
 
-/* NRF TX address (multiceiver - derived from NODE_ID) */
+/** @brief NRF availability flag — set after successful presence check */
+static uint8_t nrf_available = 0U;
+/** @brief Tick of last periodic NRF reinit attempt */
+static uint32_t nrf_last_reinit_tick = 0U;
+
+/** @brief NRF TX address (multiceiver — derived from NODE_ID) */
 const uint8_t NRF_TX_ADDR[5] = {0xC2 + NODE_ID, 0xC2, 0xC2, 0xC2, 0xC2};
 
-/* NRF RX address (multiceiver - derived from NODE_ID) */
+/** @brief NRF RX address (multiceiver — derived from NODE_ID) */
 const uint8_t NRF_RX_ADDR[5] = {0xE7 + NODE_ID, 0xE7, 0xE7, 0xE7, 0xE7};
 
 #if CHECK_I2C_DEVICES
@@ -47,6 +60,7 @@ static void Outdoor_LedOn(void);
 static void Outdoor_LedOff(void);
 static void NRF_DelayUs(uint32_t us);
 static HAL_StatusTypeDef OutdoorStation_InitCommunication(void);
+static void OutdoorStation_TryReinitNrf(void);
 static void OutdoorStation_StartReceive(void);
 static void OutdoorStation_HandleIRQ(void);
 static void OutdoorStation_SendMeasurementData(void);
@@ -56,15 +70,29 @@ static void OutdoorStation_InitLink(void);
  * Public API
  * ============================================================================ */
 
+/**
+ * @brief   Initializes outdoor unit hardware and sensors
+ * @retval  HAL_OK     Initialization successful
+ * @retval  HAL_ERROR  Protocol self-check or sensor init failed
+ */
 HAL_StatusTypeDef OutdoorStation_Init(void)
 {
 #if CHECK_I2C_DEVICES
   I2C_CheckAddress(&hi2c2);
 #endif
 
-  if (OutdoorStation_InitCommunication() != HAL_OK)
+  nrf_available = 0U;
+  nrf_last_reinit_tick = HAL_GetTick();
+
+  if (OutdoorStation_InitCommunication() == HAL_OK)
   {
-    return HAL_ERROR;
+    nrf_available = 1U;
+    NRF24_FlushRX(&nrf);
+    OutdoorStation_StartReceive();
+  }
+  else
+  {
+    Debug_LogNrfUnavailable();
   }
 
   if (!WS_Protocol_SelfCheck())
@@ -111,16 +139,27 @@ HAL_StatusTypeDef OutdoorStation_Init(void)
   {
     Debug_LogSensorError(ERROR_SI7021, "SI7021");
   }
-
-  /* Start in RX mode, waiting for commands */
-  NRF24_FlushRX(&nrf);
-  OutdoorStation_StartReceive();
+    if (measCtx.sensorErrorCode & ERROR_BME280)
+  {
+    Debug_LogSensorError(ERROR_BME280, "BME280");
+  }
 
   return HAL_OK;
 }
 
+/**
+ * @brief   Processes the OutdoorLink state machine (call from main loop)
+ * @retval  None
+ */
 void OutdoorStation_Process(void)
 {
+  OutdoorStation_TryReinitNrf();
+
+  if (!nrf_available)
+  {
+    return;
+  }
+
   /* ---- Always handle pending IRQ first ---- */
   if (outLink.irq_flag)
   {
@@ -297,6 +336,11 @@ void OutdoorStation_Process(void)
   }
 }
 
+/**
+ * @brief   EXTI callback for NRF IRQ pin
+ * @param   GPIO_Pin  Pin that triggered the interrupt
+ * @retval  None
+ */
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
   if (GPIO_Pin == NRF_IRQ_Pin)
@@ -310,6 +354,11 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
  * ============================================================================ */
 
 #if CHECK_I2C_DEVICES
+/**
+ * @brief   Scans I2C bus and logs responding device addresses (debug)
+ * @param   i2c  Pointer to I2C handle
+ * @retval  HAL_OK  Scan completed
+ */
 static HAL_StatusTypeDef I2C_CheckAddress(I2C_HandleTypeDef *i2c)
 {
   for (uint8_t addr = 0x01; addr < 0x7F; addr++)
@@ -323,16 +372,29 @@ static HAL_StatusTypeDef I2C_CheckAddress(I2C_HandleTypeDef *i2c)
 }
 #endif
 
+/**
+ * @brief   Turns on the user LED (active low)
+ * @retval  None
+ */
 static void Outdoor_LedOn(void)
 {
   HAL_GPIO_WritePin(USER_LED_GPIO_Port, USER_LED_Pin, GPIO_PIN_RESET);
 }
 
+/**
+ * @brief   Turns off the user LED (active low)
+ * @retval  None
+ */
 static void Outdoor_LedOff(void)
 {
   HAL_GPIO_WritePin(USER_LED_GPIO_Port, USER_LED_Pin, GPIO_PIN_SET);
 }
 
+/**
+ * @brief   Busy-wait microsecond delay using DWT cycle counter
+ * @param   us  Delay duration in microseconds
+ * @retval  None
+ */
 static void NRF_DelayUs(uint32_t us)
 {
   /* Enable DWT if not already enabled */
@@ -347,49 +409,114 @@ static void NRF_DelayUs(uint32_t us)
   }
 }
 
+/**
+ * @brief   Initializes NRF24 radio with retries and multiceiver addresses
+ * @retval  HAL_OK     Radio present and configured
+ * @retval  HAL_ERROR  Init or presence check failed after all retries
+ */
 static HAL_StatusTypeDef OutdoorStation_InitCommunication(void)
 {
-  /* Initialize the nRF24L01 driver */
-  if (NRF24_Init(&nrf, &hspi1, NRF_CS_GPIO_Port, NRF_CS_Pin,
-                 NRF_CE_GPIO_Port, NRF_CE_Pin, NRF_IRQ_GPIO_Port, NRF_IRQ_Pin,
-                 NRF_DelayUs) != HAL_OK)
+  for (uint8_t attempt = 1U; attempt <= NRF_INIT_MAX_RETRIES; attempt++)
   {
-    Debug_LogNrfInit(0U);
-    return HAL_ERROR;
+    if (NRF24_Init(&nrf, &hspi1, NRF_CS_GPIO_Port, NRF_CS_Pin,
+                   NRF_CE_GPIO_Port, NRF_CE_Pin, NRF_IRQ_GPIO_Port, NRF_IRQ_Pin,
+                   NRF_DelayUs) != HAL_OK)
+    {
+      goto init_retry;
+    }
+
+    if (NRF24_IsPresent(&nrf) != HAL_OK)
+    {
+      goto init_retry;
+    }
+
+    /* Configure radio parameters - MUST match IndoorUnit */
+    NRF24_SetChannel(&nrf, NRF_CHANNEL);
+    NRF24_SetDataRate(&nrf, NRF24_DR_1MBPS);
+    NRF24_SetPALevel(&nrf, NRF24_PA_MAX);
+    NRF24_SetCRC(&nrf, NRF24_CRC_2B);
+    NRF24_SetAddressWidth(&nrf, NRF24_AW_5);
+    NRF24_SetAutoRetr(&nrf, 1, 10);
+
+    /* Configure addresses (multiceiver - derived from NODE_ID) */
+    NRF24_SetTXAddress(&nrf, NRF_TX_ADDR, 5);
+    NRF24_SetRXAddress(&nrf, 0, NRF_TX_ADDR, 5);
+    NRF24_SetRXAddress(&nrf, 1, NRF_RX_ADDR, 5);
+
+    /* Configure pipes */
+    NRF24_SetAutoAck(&nrf, 0, 1);
+    NRF24_SetAutoAck(&nrf, 1, 1);
+    NRF24_EnablePipe(&nrf, 0, 1);
+    NRF24_EnablePipe(&nrf, 1, 1);
+    NRF24_SetPayloadSize(&nrf, 0, NRF_PAYLOAD_SIZE);
+    NRF24_SetPayloadSize(&nrf, 1, NRF_CMD_SIZE);
+
+    Debug_LogNrfInit(1U);
+    Debug_LogNrfListening();
+    return HAL_OK;
+
+  init_retry:
+    Debug_LogNrfInitRetry(attempt, NRF_INIT_MAX_RETRIES);
+    if (attempt < NRF_INIT_MAX_RETRIES)
+    {
+      HAL_Delay(NRF_INIT_RETRY_DELAY_MS);
+    }
   }
 
-  /* Configure radio parameters - MUST match IndoorUnit */
-  NRF24_SetChannel(&nrf, NRF_CHANNEL);
-  NRF24_SetDataRate(&nrf, NRF24_DR_1MBPS);
-  NRF24_SetPALevel(&nrf, NRF24_PA_MAX);
-  NRF24_SetCRC(&nrf, NRF24_CRC_2B);
-  NRF24_SetAddressWidth(&nrf, NRF24_AW_5);
-  NRF24_SetAutoRetr(&nrf, 1, 10);
-
-  /* Configure addresses (multiceiver - derived from NODE_ID) */
-  NRF24_SetTXAddress(&nrf, NRF_TX_ADDR, 5);
-  NRF24_SetRXAddress(&nrf, 0, NRF_TX_ADDR, 5);
-  NRF24_SetRXAddress(&nrf, 1, NRF_RX_ADDR, 5);
-
-  /* Configure pipes */
-  NRF24_SetAutoAck(&nrf, 0, 1);
-  NRF24_SetAutoAck(&nrf, 1, 1);
-  NRF24_EnablePipe(&nrf, 0, 1);
-  NRF24_EnablePipe(&nrf, 1, 1);
-  NRF24_SetPayloadSize(&nrf, 0, NRF_PAYLOAD_SIZE);
-  NRF24_SetPayloadSize(&nrf, 1, NRF_CMD_SIZE);
-  Debug_LogNrfInit(1U);
-  Debug_LogNrfListening();
-  return HAL_OK;
+  Debug_LogNrfInit(0U);
+  return HAL_ERROR;
 }
 
+/**
+ * @brief   Periodically retries NRF init when radio was unavailable at boot
+ * @retval  None
+ */
+static void OutdoorStation_TryReinitNrf(void)
+{
+  if (nrf_available)
+  {
+    return;
+  }
+
+  uint32_t now = HAL_GetTick();
+  if ((now - nrf_last_reinit_tick) < NRF_REINIT_INTERVAL_MS)
+  {
+    return;
+  }
+  nrf_last_reinit_tick = now;
+
+  Debug_LogNrfReinitAttempt();
+
+  if (OutdoorStation_InitCommunication() == HAL_OK)
+  {
+    nrf_available = 1U;
+    OutdoorStation_InitLink();
+    NRF24_FlushRX(&nrf);
+    OutdoorStation_StartReceive();
+    Debug_LogNrfReinitOk();
+  }
+}
+
+/**
+ * @brief   Puts NRF24 into RX mode, flushing pending IRQ flags
+ * @retval  None
+ */
 static void OutdoorStation_StartReceive(void)
 {
+  if (!nrf_available)
+  {
+    return;
+  }
+
   NRF24_SetMode(&nrf, NRF24_MODE_STANDBY);
   NRF24_ClearIRQ(&nrf, NRF24_STATUS_IRQ_MASK);
   NRF24_SetMode(&nrf, NRF24_MODE_RX);
 }
 
+/**
+ * @brief   Handles NRF24 IRQ: RX commands, TX_DS (ACK), and MAX_RT
+ * @retval  None
+ */
 static void OutdoorStation_HandleIRQ(void)
 {
   uint8_t status = NRF24_GetStatus(&nrf);
@@ -426,6 +553,11 @@ static void OutdoorStation_HandleIRQ(void)
   }
 }
 
+/**
+ * @brief   Encodes measurement data and starts NRF24 TX
+ * @retval  None
+ * @details Sends header-only frame when no channel readings are available.
+ */
 static void OutdoorStation_SendMeasurementData(void)
 {
   uint8_t wire[NRF_PAYLOAD_SIZE] = {0};
@@ -455,6 +587,10 @@ static void OutdoorStation_SendMeasurementData(void)
   NRF24_SetMode(&nrf, NRF24_MODE_TX);
 }
 
+/**
+ * @brief   Resets OutdoorLink context to idle defaults
+ * @retval  None
+ */
 static void OutdoorStation_InitLink(void)
 {
   outLink.irq_flag = 0U;

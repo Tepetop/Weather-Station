@@ -5,6 +5,12 @@
  *          Configuration setters mostly update cached settings; call
  *          BME280_ApplySettings() to write them to the device (except
  *          BME280_SetConfig / BME280_SetMode which write immediately).
+ *
+ *          Raw register I/O supports blocking, DMA and interrupt modes via
+ *          BME280_IoMode. High-level Get* helpers use blocking I/O only.
+ *          For DMA/IT, start a raw read/write, then parse/compensate from
+ *          HAL_I2C_MemRxCpltCallback / HAL_I2C_MemTxCpltCallback using
+ *          BME280_HandleMemRxCplt() / BME280_HandleMemTxCplt().
  */
 
 #ifndef BME280_H
@@ -16,6 +22,8 @@
 /* ============================================================================
  * Type Definitions
  * ============================================================================ */
+
+typedef struct BME280_t BME280_t;
 
 /**
  * @brief Datasheet recommended operating profiles (section 3.5)
@@ -106,12 +114,20 @@ typedef enum {
 } BME280_StandbyTime;
 
 /**
- * @brief I2C transfer mode for raw register reads
+ * @brief I2C transfer mode for raw register reads and writes
  */
 typedef enum {
-    BME280_IO_BLOCKING = 0x00, /**< Blocking HAL_I2C_Mem_Read */
-    BME280_IO_DMA      = 0x01, /**< Non-blocking HAL_I2C_Mem_Read_DMA */
+    BME280_IO_BLOCKING = 0x00, /**< Blocking HAL_I2C_Mem_Read/Write */
+    BME280_IO_DMA      = 0x01, /**< Non-blocking HAL_I2C_Mem_Read/Write_DMA */
+    BME280_IO_IT       = 0x02, /**< Non-blocking HAL_I2C_Mem_Read/Write_IT */
 } BME280_IoMode;
+
+/**
+ * @brief Optional callback invoked after a DMA/IT transfer completes
+ * @param dev     Device handle that started the transfer
+ * @param status  HAL_OK on success, HAL_ERROR on bus failure
+ */
+typedef void (*BME280_TransferCallback_t)(BME280_t *dev, HAL_StatusTypeDef status);
 
 /**
  * @brief Self-test result codes
@@ -197,12 +213,14 @@ typedef struct {
  * @brief BME280 device handle
  * @details Holds I2C binding, latest data, calibration and settings.
  */
-typedef struct {
+typedef struct BME280_t {
     I2C_HandleTypeDef *i2c_handle; /**< HAL I2C handle */
     uint8_t address;               /**< 8-bit HAL address (7-bit << 1) */
     BME280_Measurement_t data;     /**< Latest raw and compensated values */
     BME280_Calibration_t calibration; /**< NVM trim coefficients */
     BME280_Settings_t settings;    /**< Cached configuration */
+    volatile uint8_t io_busy;      /**< 1 while a DMA/IT transfer is active */
+    BME280_TransferCallback_t transfer_cb; /**< Optional async completion hook */
 } BME280_t;
 
 /* ============================================================================
@@ -351,25 +369,84 @@ uint32_t BME280_GetMeasurementDurationMs(const BME280_t *dev, uint8_t use_max_ti
  * ============================================================================ */
 
 /**
- * @brief   Reads raw register data using blocking or DMA I2C
+ * @brief   Reads raw register data using blocking, DMA or interrupt I2C
  * @param   dev     Pointer to device handle
  * @param   reg     Start register address
- * @param   buffer  Destination buffer
+ * @param   buffer  Destination buffer (must stay valid until DMA/IT completes)
  * @param   size    Number of bytes to read
- * @param   mode    Blocking or DMA transfer mode
+ * @param   mode    Blocking, DMA or interrupt transfer mode
  * @retval  HAL_OK     Transfer started/completed successfully
+ * @retval  HAL_BUSY   Another DMA/IT transfer is already in progress
  * @retval  HAL_ERROR  Null pointer or I2C failure
  */
 HAL_StatusTypeDef BME280_ReadRawData(BME280_t *dev, BME280_Registers reg, uint8_t *buffer,
                                      uint16_t size, BME280_IoMode mode);
 
 /**
+ * @brief   Writes a single register using blocking, DMA or interrupt I2C
+ * @param   dev     Pointer to device handle
+ * @param   reg     Register address
+ * @param   value   Byte value to write
+ * @param   mode    Blocking, DMA or interrupt transfer mode
+ * @retval  HAL_OK     Transfer started/completed successfully
+ * @retval  HAL_BUSY   Another DMA/IT transfer is already in progress
+ * @retval  HAL_ERROR  Null pointer or I2C failure
+ * @note    For DMA/IT, @p value must remain valid until the transfer completes.
+ */
+HAL_StatusTypeDef BME280_WriteRawData(BME280_t *dev, BME280_Registers reg, const uint8_t *value,
+                                      BME280_IoMode mode);
+
+/**
+ * @brief   Returns whether a DMA/IT transfer is in progress on this handle
+ * @param   dev  Pointer to device handle
+ * @retval  1 if busy, 0 if idle or @p dev is NULL
+ */
+uint8_t BME280_IsBusy(const BME280_t *dev);
+
+/**
+ * @brief   Registers an optional callback for DMA/IT transfer completion
+ * @param   dev  Pointer to device handle
+ * @param   cb   Callback invoked from BME280_HandleMemRxCplt/TxCplt; NULL to disable
+ */
+void BME280_SetTransferCallback(BME280_t *dev, BME280_TransferCallback_t cb);
+
+/**
+ * @brief   Call from HAL_I2C_MemRxCpltCallback when a BME280 DMA/IT read finishes
+ * @param   dev  Device handle that started the read
+ */
+void BME280_HandleMemRxCplt(BME280_t *dev);
+
+/**
+ * @brief   Call from HAL_I2C_MemTxCpltCallback when a BME280 DMA/IT write finishes
+ * @param   dev  Device handle that started the write
+ */
+void BME280_HandleMemTxCplt(BME280_t *dev);
+
+/**
+ * @brief   Call from HAL_I2C_ErrorCallback when a BME280 DMA/IT transfer fails
+ * @param   dev  Device handle that started the transfer
+ */
+void BME280_HandleError(BME280_t *dev);
+
+/**
+ * @brief   Parses a STATUS register byte into measuring / im_update flags
+ * @param   status_reg  Raw STATUS register value
+ * @param   measuring   Output: 1 while conversion in progress
+ * @param   im_update   Output: 1 while NVM data are being copied
+ * @retval  HAL_OK     Parsed successfully
+ * @retval  HAL_ERROR  Null output pointer
+ */
+HAL_StatusTypeDef BME280_ParseStatus(const uint8_t *status_reg, uint8_t *measuring,
+                                     uint8_t *im_update);
+
+/**
  * @brief   Reads 3 raw temperature bytes starting at TEMP_MSB
  * @param   dev     Pointer to device handle
  * @param   buffer  Destination buffer (at least 3 bytes)
  * @param   size    Buffer capacity in bytes
- * @param   mode    Blocking or DMA transfer mode
- * @retval  HAL_OK     Read successful
+ * @param   mode    Blocking, DMA or interrupt transfer mode
+ * @retval  HAL_OK     Read successful or DMA/IT started
+ * @retval  HAL_BUSY   DMA/IT transfer already in progress
  * @retval  HAL_ERROR  Null pointer, buffer too small, or I2C failure
  */
 HAL_StatusTypeDef BME280_ReadRawTemperature(BME280_t *dev, uint8_t *buffer, uint16_t size,
@@ -380,8 +457,9 @@ HAL_StatusTypeDef BME280_ReadRawTemperature(BME280_t *dev, uint8_t *buffer, uint
  * @param   dev     Pointer to device handle
  * @param   buffer  Destination buffer (at least 3 bytes)
  * @param   size    Buffer capacity in bytes
- * @param   mode    Blocking or DMA transfer mode
- * @retval  HAL_OK     Read successful
+ * @param   mode    Blocking, DMA or interrupt transfer mode
+ * @retval  HAL_OK     Read successful or DMA/IT started
+ * @retval  HAL_BUSY   DMA/IT transfer already in progress
  * @retval  HAL_ERROR  Null pointer, buffer too small, or I2C failure
  */
 HAL_StatusTypeDef BME280_ReadRawPressure(BME280_t *dev, uint8_t *buffer, uint16_t size,
@@ -392,8 +470,9 @@ HAL_StatusTypeDef BME280_ReadRawPressure(BME280_t *dev, uint8_t *buffer, uint16_
  * @param   dev     Pointer to device handle
  * @param   buffer  Destination buffer (at least 2 bytes)
  * @param   size    Buffer capacity in bytes
- * @param   mode    Blocking or DMA transfer mode
- * @retval  HAL_OK     Read successful
+ * @param   mode    Blocking, DMA or interrupt transfer mode
+ * @retval  HAL_OK     Read successful or DMA/IT started
+ * @retval  HAL_BUSY   DMA/IT transfer already in progress
  * @retval  HAL_ERROR  Null pointer, buffer too small, or I2C failure
  */
 HAL_StatusTypeDef BME280_ReadRawHumidity(BME280_t *dev, uint8_t *buffer, uint16_t size,
@@ -404,8 +483,9 @@ HAL_StatusTypeDef BME280_ReadRawHumidity(BME280_t *dev, uint8_t *buffer, uint16_
  * @param   dev     Pointer to device handle
  * @param   buffer  Destination buffer (at least 8 bytes)
  * @param   size    Buffer capacity in bytes
- * @param   mode    Blocking or DMA transfer mode
- * @retval  HAL_OK     Read successful
+ * @param   mode    Blocking, DMA or interrupt transfer mode
+ * @retval  HAL_OK     Read successful or DMA/IT started
+ * @retval  HAL_BUSY   DMA/IT transfer already in progress
  * @retval  HAL_ERROR  Null pointer, buffer too small, or I2C failure
  */
 HAL_StatusTypeDef BME280_ReadRawTemperaturePressureHumidity(BME280_t *dev, uint8_t *buffer,

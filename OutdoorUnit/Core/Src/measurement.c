@@ -1,8 +1,8 @@
 /**
  * @file    measurement.c
  * @brief   Measurement module implementation for multi-sensor data acquisition
- * @details State machine-based measurement management for Si7021, BMP280 and
- *          TSL2561 sensors with error handling and power management.
+ * @details State machine-based measurement management for Si7021, BMP280/BME280
+ *          and TSL2561 sensors with error handling and power management.
  */
 
 #include "measurement.h"
@@ -22,8 +22,8 @@ static Si7021_t hsi7021;
 #endif
 
 #ifdef BMP280_H
-// /** @brief BMP280 sensor handle */
- static BMP280_t hbmp280;
+/** @brief BMP280 sensor handle */
+static BMP280_t hbmp280;
 #endif
 
 #ifdef BME280_H
@@ -33,7 +33,7 @@ static BME280_t hbme280;
 
 #ifdef TSL2561_H
 /** @brief TSL2561 sensor handle */
- static TSL2561_t htsl2561;
+static TSL2561_t htsl2561;
 #endif
 
 /** @brief I2C handle for sensor communication */
@@ -66,21 +66,56 @@ static uint32_t measurementWakeupTick;
 #define SENSOR_BME280_INIT  (1 << 3)
 #endif
 
-/** @brief All sensors initialization mask */
-#define ALL_SENSORS_INIT    (SENSOR_SI7021_INIT | SENSOR_TSL2561_INIT | SENSOR_BME280_INIT)
+/** @brief Bitmask of all enabled sensor init flags (compile-time) */
+#if defined(SI7021_H)
+#define MEAS_MASK_SI7021    SENSOR_SI7021_INIT
+#else
+#define MEAS_MASK_SI7021    0U
+#endif
+#if defined(BMP280_H)
+#define MEAS_MASK_BMP280    SENSOR_BMP280_INIT
+#else
+#define MEAS_MASK_BMP280    0U
+#endif
+#if defined(TSL2561_H)
+#define MEAS_MASK_TSL2561   SENSOR_TSL2561_INIT
+#else
+#define MEAS_MASK_TSL2561   0U
+#endif
+#if defined(BME280_H)
+#define MEAS_MASK_BME280    SENSOR_BME280_INIT
+#else
+#define MEAS_MASK_BME280    0U
+#endif
+#define ALL_SENSORS_INIT    (MEAS_MASK_SI7021 | MEAS_MASK_BMP280 | MEAS_MASK_TSL2561 | MEAS_MASK_BME280)
+
+/** @brief Wire-protocol error bit for the active barometric sensor (BMP280/BME280 channels) */
+#if defined(BMP280_H) || defined(BME280_H)
+#define MEAS_BARO_WIRE_ERROR    ERROR_BMP280
+#endif
 
 /* ============================================================================
  * Private Function Prototypes
  * ============================================================================ */
 
 static uint32_t Measurement_GetTSL2561IntegrationDelayMs(void);
+#ifdef SI7021_H
 static HAL_StatusTypeDef Measurement_InitSi7021(Measurement_Context_t *ctx);
-static HAL_StatusTypeDef Measurement_InitBME280(Measurement_Context_t *ctx);
-static HAL_StatusTypeDef Measurement_InitTSL2561(Measurement_Context_t *ctx);
-static void Measurement_InitializeSensors(Measurement_Context_t *ctx);
 static void Measurement_ReadSi7021(Measurement_Context_t *ctx);
+#endif
+#ifdef BMP280_H
+static HAL_StatusTypeDef Measurement_InitBMP280(Measurement_Context_t *ctx);
+static void Measurement_ReadBMP280(Measurement_Context_t *ctx);
+#endif
+#ifdef BME280_H
+static HAL_StatusTypeDef Measurement_InitBME280(Measurement_Context_t *ctx);
 static void Measurement_ReadBME280(Measurement_Context_t *ctx);
+#endif
+#ifdef TSL2561_H
+static HAL_StatusTypeDef Measurement_InitTSL2561(Measurement_Context_t *ctx);
 static void Measurement_ReadTSL2561(Measurement_Context_t *ctx);
+#endif
+static void Measurement_InitializeSensors(Measurement_Context_t *ctx);
 static void Measurement_ReadAllSensors(Measurement_Context_t *ctx);
 static void Measurement_HandleError(Measurement_Context_t *ctx);
 
@@ -417,7 +452,7 @@ static void Measurement_ReadBME280(Measurement_Context_t *ctx) {
     uint32_t timeout_ms;
 
     if (!(ctx->sensorsInitialized & SENSOR_BME280_INIT)) {
-        ctx->data.sensorStatus |= ERROR_BME280;
+        ctx->data.sensorStatus |= MEAS_BARO_WIRE_ERROR;
         ctx->sensorErrorCode |= ERROR_BME280;
         return;
     }
@@ -425,6 +460,7 @@ static void Measurement_ReadBME280(Measurement_Context_t *ctx) {
     BME280_SetCtrlHum(&hbme280, BME280_OVERSAMPLING_X16);
     if (BME280_SetCtrlMeasSimple(&hbme280, BME280_OVERSAMPLING_X16, BME280_MODE_FORCED) != HAL_OK ||
         BME280_ApplySettings(&hbme280) != HAL_OK) {
+        ctx->data.sensorStatus |= MEAS_BARO_WIRE_ERROR;
         ctx->sensorErrorCode |= ERROR_BME280;
         ctx->sensorsInitialized &= ~SENSOR_BME280_INIT;
         return;
@@ -432,7 +468,7 @@ static void Measurement_ReadBME280(Measurement_Context_t *ctx) {
 
     timeout_ms = BME280_GetMeasurementDurationMs(&hbme280, 1U) + 5U;
     if (BME280_WaitForMeasurement(&hbme280, timeout_ms) != HAL_OK) {
-        ctx->data.sensorStatus |= ERROR_BME280;
+        ctx->data.sensorStatus |= MEAS_BARO_WIRE_ERROR;
         ctx->sensorErrorCode |= ERROR_BME280;
         ctx->sensorsInitialized &= ~SENSOR_BME280_INIT;
         return;
@@ -443,7 +479,7 @@ static void Measurement_ReadBME280(Measurement_Context_t *ctx) {
         ctx->data.bme280_press = hbme280.data.pressure;
         ctx->data.bme280_hum = hbme280.data.humidity;
     } else {
-        ctx->data.sensorStatus |= ERROR_BME280;
+        ctx->data.sensorStatus |= MEAS_BARO_WIRE_ERROR;
         ctx->sensorErrorCode |= ERROR_BME280;
         ctx->sensorsInitialized &= ~SENSOR_BME280_INIT;
     }
@@ -722,6 +758,7 @@ HAL_StatusTypeDef Measurement_ReinitSensor(Measurement_Context_t *ctx, Sensor_Er
     HAL_StatusTypeDef result = HAL_ERROR;
     
     switch (sensor_error) {
+#ifdef SI7021_H
         case ERROR_SI7021:
             if (Measurement_InitSi7021(ctx) == HAL_OK) {
                 ctx->sensorErrorCode &= ~ERROR_SI7021;
@@ -729,7 +766,8 @@ HAL_StatusTypeDef Measurement_ReinitSensor(Measurement_Context_t *ctx, Sensor_Er
                 result = HAL_OK;
             }
             break;
-            
+#endif
+
 #ifdef BMP280_H
         case ERROR_BMP280:
             if (Measurement_InitBMP280(ctx) == HAL_OK) {
@@ -740,6 +778,7 @@ HAL_StatusTypeDef Measurement_ReinitSensor(Measurement_Context_t *ctx, Sensor_Er
             break;
 #endif
 
+#ifdef TSL2561_H
         case ERROR_TSL2561:
             if (Measurement_InitTSL2561(ctx) == HAL_OK) {
                 ctx->sensorErrorCode &= ~ERROR_TSL2561;
@@ -747,15 +786,18 @@ HAL_StatusTypeDef Measurement_ReinitSensor(Measurement_Context_t *ctx, Sensor_Er
                 result = HAL_OK;
             }
             break;
+#endif
 
+#ifdef BME280_H
         case ERROR_BME280:
             if (Measurement_InitBME280(ctx) == HAL_OK) {
                 ctx->sensorErrorCode &= ~ERROR_BME280;
-                ctx->data.sensorStatus &= ~ERROR_BME280;
+                ctx->data.sensorStatus &= ~MEAS_BARO_WIRE_ERROR;
                 result = HAL_OK;
             }
             break;
-            
+#endif
+
         default:
             break;
     }
@@ -765,6 +807,9 @@ HAL_StatusTypeDef Measurement_ReinitSensor(Measurement_Context_t *ctx, Sensor_Er
 
 /**
  * @brief   Returns channel value from internal measurement cache
+ * @param   data        Pointer to cached measurement data
+ * @param   channel_id  Protocol channel ID (WS_ChannelId_t)
+ * @retval  float       Sensor value for the channel, or 0.0f if unknown
  */
 static float Measurement_GetChannelValue(const Measurement_Data_t *data, uint8_t channel_id) {
     switch (channel_id) {
@@ -795,6 +840,14 @@ static float Measurement_GetChannelValue(const Measurement_Data_t *data, uint8_t
     }
 }
 
+/**
+ * @brief   Builds tagged readings from the latest measurement context data
+ * @param   ctx   Pointer to measurement context structure
+ * @param   out   Output readings structure to fill
+ * @retval  true  At least one channel encoded successfully
+ * @retval  false Invalid parameters or no enabled channels available
+ * @details Skips channels whose sensor reported an error in sensorStatus.
+ */
 bool Measurement_BuildReadings(const Measurement_Context_t *ctx, WS_Readings_t *out) {
     if ((ctx == NULL) || (out == NULL)) {
         return false;
@@ -823,6 +876,13 @@ bool Measurement_BuildReadings(const Measurement_Context_t *ctx, WS_Readings_t *
     return (out->count > 0U);
 }
 
+/**
+ * @brief   Encodes measurement data into nRF24 wire buffer
+ * @param   ctx       Pointer to measurement context structure
+ * @param   buf       Destination buffer for encoded payload
+ * @param   buf_size  Buffer capacity in bytes
+ * @retval  uint8_t   Encoded length in bytes, 0 on failure
+ */
 uint8_t Measurement_EncodePayload(const Measurement_Context_t *ctx, uint8_t *buf, uint8_t buf_size) {
     WS_Readings_t readings;
     uint8_t encoded_len = 0U;
