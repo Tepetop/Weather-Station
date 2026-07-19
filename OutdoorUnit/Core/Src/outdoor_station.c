@@ -193,12 +193,13 @@ HAL_StatusTypeDef OutdoorStation_Init(void)
  */
 void OutdoorStation_Process(void)
 {
-  // OutdoorStation_TryReinitNrf();
+  
+  OutdoorStation_TryReinitNrf();
 
-  // if (!nrf_available)
-  // {
-  //   return;
-  // }
+  if (!nrf_available)
+  {
+    return;
+  }
 
   /* ---- Always handle pending IRQ first ---- */
   if (outLink.irq_flag)

@@ -11,14 +11,11 @@
 
 #include "main.h"
 
-// #include "si7021.h"
-// #include "TSL2561.h"
-// #include "bmp280.h"
+#include "si7021.h"
+#include "TSL2561.h"
+#include "bmp280.h"
 #include "bme280.h"
 
-#if defined(BMP280_H) && defined(BME280_H)
-#error "Include only one barometric driver: bmp280.h or bme280.h"
-#endif
 
 #include "stm32_hal_legacy.h"
 #include "stm32f1xx_hal_def.h"
