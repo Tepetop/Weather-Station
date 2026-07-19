@@ -573,6 +573,9 @@ void WS_RequestMeasurementForActiveNode(WS_Manager_t *ctx) {
   WS_NodeState_t *node = WS_GetActiveNode(ctx);
   if (node != NULL) {
     node->measurement_pending = 1U;
+    if (node->state == WS_NODE_ERROR) {
+      node->state = WS_NODE_IDLE;
+    }
     ctx->app_state = WS_APP_IDLE;
   }
 }
@@ -928,6 +931,11 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
       Debug_Log("LOG:NRF:RECOVERY_OK");
     } else {
       Debug_Log("LOG:NRF:RECOVERY_FAIL");
+    }
+    WS_NodeState_t *recovery_node = WS_GetActiveNode(ctx);
+    if (recovery_node != NULL) {
+      recovery_node->state = WS_NODE_IDLE;
+      recovery_node->measurement_pending = 1U;
     }
     ctx->app_state = WS_APP_IDLE;
     return;
