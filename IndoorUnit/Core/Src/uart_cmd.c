@@ -79,7 +79,9 @@ static void uart_cmd_request_measure(uint8_t target) {
   }
 
   WS_NodeState_t *node = WS_GetActiveNode(ws);
-  if ((node == NULL) || (node->state != WS_NODE_IDLE) || (node->measurement_pending != 0U)) {
+  if ((node == NULL) || (node->measurement_pending != 0U) ||
+      (node->state == WS_NODE_TX_IN_PROGRESS) ||
+      (node->state == WS_NODE_WAIT_RESPONSE)) {
     uart_cmd_reply("ERR:BUSY");
     return;
   }
