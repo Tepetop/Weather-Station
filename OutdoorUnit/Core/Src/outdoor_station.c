@@ -201,6 +201,12 @@ void OutdoorStation_Process(void)
     return;
   }
 
+  /* Fallback: poll NRF IRQ pin for missed EXTI edges (all link states) */
+  if (HAL_GPIO_ReadPin(NRF_IRQ_GPIO_Port, NRF_IRQ_Pin) == GPIO_PIN_RESET)
+  {
+    outLink.irq_flag = 1;
+  }
+
   /* ---- Always handle pending IRQ first ---- */
   if (outLink.irq_flag)
   {
@@ -211,12 +217,6 @@ void OutdoorStation_Process(void)
   switch (outLink.state)
   {
     case OUT_LINK_IDLE:
-      /* Fallback: poll NRF IRQ pin for missed EXTI edges */
-      if (HAL_GPIO_ReadPin(NRF_IRQ_GPIO_Port, NRF_IRQ_Pin) == GPIO_PIN_RESET)
-      {
-        outLink.irq_flag = 1;
-      }
-
       /* Check if a measurement command was received via OutdoorStation_HandleIRQ */
       if (outLink.cmd_received)
       {
