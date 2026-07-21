@@ -31,7 +31,7 @@
  * Node Configuration
  * ============================================================================ */
 /** @brief Node identity — change this per outdoor unit (0-3) */
-#define NODE_ID               0U
+#define NODE_ID               1U
 
 /* ============================================================================
  * NRF24L01 Configuration
