@@ -582,6 +582,15 @@ void WS_RequestMeasurementForActiveNode(WS_Manager_t *ctx) {
   }
 }
 
+void WS_RequestMeasurementCycle(WS_Manager_t *ctx) {
+  if (ctx == NULL) {
+    return;
+  }
+
+  ctx->cycle_nodes_remaining = ctx->node_count;
+  WS_RequestMeasurementForActiveNode(ctx);
+}
+
 /**
  * @brief Clears the measurement pending flag for the active node
  * @param[in,out] ctx Manager context
@@ -1039,8 +1048,15 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
       WS_UI_AddMeasurementToCharts(&node->data, WS_UI.rtc_now->hours, WS_UI.rtc_now->minutes);
     }
 
-    WS_ScheduleNextNode(ctx);
-    ctx->app_state = WS_APP_DATA_READY;
+    if (ctx->cycle_nodes_remaining > 1U) {
+      ctx->cycle_nodes_remaining--;
+      WS_ScheduleNextNode(ctx);
+      WS_RequestMeasurementForActiveNode(ctx);
+    } else {
+      ctx->cycle_nodes_remaining = 0U;
+      WS_ScheduleNextNode(ctx);
+      ctx->app_state = WS_APP_DATA_READY;
+    }
     return;
   }
 }

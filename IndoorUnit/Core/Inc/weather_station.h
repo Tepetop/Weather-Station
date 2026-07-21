@@ -137,6 +137,7 @@ typedef struct {
   DS3231_DateTime last_successful_rx_time; /**< RTC date/time of last valid measurement */
   volatile uint8_t last_successful_rx_time_valid; /**< 1 when last_successful_rx_time is valid */
   volatile uint8_t comm_watchdog_tripped; /**< 1 when communication watchdog timed out */
+  uint8_t cycle_nodes_remaining;       /**< Nodes left in scheduled multi-node cycle */
   WS_AppState_t app_state;             /**< Current application state */
   WS_NodeState_t nodes[WS_MAX_NODES];  /**< Array of node state structures */
 } WS_Manager_t;
@@ -204,6 +205,15 @@ bool WS_ShouldFallbackToStatusRead(const WS_Manager_t *ctx);
  * @param[in,out] ctx Manager context
  */
 void WS_RequestMeasurementForActiveNode(WS_Manager_t *ctx);
+
+/**
+ * @brief Requests measurements from all outdoor nodes in sequence
+ * @param[in,out] ctx Manager context
+ * @details Starts a round-robin cycle at the current active node. After each
+ *          successful response the next node is queued automatically until all
+ *          nodes in node_count have been polled.
+ */
+void WS_RequestMeasurementCycle(WS_Manager_t *ctx);
 
 /**
  * @brief Clears the measurement pending flag for the active node

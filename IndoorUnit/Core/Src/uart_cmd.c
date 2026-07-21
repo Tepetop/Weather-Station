@@ -78,6 +78,8 @@ static void uart_cmd_request_measure(uint8_t target) {
     ws->active_node = target;
   }
 
+  ws->cycle_nodes_remaining = 0U;
+
   WS_NodeState_t *node = WS_GetActiveNode(ws);
   if ((node == NULL) || (node->measurement_pending != 0U) ||
       (node->state == WS_NODE_TX_IN_PROGRESS) ||

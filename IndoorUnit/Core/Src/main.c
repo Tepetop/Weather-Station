@@ -239,7 +239,7 @@ int main(void)
   WS_UI.chart_data_dirty = 1U;
 
   /*  Initial measurement request */
-  WS_RequestMeasurementForActiveNode(&wsCtx);
+  WS_RequestMeasurementCycle(&wsCtx);
 
   /* Start WWDG only after long boot-time initialization is complete. */
   MX_WWDG_Init();
@@ -379,7 +379,7 @@ void RTC_alarm1(void){
 
 /* RTC alarm function assign to callback */
 void RTC_alarm2(void){
-  WS_RequestMeasurementForActiveNode(&wsCtx);
+  WS_RequestMeasurementCycle(&wsCtx);
 #ifdef DEBUG_LOG_RTC2_EVENTS
   Debug_LogRtcAlarm2();
 #endif
