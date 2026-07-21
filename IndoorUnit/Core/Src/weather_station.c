@@ -38,6 +38,9 @@
 /** @brief Maximum retries before forcing full radio recovery */
 #define WS_MAX_RETRIES 3U
 
+/** @brief Delay between chained node measurements in one RTC cycle (ms) */
+#define WS_INTER_NODE_GAP_MS 150U
+
 /** @brief Delay used between nRF24 power-down and power-up during recovery */
 #define WS_NRF_POWER_CYCLE_DELAY_MS 5U
 
@@ -469,6 +472,7 @@ void WS_InitManager(WS_Manager_t *ctx, const uint8_t tx_addrs[][5], const uint8_
   ctx->last_successful_rx_tick = 0U;
   ctx->last_successful_rx_time_valid = 0U;
   ctx->comm_watchdog_tripped = 0U;
+  ctx->next_measure_earliest_tick = 0U;
   ctx->app_state = WS_APP_IDLE;
 
   for (uint8_t i = 0U; i < ctx->node_count; i++) {
@@ -1026,7 +1030,8 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
 
   if ((node->measurement_pending != 0U) &&
       (ctx->app_state == WS_APP_IDLE) &&
-      (node->state == WS_NODE_IDLE)) {
+      (node->state == WS_NODE_IDLE) &&
+      (now_tick >= ctx->next_measure_earliest_tick)) {
     WS_ConsumePendingForActiveNode(ctx);
     ws_send_measure_command(ctx, cfg, now_tick);
     ctx->app_state = WS_APP_WAIT_TX_IRQ;
@@ -1051,6 +1056,7 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
     if (ctx->cycle_nodes_remaining > 1U) {
       ctx->cycle_nodes_remaining--;
       WS_ScheduleNextNode(ctx);
+      ctx->next_measure_earliest_tick = HAL_GetTick() + WS_INTER_NODE_GAP_MS;
       WS_RequestMeasurementForActiveNode(ctx);
     } else {
       ctx->cycle_nodes_remaining = 0U;

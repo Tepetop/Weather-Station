@@ -552,6 +552,11 @@ static void OutdoorStation_StartReceive(void)
   NRF24_SetMode(&nrf, NRF24_MODE_STANDBY);
   NRF24_ClearIRQ(&nrf, NRF24_STATUS_IRQ_MASK);
   NRF24_SetMode(&nrf, NRF24_MODE_RX);
+
+  if (NRF24_GetStatus(&nrf) & NRF24_STATUS_RX_DR)
+  {
+    outLink.irq_flag = 1;
+  }
 }
 
 /**
@@ -563,8 +568,8 @@ static void OutdoorStation_HandleIRQ(void)
   uint8_t status = NRF24_GetStatus(&nrf);
   outLink.last_status = status;
 
-  /* Data received - check if it's a measurement command */
-  if (status & NRF24_STATUS_RX_DR)
+  /* Drain RX FIFO — hardware ACK can occur before MCU reads the command */
+  while (status & NRF24_STATUS_RX_DR)
   {
     uint8_t rx_data[NRF_CMD_SIZE];
     NRF24_ReadPayload(&nrf, rx_data, NRF_CMD_SIZE);
@@ -574,6 +579,7 @@ static void OutdoorStation_HandleIRQ(void)
     {
       outLink.cmd_received = 1;
     }
+    status = NRF24_GetStatus(&nrf);
   }
 
   /* TX complete (ACK received) */

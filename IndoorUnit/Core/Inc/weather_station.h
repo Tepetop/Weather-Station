@@ -138,6 +138,7 @@ typedef struct {
   volatile uint8_t last_successful_rx_time_valid; /**< 1 when last_successful_rx_time is valid */
   volatile uint8_t comm_watchdog_tripped; /**< 1 when communication watchdog timed out */
   uint8_t cycle_nodes_remaining;       /**< Nodes left in scheduled multi-node cycle */
+  uint32_t next_measure_earliest_tick; /**< Earliest tick for next TX in a multi-node cycle */
   WS_AppState_t app_state;             /**< Current application state */
   WS_NodeState_t nodes[WS_MAX_NODES];  /**< Array of node state structures */
 } WS_Manager_t;
