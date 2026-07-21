@@ -463,13 +463,13 @@ static HAL_StatusTypeDef OutdoorStation_InitCommunication(void)
                    NRF_CE_GPIO_Port, NRF_CE_Pin, NRF_IRQ_GPIO_Port, NRF_IRQ_Pin,
                    NRF_DelayUs) != HAL_OK)
     {
-      goto init_retry;
+      //goto init_retry;
     }
 
-    if (NRF24_IsPresent(&nrf) != HAL_OK)
-    {
-      goto init_retry;
-    }
+    // if (NRF24_IsPresent(&nrf) != HAL_OK)
+    // {
+    //   goto init_retry;
+    // }
 
     /* Configure radio parameters - MUST match IndoorUnit */
     NRF24_SetChannel(&nrf, NRF_CHANNEL);
@@ -496,7 +496,7 @@ static HAL_StatusTypeDef OutdoorStation_InitCommunication(void)
     Debug_LogNrfListening();
     return HAL_OK;
 
-  init_retry:
+  //init_retry:
     Debug_LogNrfInitRetry(attempt, NRF_INIT_MAX_RETRIES);
     if (attempt < NRF_INIT_MAX_RETRIES)
     {
