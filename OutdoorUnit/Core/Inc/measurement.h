@@ -11,9 +11,9 @@
 
 #include "main.h"
 
-#include "si7021.h"
-#include "TSL2561.h"
-#include "bmp280.h"
+// #include "si7021.h"
+// #include "TSL2561.h"
+// #include "bmp280.h"
 #include "bme280.h"
 
 

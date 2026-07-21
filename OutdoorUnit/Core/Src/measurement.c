@@ -93,7 +93,6 @@ static uint32_t measurementWakeupTick;
  * Private Function Prototypes
  * ============================================================================ */
 
-static uint32_t Measurement_GetTSL2561IntegrationDelayMs(void);
 #ifdef SI7021_H
 static HAL_StatusTypeDef Measurement_InitSi7021(Measurement_Context_t *ctx);
 static void Measurement_ReadSi7021(Measurement_Context_t *ctx);
@@ -107,6 +106,7 @@ static HAL_StatusTypeDef Measurement_InitBME280(Measurement_Context_t *ctx);
 static void Measurement_ReadBME280(Measurement_Context_t *ctx);
 #endif
 #ifdef TSL2561_H
+static uint32_t Measurement_GetTSL2561IntegrationDelayMs(void);
 static HAL_StatusTypeDef Measurement_InitTSL2561(Measurement_Context_t *ctx);
 static void Measurement_ReadTSL2561(Measurement_Context_t *ctx);
 #endif
@@ -117,13 +117,12 @@ static void Measurement_HandleError(Measurement_Context_t *ctx);
 /* ============================================================================
  * Private Helper Functions
  * ============================================================================ */
-
+#ifdef TSL2561_H
 /**
  * @brief   Gets the TSL2561 integration time delay in milliseconds
  * @retval  uint32_t  Integration delay in ms based on current timing setting
  */
 static uint32_t Measurement_GetTSL2561IntegrationDelayMs(void) {
-#ifdef TSL2561_H
     switch (htsl2561.timing_ms) {
         case TSL2561_INTEG_13MS:
             return 14U;
@@ -133,10 +132,8 @@ static uint32_t Measurement_GetTSL2561IntegrationDelayMs(void) {
         default:
             return 402U;
     }
-#else
-    return 0U;
-#endif
 }
+#endif
 
 /* ============================================================================
  * Public API Functions
