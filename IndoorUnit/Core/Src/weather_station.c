@@ -38,9 +38,6 @@
 /** @brief Maximum retries before forcing full radio recovery */
 #define WS_MAX_RETRIES 3U
 
-/** @brief Delay between chained node measurements in one RTC cycle (ms) */
-#define WS_INTER_NODE_GAP_MS 150U
-
 /** @brief Delay used between nRF24 power-down and power-up during recovery */
 #define WS_NRF_POWER_CYCLE_DELAY_MS 5U
 
@@ -291,17 +288,14 @@ static void ws_start_receive(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg) {
  * ========================================================================== */
 
 /**
- * @brief Sends a measurement command to the active outdoor node
- * @param[in,out] ctx Weather station manager context
- * @param[in] cfg Runtime configuration
- * @param[in] now_tick Current system tick count
- * @details Constructs and transmits a measurement request packet via nRF24.
- *          Updates node state to TX_IN_PROGRESS and timestamps the operation.
- *          Guards against sending if TX is already in progress or awaiting response.
+ * @brief Sends a measurement command (broadcast NoAck, optionally single-node masked)
  */
 static void ws_send_measure_command(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, uint32_t now_tick) {
   WS_NodeState_t *node = WS_GetActiveNode(ctx);
-  if ((node == NULL) || (cfg == NULL) || (cfg->nrf == NULL)) {
+  uint8_t cmd[WS_CMD_SIZE] = {0};
+  uint8_t target_mask;
+
+  if ((node == NULL) || (cfg == NULL) || (cfg->nrf == NULL) || (cfg->broadcast_addr == NULL)) {
     return;
   }
 
@@ -309,21 +303,150 @@ static void ws_send_measure_command(WS_Manager_t *ctx, const WS_RuntimeConfig_t 
     return;
   }
 
-  uint8_t cmd[8] = {0};
-  cmd[0] = cfg->cmd_measure;
+  ctx->cycle_id++;
+  target_mask = (uint8_t)(1U << ctx->active_node);
+  if (!WS_Cmd_EncodeMeasureTo(ctx->cycle_id, target_mask, cmd, cfg->cmd_size)) {
+    return;
+  }
 
-  ws_apply_active_node_address(ctx, cfg);
+  /* Single-node requests still use the shared command address (NoAck). */
+  ctx->expected_mask = target_mask;
+  ctx->received_mask = 0U;
+  ctx->parallel_cycle = 0U;
+  ctx->cycle_tx_done = 0U;
+
   ws_set_led(cfg, GPIO_PIN_SET);
   WS_ClearIrqFlag(ctx);
   WS_StartTxForActiveNode(ctx, now_tick);
 
   NRF24_SetMode(cfg->nrf, NRF24_MODE_STANDBY);
+  NRF24_SetTXAddress(cfg->nrf, cfg->broadcast_addr, 5U);
   NRF24_FlushTX(cfg->nrf);
   NRF24_ClearIRQ(cfg->nrf, NRF24_STATUS_IRQ_MASK);
-  NRF24_WritePayload(cfg->nrf, cmd, cfg->cmd_size);
+  (void)NRF24_EnableDynAck(cfg->nrf, 1U);
+  NRF24_WritePayloadNoAck(cfg->nrf, cmd, cfg->cmd_size);
   NRF24_SetMode(cfg->nrf, NRF24_MODE_TX);
 
   Debug_LogNrfTxStart(ctx->active_node);
+}
+
+/**
+ * @brief Starts a parallel broadcast measurement cycle for all nodes
+ */
+static void ws_start_parallel_cycle(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, uint32_t now_tick) {
+  uint8_t cmd[WS_CMD_SIZE] = {0};
+
+  if ((ctx == NULL) || (cfg == NULL) || (cfg->nrf == NULL) || (cfg->broadcast_addr == NULL)) {
+    return;
+  }
+
+  ctx->cycle_pending = 0U;
+  ctx->cycle_id++;
+  ctx->expected_mask = WS_Cycle_ExpectedMask(ctx->node_count);
+  ctx->received_mask = 0U;
+  ctx->parallel_cycle = 1U;
+  ctx->cycle_tx_done = 0U;
+  ctx->cycle_tx_start_tick = now_tick;
+  ctx->cycle_rx_start_tick = 0U;
+  ctx->cycle_nodes_remaining = 0U;
+
+  if (!WS_Cmd_EncodeMeasureTo(ctx->cycle_id, ctx->expected_mask, cmd, cfg->cmd_size)) {
+    ctx->parallel_cycle = 0U;
+    return;
+  }
+
+  for (uint8_t i = 0U; i < ctx->node_count; i++) {
+    ctx->nodes[i].measurement_pending = 0U;
+    ctx->nodes[i].retry_count = 0U;
+    ctx->nodes[i].tx_start_tick = now_tick;
+    ctx->nodes[i].response_start_tick = 0U;
+    ctx->nodes[i].state = WS_NODE_TX_IN_PROGRESS;
+  }
+
+  ws_set_led(cfg, GPIO_PIN_SET);
+  WS_ClearIrqFlag(ctx);
+
+  NRF24_SetMode(cfg->nrf, NRF24_MODE_STANDBY);
+  NRF24_SetTXAddress(cfg->nrf, cfg->broadcast_addr, 5U);
+  NRF24_FlushTX(cfg->nrf);
+  NRF24_ClearIRQ(cfg->nrf, NRF24_STATUS_IRQ_MASK);
+  (void)NRF24_EnableDynAck(cfg->nrf, 1U);
+  NRF24_WritePayloadNoAck(cfg->nrf, cmd, cfg->cmd_size);
+  NRF24_SetMode(cfg->nrf, NRF24_MODE_TX);
+
+  ctx->app_state = WS_APP_WAIT_TX_IRQ;
+  Debug_LogValue("NRF:CYCLE_START id=", ctx->cycle_id);
+  Debug_LogHex("NRF:CYCLE_EXPECT=", ctx->expected_mask);
+}
+
+/**
+ * @brief Finalize a parallel cycle: mark missing nodes as ERROR and go DATA_READY
+ */
+static void ws_finalize_parallel_cycle(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, uint8_t timed_out) {
+  if ((ctx == NULL) || (ctx->parallel_cycle == 0U)) {
+    return;
+  }
+
+  for (uint8_t i = 0U; i < ctx->node_count; i++) {
+    uint8_t bit = (uint8_t)(1U << i);
+    if ((ctx->expected_mask & bit) == 0U) {
+      continue;
+    }
+    if ((ctx->received_mask & bit) != 0U) {
+      continue;
+    }
+    ctx->nodes[i].state = WS_NODE_ERROR;
+    Debug_LogValue("NRF:CYCLE_MISS node=", i);
+  }
+
+  if (timed_out != 0U) {
+    Debug_Log("LOG:NRF:CYCLE_TIMEOUT");
+    Debug_LogHex("NRF:CYCLE_RECV=", ctx->received_mask);
+  } else {
+    Debug_Log("LOG:NRF:CYCLE_COMPLETE");
+  }
+
+  ws_set_led(cfg, GPIO_PIN_RESET);
+  ctx->parallel_cycle = 0U;
+  ctx->cycle_tx_done = 0U;
+  ctx->app_state = WS_APP_DATA_READY;
+}
+
+/**
+ * @brief Process DATA_READY nodes after IRQ (UART + charts); complete cycle if done
+ */
+static void ws_process_ready_nodes(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg) {
+  uint8_t processed = 0U;
+
+  if (ctx == NULL) {
+    return;
+  }
+
+  for (uint8_t i = 0U; i < ctx->node_count; i++) {
+    WS_NodeState_t *node = &ctx->nodes[i];
+    if (node->state != WS_NODE_DATA_READY) {
+      continue;
+    }
+
+    ws_send_measurement_uart(ctx, cfg, i);
+    if (WS_UI.rtc_now != NULL) {
+      WS_UI_AddMeasurementToCharts(&node->data, WS_UI.rtc_now->hours, WS_UI.rtc_now->minutes);
+    }
+    node->retry_count = 0U;
+    node->state = WS_NODE_IDLE;
+    processed = 1U;
+  }
+
+  if (processed == 0U) {
+    return;
+  }
+
+  if ((ctx->parallel_cycle != 0U) &&
+      WS_Cycle_IsComplete(ctx->expected_mask, ctx->received_mask)) {
+    ws_finalize_parallel_cycle(ctx, cfg, 0U);
+  } else if ((ctx->parallel_cycle == 0U) && (ctx->app_state == WS_APP_WAIT_RX_DATA)) {
+    ctx->app_state = WS_APP_DATA_READY;
+  }
 }
 
 /* ============================================================================
@@ -335,10 +458,9 @@ static void ws_send_measure_command(WS_Manager_t *ctx, const WS_RuntimeConfig_t 
  * @param[in,out] ctx Weather station manager context
  * @param[in] cfg Runtime configuration
  * @details Processes three interrupt sources:
- *          - RX_DR: Data received (reads payload from pipe)
- *          - TX_DS: Transmission successful
+ *          - RX_DR: Data received (reads all pending payloads from pipes)
+ *          - TX_DS: Transmission successful (or NoAck packet left the air)
  *          - MAX_RT: Maximum retransmissions reached (TX failed)
- *          Updates node state and clears interrupt flags accordingly.
  */
 static void ws_handle_irq(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg) {
   if ((ctx == NULL) || (cfg == NULL) || (cfg->nrf == NULL)) {
@@ -346,14 +468,10 @@ static void ws_handle_irq(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg) {
   }
 
   uint8_t status = NRF24_GetStatus(cfg->nrf);
-  WS_NodeState_t *node = WS_GetActiveNode(ctx);
-  if (node == NULL) {
-    return;
-  }
+  WS_NodeState_t *active = WS_GetActiveNode(ctx);
 
-  node->last_status = status;
-
-  if (status & NRF24_STATUS_RX_DR) {
+  /* Drain RX FIFO — both outdoor replies may arrive before this handler runs. */
+  while (status & NRF24_STATUS_RX_DR) {
     uint8_t pipe = (status >> WS_STATUS_PIPE_SHIFT) & WS_STATUS_PIPE_MASK;
     uint8_t rx_data[NRF24_MAX_PAYLOAD_SIZE] = {0};
     uint8_t payload_len = (pipe == 0U) ? cfg->cmd_size : cfg->payload_size;
@@ -366,38 +484,68 @@ static void ws_handle_irq(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg) {
     if ((pipe >= 1U) && (node_idx < ctx->node_count) &&
         (payload_len >= WS_PROTOCOL_HEADER_SIZE)) {
       WS_NodeReadings_t measurement;
-      if (!WS_Protocol_Decode(rx_data, payload_len, &measurement)) {
-        return;
+      if (WS_Protocol_Decode(rx_data, payload_len, &measurement)) {
+        WS_NodeState_t *rx_node = &ctx->nodes[node_idx];
+        memcpy(&rx_node->data, &measurement, sizeof(measurement));
+        rx_node->last_status = status;
+        rx_node->state = WS_NODE_DATA_READY;
+        rx_node->retry_count = 0U;
+
+        if (ctx->parallel_cycle != 0U) {
+          ctx->received_mask |= (uint8_t)(1U << node_idx);
+        }
+
+        ctx->latest_data_valid = 1U;
+        ctx->latest_node_index = node_idx;
+        ctx->last_successful_rx_tick = HAL_GetTick();
+        ws_capture_last_successful_time(ctx, cfg);
+        ctx->comm_watchdog_tripped = 0U;
+
+        ws_set_led(cfg, GPIO_PIN_RESET);
+        Debug_LogNrfRxData(node_idx);
+        Debug_LogValue("NRF:RX_PIPE=", pipe);
       }
+    }
 
-      WS_NodeState_t *rx_node = &ctx->nodes[node_idx];
-      memcpy(&rx_node->data, &measurement, sizeof(measurement));
-      rx_node->last_status = status;
-      rx_node->state = WS_NODE_DATA_READY;
-      rx_node->retry_count = 0U;
-
-      ctx->latest_data_valid = 1U;
-      ctx->latest_node_index = node_idx;
-      ctx->last_successful_rx_tick = HAL_GetTick();
-      ws_capture_last_successful_time(ctx, cfg);
-      ctx->comm_watchdog_tripped = 0U;
-
-      ws_set_led(cfg, GPIO_PIN_RESET);
-      Debug_LogNrfRxData(node_idx);
+    status = NRF24_GetStatus(cfg->nrf);
+    if ((NRF24_GetFIFOStatus(cfg->nrf) & NRF24_FIFO_RX_EMPTY) != 0U) {
+      break;
     }
   }
 
   if (status & NRF24_STATUS_TX_DS) {
     NRF24_ClearIRQ(cfg->nrf, NRF24_STATUS_TX_DS);
-    WS_MarkTxResultFromIrq(ctx, true, status);
-    Debug_LogNrfTxResult(1U);
+    if (ctx->parallel_cycle != 0U) {
+      ctx->cycle_tx_done = 1U;
+      for (uint8_t i = 0U; i < ctx->node_count; i++) {
+        if ((ctx->expected_mask & (uint8_t)(1U << i)) != 0U) {
+          ctx->nodes[i].state = WS_NODE_WAIT_RESPONSE;
+          ctx->nodes[i].response_start_tick = HAL_GetTick();
+        }
+      }
+      Debug_LogNrfTxResult(1U);
+    } else if (active != NULL) {
+      active->last_status = status;
+      WS_MarkTxResultFromIrq(ctx, true, status);
+      Debug_LogNrfTxResult(1U);
+    }
   }
 
   if (status & NRF24_STATUS_MAX_RT) {
     NRF24_ClearIRQ(cfg->nrf, NRF24_STATUS_MAX_RT);
     NRF24_FlushTX(cfg->nrf);
-    WS_MarkTxResultFromIrq(ctx, false, status);
-    Debug_LogNrfTxResult(0U);
+    if (ctx->parallel_cycle != 0U) {
+      /* Broadcast uses NoAck; MAX_RT here is unexpected — fail the cycle TX. */
+      ctx->cycle_tx_done = 0U;
+      for (uint8_t i = 0U; i < ctx->node_count; i++) {
+        ctx->nodes[i].state = WS_NODE_ERROR;
+      }
+      Debug_LogNrfTxResult(0U);
+    } else if (active != NULL) {
+      active->last_status = status;
+      WS_MarkTxResultFromIrq(ctx, false, status);
+      Debug_LogNrfTxResult(0U);
+    }
   }
 }
 
@@ -473,6 +621,15 @@ void WS_InitManager(WS_Manager_t *ctx, const uint8_t tx_addrs[][5], const uint8_
   ctx->last_successful_rx_time_valid = 0U;
   ctx->comm_watchdog_tripped = 0U;
   ctx->next_measure_earliest_tick = 0U;
+  ctx->cycle_nodes_remaining = 0U;
+  ctx->cycle_id = 0U;
+  ctx->expected_mask = 0U;
+  ctx->received_mask = 0U;
+  ctx->cycle_pending = 0U;
+  ctx->parallel_cycle = 0U;
+  ctx->cycle_tx_done = 0U;
+  ctx->cycle_tx_start_tick = 0U;
+  ctx->cycle_rx_start_tick = 0U;
   ctx->app_state = WS_APP_IDLE;
 
   for (uint8_t i = 0U; i < ctx->node_count; i++) {
@@ -558,6 +715,14 @@ void WS_ClearIrqFlag(WS_Manager_t *ctx) {
  *          Enables software polling during critical operations.
  */
 bool WS_ShouldFallbackToStatusRead(const WS_Manager_t *ctx) {
+  if (ctx == NULL) {
+    return false;
+  }
+
+  if (ctx->parallel_cycle != 0U) {
+    return (ctx->app_state == WS_APP_WAIT_TX_IRQ) || (ctx->app_state == WS_APP_WAIT_RX_DATA);
+  }
+
   const WS_NodeState_t *node = WS_GetActiveNodeConst(ctx);
   if (node == NULL) {
     return false;
@@ -591,8 +756,16 @@ void WS_RequestMeasurementCycle(WS_Manager_t *ctx) {
     return;
   }
 
-  ctx->cycle_nodes_remaining = ctx->node_count;
-  WS_RequestMeasurementForActiveNode(ctx);
+  if (ctx->node_count <= 1U) {
+    WS_RequestMeasurementForActiveNode(ctx);
+    return;
+  }
+
+  ctx->cycle_pending = 1U;
+  ctx->cycle_nodes_remaining = 0U;
+  if ((ctx->app_state == WS_APP_IDLE) || (ctx->app_state == WS_APP_DATA_READY)) {
+    ctx->app_state = WS_APP_IDLE;
+  }
 }
 
 /**
@@ -664,8 +837,27 @@ void WS_MarkTxResultFromIrq(WS_Manager_t *ctx, bool ok, uint8_t status) {
  *          On success, sets node to WAIT_RESPONSE. On failure, sets to ERROR.
  */
 WS_TxEvent_t WS_ConsumeTxEvent(WS_Manager_t *ctx, uint32_t now_tick) {
+  if ((ctx == NULL) || (ctx->app_state != WS_APP_WAIT_TX_IRQ)) {
+    return WS_TX_EVENT_NONE;
+  }
+
+  if (ctx->parallel_cycle != 0U) {
+    if (ctx->cycle_tx_done != 0U) {
+      if (ctx->cycle_rx_start_tick == 0U) {
+        ctx->cycle_rx_start_tick = now_tick;
+      }
+      return WS_TX_EVENT_OK;
+    }
+
+    /* Parallel TX failed if all expected nodes were marked ERROR after MAX_RT. */
+    if ((ctx->node_count > 0U) && (ctx->nodes[0].state == WS_NODE_ERROR)) {
+      return WS_TX_EVENT_FAIL;
+    }
+    return WS_TX_EVENT_NONE;
+  }
+
   WS_NodeState_t *node = WS_GetActiveNode(ctx);
-  if ((ctx == NULL) || (node == NULL) || (ctx->app_state != WS_APP_WAIT_TX_IRQ)) {
+  if (node == NULL) {
     return WS_TX_EVENT_NONE;
   }
 
@@ -871,6 +1063,7 @@ HAL_StatusTypeDef WS_InitRadioAndStart(WS_Manager_t *ctx, const WS_RuntimeConfig
   NRF24_SetCRC(cfg->nrf, NRF24_CRC_2B);
   NRF24_SetAddressWidth(cfg->nrf, NRF24_AW_5);
   NRF24_SetAutoRetr(cfg->nrf, 1U, 10U);
+  (void)NRF24_EnableDynAck(cfg->nrf, 1U);
 
   /* Pipe 0: auto-ACK (set to active node TX address) */
   ws_apply_active_node_address(ctx, cfg);
@@ -940,12 +1133,17 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
   }
 
   if (ctx->app_state == WS_APP_ERROR_RECOVERY) {
-    /* Recover radio state after TX/RX failures (MAX_RT/timeout). */
     ws_power_cycle_radio(cfg);
+    ctx->parallel_cycle = 0U;
+    ctx->cycle_tx_done = 0U;
     if (WS_InitRadioAndStart(ctx, cfg) == HAL_OK) {
       Debug_Log("LOG:NRF:RECOVERY_OK");
     } else {
       Debug_Log("LOG:NRF:RECOVERY_FAIL");
+    }
+    if (ctx->cycle_pending != 0U) {
+      ctx->app_state = WS_APP_IDLE;
+      return;
     }
     WS_NodeState_t *recovery_node = WS_GetActiveNode(ctx);
     if (recovery_node != NULL) {
@@ -964,14 +1162,25 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
   if ((ctx->nrf_irq_flag == 0U) && WS_ShouldFallbackToStatusRead(ctx)) {
     uint8_t should_poll = 0U;
 
-    if ((node->state == WS_NODE_TX_IN_PROGRESS) &&
-        ((now_tick - node->tx_start_tick) > ((cfg->tx_irq_timeout_ms * 3U) / 4U))) {
-      should_poll = 1U;
-    }
-
-    if ((node->state == WS_NODE_WAIT_RESPONSE) &&
-        ((now_tick - node->response_start_tick) > ((cfg->rx_timeout_ms * 3U) / 4U))) {
-      should_poll = 1U;
+    if (ctx->parallel_cycle != 0U) {
+      if ((ctx->app_state == WS_APP_WAIT_TX_IRQ) &&
+          ((now_tick - ctx->cycle_tx_start_tick) > ((cfg->tx_irq_timeout_ms * 3U) / 4U))) {
+        should_poll = 1U;
+      }
+      if ((ctx->app_state == WS_APP_WAIT_RX_DATA) &&
+          (ctx->cycle_rx_start_tick != 0U) &&
+          ((now_tick - ctx->cycle_rx_start_tick) > ((cfg->rx_timeout_ms * 3U) / 4U))) {
+        should_poll = 1U;
+      }
+    } else {
+      if ((node->state == WS_NODE_TX_IN_PROGRESS) &&
+          ((now_tick - node->tx_start_tick) > ((cfg->tx_irq_timeout_ms * 3U) / 4U))) {
+        should_poll = 1U;
+      }
+      if ((node->state == WS_NODE_WAIT_RESPONSE) &&
+          ((now_tick - node->response_start_tick) > ((cfg->rx_timeout_ms * 3U) / 4U))) {
+        should_poll = 1U;
+      }
     }
 
     if (should_poll != 0U) {
@@ -987,19 +1196,75 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
     ws_handle_irq(ctx, cfg);
   }
 
+  /* Deliver any DATA_READY payloads (parallel or unicast) before further state work. */
+  ws_process_ready_nodes(ctx, cfg);
+  if (ctx->app_state == WS_APP_DATA_READY) {
+    return;
+  }
+
   WS_TxEvent_t tx_event = WS_ConsumeTxEvent(ctx, now_tick);
 
   if (tx_event == WS_TX_EVENT_OK) {
     ws_start_receive(ctx, cfg);
+    if (ctx->parallel_cycle != 0U) {
+      ctx->cycle_rx_start_tick = now_tick;
+    }
     ctx->app_state = WS_APP_WAIT_RX_DATA;
     return;
 
   } else if (tx_event == WS_TX_EVENT_FAIL) {
     ws_start_receive(ctx, cfg);
-    (void)ws_schedule_retry_or_recover(ctx);
+    if (ctx->parallel_cycle != 0U) {
+      ctx->parallel_cycle = 0U;
+      ctx->cycle_tx_done = 0U;
+      ctx->app_state = WS_APP_ERROR_RECOVERY;
+      ctx->cycle_pending = 1U;
+    } else {
+      (void)ws_schedule_retry_or_recover(ctx);
+    }
     return;
   }
 
+  /* ---- Parallel cycle TX/RX timeouts ---- */
+  if (ctx->parallel_cycle != 0U) {
+    if ((ctx->app_state == WS_APP_WAIT_TX_IRQ) &&
+        ((now_tick - ctx->cycle_tx_start_tick) > cfg->tx_irq_timeout_ms)) {
+      uint8_t st = NRF24_GetStatus(cfg->nrf);
+      if (st & (NRF24_STATUS_TX_DS | NRF24_STATUS_MAX_RT)) {
+        WS_SetIrqFlag(ctx);
+        ws_handle_irq(ctx, cfg);
+        tx_event = WS_ConsumeTxEvent(ctx, now_tick);
+        if (tx_event == WS_TX_EVENT_OK) {
+          ws_start_receive(ctx, cfg);
+          ctx->cycle_rx_start_tick = now_tick;
+          ctx->app_state = WS_APP_WAIT_RX_DATA;
+          return;
+        }
+      }
+      Debug_LogNrfTimeout(1U);
+      ctx->parallel_cycle = 0U;
+      ctx->app_state = WS_APP_ERROR_RECOVERY;
+      ctx->cycle_pending = 1U;
+      ws_start_receive(ctx, cfg);
+      return;
+    }
+
+    if ((ctx->app_state == WS_APP_WAIT_RX_DATA) &&
+        (ctx->cycle_rx_start_tick != 0U) &&
+        ((now_tick - ctx->cycle_rx_start_tick) > cfg->rx_timeout_ms)) {
+      Debug_LogNrfTimeout(0U);
+      ws_finalize_parallel_cycle(ctx, cfg, 1U);
+      return;
+    }
+
+    /* Start queued parallel cycle when idle. */
+    if ((ctx->cycle_pending != 0U) && (ctx->app_state == WS_APP_IDLE)) {
+      ws_start_parallel_cycle(ctx, cfg, now_tick);
+    }
+    return;
+  }
+
+  /* ---- Unicast (single-node) path ---- */
   if (WS_IsActiveTxTimedOut(ctx, now_tick, cfg->tx_irq_timeout_ms)) {
     uint8_t st = NRF24_GetStatus(cfg->nrf);
     if (st & (NRF24_STATUS_TX_DS | NRF24_STATUS_MAX_RT)) {
@@ -1023,8 +1288,13 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
   if (WS_IsActiveTxTimedOut(ctx, now_tick, cfg->tx_irq_timeout_ms) && (node->state == WS_NODE_TX_IN_PROGRESS)) {
     WS_HandleActiveTxTimeout(ctx, node->last_status);
     ws_start_receive(ctx, cfg);
-    Debug_LogNrfTimeout(1U);  /* TX timeout */
+    Debug_LogNrfTimeout(1U);
     (void)ws_schedule_retry_or_recover(ctx);
+    return;
+  }
+
+  if ((ctx->cycle_pending != 0U) && (ctx->app_state == WS_APP_IDLE)) {
+    ws_start_parallel_cycle(ctx, cfg, now_tick);
     return;
   }
 
@@ -1039,30 +1309,9 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
 
   if (WS_IsActiveRxTimedOut(ctx, now_tick, cfg->rx_timeout_ms)) {
     WS_HandleActiveRxTimeout(ctx, node->last_status);
-    Debug_LogNrfTimeout(0U);  /* RX timeout */
+    Debug_LogNrfTimeout(0U);
     ws_start_receive(ctx, cfg);
     (void)ws_schedule_retry_or_recover(ctx);
-    return;
-  }
-
-  if (WS_ConsumeActiveDataReady(ctx)) {
-    ws_send_measurement_uart(ctx, cfg, ctx->active_node);
-
-    /* Add new measurement data to charts when data is received */
-    if (WS_UI.rtc_now != NULL) {
-      WS_UI_AddMeasurementToCharts(&node->data, WS_UI.rtc_now->hours, WS_UI.rtc_now->minutes);
-    }
-
-    if (ctx->cycle_nodes_remaining > 1U) {
-      ctx->cycle_nodes_remaining--;
-      WS_ScheduleNextNode(ctx);
-      ctx->next_measure_earliest_tick = HAL_GetTick() + WS_INTER_NODE_GAP_MS;
-      WS_RequestMeasurementForActiveNode(ctx);
-    } else {
-      ctx->cycle_nodes_remaining = 0U;
-      WS_ScheduleNextNode(ctx);
-      ctx->app_state = WS_APP_DATA_READY;
-    }
     return;
   }
 }

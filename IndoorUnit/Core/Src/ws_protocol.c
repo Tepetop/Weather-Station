@@ -117,6 +117,8 @@ bool WS_Protocol_SelfCheck(void) {
   };
   uint8_t buf[WS_PROTOCOL_MAX_PAYLOAD];
   uint8_t len = 0U;
+  uint8_t cmd[WS_CMD_SIZE];
+  uint8_t cycle_id = 0U;
 
   if (!WS_Protocol_Encode(&in, buf, sizeof(buf), &len)) {
     return false;
@@ -140,5 +142,83 @@ bool WS_Protocol_SelfCheck(void) {
     return false;
   }
 
+  if (!WS_Cmd_EncodeMeasureTo(9U, 0x02U, cmd, sizeof(cmd))) {
+    return false;
+  }
+  {
+    uint8_t mask = 0U;
+    if (!WS_Cmd_DecodeMeasureEx(cmd, sizeof(cmd), &cycle_id, &mask) ||
+        (cycle_id != 9U) || (mask != 0x02U)) {
+      return false;
+    }
+  }
+  if (!WS_Cmd_IsDuplicateCycle(42U, 42U, 1U)) {
+    return false;
+  }
+  if (WS_Cmd_IsDuplicateCycle(43U, 42U, 1U)) {
+    return false;
+  }
+  if (WS_Cycle_ExpectedMask(2U) != 0x03U) {
+    return false;
+  }
+  if (!WS_Cycle_IsComplete(0x03U, 0x03U) || WS_Cycle_IsComplete(0x03U, 0x01U)) {
+    return false;
+  }
+
   return true;
+}
+
+bool WS_Cmd_EncodeMeasure(uint8_t cycle_id, uint8_t *buf, uint8_t buf_size) {
+  return WS_Cmd_EncodeMeasureTo(cycle_id, WS_CMD_TARGET_ALL, buf, buf_size);
+}
+
+bool WS_Cmd_EncodeMeasureTo(uint8_t cycle_id, uint8_t target_mask, uint8_t *buf, uint8_t buf_size) {
+  if ((buf == NULL) || (buf_size < WS_CMD_SIZE)) {
+    return false;
+  }
+
+  memset(buf, 0, WS_CMD_SIZE);
+  buf[0] = WS_CMD_MEASURE;
+  buf[WS_CMD_CYCLE_ID_OFFSET] = cycle_id;
+  buf[WS_CMD_TARGET_MASK_OFFSET] = target_mask;
+  return true;
+}
+
+bool WS_Cmd_DecodeMeasure(const uint8_t *buf, uint8_t len, uint8_t *out_cycle_id) {
+  return WS_Cmd_DecodeMeasureEx(buf, len, out_cycle_id, NULL);
+}
+
+bool WS_Cmd_DecodeMeasureEx(const uint8_t *buf, uint8_t len, uint8_t *out_cycle_id, uint8_t *out_target_mask) {
+  if ((buf == NULL) || (len < 2U) || (buf[0] != WS_CMD_MEASURE)) {
+    return false;
+  }
+
+  if (out_cycle_id != NULL) {
+    *out_cycle_id = buf[WS_CMD_CYCLE_ID_OFFSET];
+  }
+  if (out_target_mask != NULL) {
+    *out_target_mask = (len > WS_CMD_TARGET_MASK_OFFSET) ? buf[WS_CMD_TARGET_MASK_OFFSET] : WS_CMD_TARGET_ALL;
+    if (*out_target_mask == 0U) {
+      *out_target_mask = WS_CMD_TARGET_ALL;
+    }
+  }
+  return true;
+}
+
+bool WS_Cmd_IsDuplicateCycle(uint8_t cycle_id, uint8_t last_cycle_id, uint8_t have_last) {
+  return (have_last != 0U) && (cycle_id == last_cycle_id);
+}
+
+uint8_t WS_Cycle_ExpectedMask(uint8_t node_count) {
+  if (node_count == 0U) {
+    return 0U;
+  }
+  if (node_count >= 8U) {
+    return 0xFFU;
+  }
+  return (uint8_t)((1U << node_count) - 1U);
+}
+
+bool WS_Cycle_IsComplete(uint8_t expected_mask, uint8_t received_mask) {
+  return ((received_mask & expected_mask) == expected_mask);
 }

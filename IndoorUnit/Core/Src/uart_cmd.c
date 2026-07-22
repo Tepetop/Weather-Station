@@ -48,13 +48,10 @@ static void uart_cmd_reset_line(void) {
 }
 
 /**
- * @brief Queue a measurement for the active (or given) node.
- * @param target Node index or UART_CMD_TARGET_ACTIVE
+ * @brief Queue a measurement for the active node, a given node, or all nodes.
+ * @param target Node index, UART_CMD_TARGET_ACTIVE, or UART_CMD_TARGET_ALL
  *
- * Safe to call from ISR context: WS_RequestMeasurementForActiveNode only
- * sets measurement_pending and resets app_state to IDLE. WS_APP_DATA_READY
- * is a terminal state after a finished measurement, so it also counts as
- * ready for a new request.
+ * Safe to call from ISR context: only sets pending flags / cycle_pending.
  */
 static void uart_cmd_request_measure(uint8_t target) {
   WS_Manager_t *ws = uart_cmd_ws;
@@ -65,8 +62,15 @@ static void uart_cmd_request_measure(uint8_t target) {
   }
 
   if ((ws->comm_watchdog_tripped != 0U) ||
-      ((ws->app_state != WS_APP_IDLE) && (ws->app_state != WS_APP_DATA_READY))) {
+      ((ws->app_state != WS_APP_IDLE) && (ws->app_state != WS_APP_DATA_READY)) ||
+      (ws->parallel_cycle != 0U)) {
     uart_cmd_reply("ERR:BUSY");
+    return;
+  }
+
+  if (target == UART_CMD_TARGET_ALL) {
+    WS_RequestMeasurementCycle(ws);
+    uart_cmd_reply("ACK:MEASURE:QUEUED");
     return;
   }
 
@@ -79,6 +83,7 @@ static void uart_cmd_request_measure(uint8_t target) {
   }
 
   ws->cycle_nodes_remaining = 0U;
+  ws->cycle_pending = 0U;
 
   WS_NodeState_t *node = WS_GetActiveNode(ws);
   if ((node == NULL) || (node->measurement_pending != 0U) ||
@@ -99,7 +104,7 @@ static void uart_cmd_handle_line(const char *line) {
   }
 
   if (strcmp(line, "CMD:MEASURE") == 0) {
-    uart_cmd_request_measure(UART_CMD_TARGET_ACTIVE);
+    uart_cmd_request_measure(UART_CMD_TARGET_ALL);
     return;
   }
 

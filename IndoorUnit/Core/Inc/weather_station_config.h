@@ -17,14 +17,17 @@
 /* NRF24L01 configuration */
 #define NRF_CHANNEL      76      // 2476 MHz
 #define NRF_PAYLOAD_SIZE WS_PROTOCOL_MAX_PAYLOAD
-#define NRF_CMD_SIZE     8      // Command payload size
-#define CMD_MEASURE      0x01   // Command to request measurement
+#define NRF_CMD_SIZE     WS_CMD_SIZE
+#define CMD_MEASURE      WS_CMD_MEASURE
 #define NRF_TX_IRQ_TIMEOUT_MS 120U
 #define NRF_RX_TIMEOUT_MS 4500U
 #define NRF_COMM_WATCHDOG_TIMEOUT_MS 600000U
 #define WWDG_REFRESH_PERIOD_MS 10U
 #define WS_NODE_COUNT 2U
 #define RTC_MANUAL_SET_HOLD_MS 1200U
+
+/* Shared broadcast address for parallel measure commands (no Auto-ACK). */
+static const uint8_t NRF_BROADCAST_ADDR[5] = {0xB0U, 0xB0U, 0xB0U, 0xB0U, 0xB0U};
 
 
 /*      Structures*/
@@ -89,7 +92,11 @@ char g_nrf_message[64];
  *   Pipe 3: Node 2 data reception  (only LSByte differs from Pipe 1)
  *   Pipe 4: Node 3 data reception  (only LSByte differs from Pipe 1)
  *
- * TX addresses: used by central to send commands to outdoor nodes.
+ * Broadcast TX address (NRF_BROADCAST_ADDR):
+ *   One NoAck measure command heard by all outdoor units in parallel.
+ *   Outdoor units listen on this address on a dedicated RX pipe (no Auto-ACK).
+ *
+ * Unicast TX addresses: used for single-node CMD:MEASURE:N.
  *   Only LSByte differs between nodes (outdoor nodes use same scheme).
  *
  * Byte order: addr[0] = LSByte (transmitted first on-air).

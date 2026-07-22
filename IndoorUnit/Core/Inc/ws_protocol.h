@@ -22,6 +22,17 @@
 #define WS_PROTOCOL_RECORD_SIZE  5U
 #define WS_MAX_READINGS          5U
 
+/** Measure command byte (nRF24 command payload). */
+#define WS_CMD_MEASURE           0x01U
+/** Fixed command payload size used by Indoor/Outdoor radios. */
+#define WS_CMD_SIZE              8U
+/** Byte offset of cycle_id inside the measure command payload. */
+#define WS_CMD_CYCLE_ID_OFFSET   1U
+/** Byte offset of target node bitmask (bit N = NODE_ID N). */
+#define WS_CMD_TARGET_MASK_OFFSET 2U
+/** target_mask value meaning "all nodes". */
+#define WS_CMD_TARGET_ALL        0xFFU
+
 /** Channel IDs: sensor type + physical quantity (fixed registry). */
 typedef enum {
   WS_CH_SI7021_TEMP   = 0x01U,
@@ -62,5 +73,53 @@ bool WS_Protocol_Decode(const uint8_t *buf, uint8_t len, WS_Readings_t *out);
 bool WS_Reading_Get(const WS_Readings_t *r, uint8_t channel_id, float *out_value);
 uint8_t WS_ChannelSensorError(uint8_t channel_id);
 bool WS_Protocol_SelfCheck(void);
+
+/**
+ * @brief Encode a measure command with cycle id into an 8-byte buffer.
+ * @param cycle_id Measurement cycle identifier (deduped by OutdoorUnit)
+ * @param buf Destination buffer
+ * @param buf_size Buffer capacity (must be >= WS_CMD_SIZE)
+ * @return true on success
+ */
+bool WS_Cmd_EncodeMeasure(uint8_t cycle_id, uint8_t *buf, uint8_t buf_size);
+
+/**
+ * @brief Encode a measure command with cycle id and target node mask.
+ * @param target_mask Bit N set → NODE_ID N should measure; WS_CMD_TARGET_ALL for all
+ */
+bool WS_Cmd_EncodeMeasureTo(uint8_t cycle_id, uint8_t target_mask, uint8_t *buf, uint8_t buf_size);
+
+/**
+ * @brief Decode a measure command payload.
+ * @param buf Source buffer
+ * @param len Buffer length
+ * @param out_cycle_id Receives cycle id when command is valid (may be NULL)
+ * @return true when buf is a valid CMD_MEASURE frame
+ */
+bool WS_Cmd_DecodeMeasure(const uint8_t *buf, uint8_t len, uint8_t *out_cycle_id);
+
+/**
+ * @brief Decode measure command including optional target mask (defaults to ALL).
+ */
+bool WS_Cmd_DecodeMeasureEx(const uint8_t *buf, uint8_t len, uint8_t *out_cycle_id, uint8_t *out_target_mask);
+
+/**
+ * @brief Check whether an incoming cycle id is a duplicate of the last one.
+ * @param cycle_id Newly received cycle id
+ * @param last_cycle_id Last accepted cycle id
+ * @param have_last 1 when last_cycle_id is valid
+ * @return true when this cycle should be ignored
+ */
+bool WS_Cmd_IsDuplicateCycle(uint8_t cycle_id, uint8_t last_cycle_id, uint8_t have_last);
+
+/**
+ * @brief Build a bit mask for nodes 0..node_count-1.
+ */
+uint8_t WS_Cycle_ExpectedMask(uint8_t node_count);
+
+/**
+ * @brief Return true when all expected response bits are present.
+ */
+bool WS_Cycle_IsComplete(uint8_t expected_mask, uint8_t received_mask);
 
 #endif /* WS_PROTOCOL_H */

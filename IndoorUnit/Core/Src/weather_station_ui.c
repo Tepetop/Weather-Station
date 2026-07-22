@@ -887,7 +887,7 @@ void WS_UI_TakeMeasurement(void) {
   if (WS_UI.ws_ctx == NULL) {
     return;
   }
-  WS_RequestMeasurementForActiveNode(WS_UI.ws_ctx);
+  WS_RequestMeasurementCycle(WS_UI.ws_ctx);
 }
 
 /**

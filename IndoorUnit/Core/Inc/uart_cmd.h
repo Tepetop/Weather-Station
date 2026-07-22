@@ -12,6 +12,7 @@
 #include "weather_station.h"
 
 #define UART_CMD_TARGET_ACTIVE 0xFFU
+#define UART_CMD_TARGET_ALL    0xFEU
 
 void UartCmd_Init(UART_HandleTypeDef *huart, WS_Manager_t *ws);
 void UartCmd_FlushReply(void);

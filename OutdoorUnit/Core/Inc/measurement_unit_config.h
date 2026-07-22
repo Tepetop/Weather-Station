@@ -38,12 +38,19 @@
  * ============================================================================ */
 #define NRF_CHANNEL               76U     /**< RF channel: 2476 MHz (must match IndoorUnit) */
 #define NRF_PAYLOAD_SIZE          WS_PROTOCOL_MAX_PAYLOAD
-#define NRF_CMD_SIZE              8U      /**< Command payload size */
-#define CMD_MEASURE               0x01U   /**< Command to request measurement */
+#define NRF_CMD_SIZE              WS_CMD_SIZE
+#define CMD_MEASURE               WS_CMD_MEASURE
 #define NRF_TX_TIMEOUT_MS         120U    /**< TX timeout in milliseconds */
 #define NRF_INIT_MAX_RETRIES      3U      /**< Max NRF init retry attempts */
 #define NRF_INIT_RETRY_DELAY_MS   200U    /**< Delay between init retries */
 #define NRF_REINIT_INTERVAL_MS    10000U  /**< Periodic reinit when NRF is missing */
+/** @brief Stagger outdoor reply TX by NODE_ID * this delay (collision avoidance) */
+#define NRF_RESPONSE_SLOT_MS      100U
+/** @brief Outdoor RX pipe for broadcast/unicast measure commands (no Auto-ACK) */
+#define NRF_PIPE_CMD              1U
+
+/** Shared command address — must match IndoorUnit NRF_BROADCAST_ADDR */
+static const uint8_t NRF_BROADCAST_ADDR[5] = {0xB0U, 0xB0U, 0xB0U, 0xB0U, 0xB0U};
 
 /* ============================================================================
  * Measurement Configuration
@@ -110,8 +117,12 @@ typedef struct {
   uint8_t meas_started;            /**< Measurement_Start() called in current cycle */
   uint8_t meas_retry_count;        /**< Current measurement retry counter */
   uint8_t last_status;             /**< Last NRF status register snapshot */
+  uint8_t last_cycle_id;           /**< Last accepted measure cycle id */
+  uint8_t have_last_cycle_id;      /**< 1 when last_cycle_id is valid */
+  uint8_t tx_delay_armed;          /**< Waiting for NODE_ID response slot */
   uint32_t tx_start_tick;          /**< Tick when TX was initiated */
   uint32_t meas_start_tick;        /**< Tick when measurement cycle began */
+  uint32_t tx_ready_tick;          /**< Earliest tick allowed to send response */
   OutdoorLinkStateEnum_t state;    /**< Current link state machine state */
 } OutdoorLinkContext_t;
 
@@ -145,21 +156,17 @@ extern OutdoorLinkContext_t outLink;  /**< OutdoorLink state machine context */
 /* ============================================================================
  * NRF24L01 Address Configuration (Multiceiver)
  * ============================================================================
- * Multiceiver address scheme (must match IndoorUnit config):
- *
  * Indoor central station:
- *   TX_ADDR[node]  = {0xE7+node, 0xE7, 0xE7, 0xE7, 0xE7}  (sends commands)
- *   RX Pipe 1      = {0xC2, 0xC2, 0xC2, 0xC2, 0xC2}        (full addr, Node 0)
- *   RX Pipe 2      = LSB 0xC3  (Node 1, shares MSBytes with Pipe 1)
- *   RX Pipe 3      = LSB 0xC4  (Node 2)
- *   RX Pipe 4      = LSB 0xC5  (Node 3)
+ *   Broadcast TX   = {0xB0, 0xB0, 0xB0, 0xB0, 0xB0} (parallel measure, NoAck)
+ *   Unicast TX[n]  = {0xE7+n, 0xE7, 0xE7, 0xE7, 0xE7} (single-node measure)
+ *   RX Pipe 1..4   = {0xC2+n, 0xC2, ...} node reply pipes
  *
  * This outdoor unit (NODE_ID):
- *   TX_ADDR = {0xC2+NODE_ID, 0xC2, 0xC2, 0xC2, 0xC2}  → Indoor's Pipe (1+NODE_ID)
- *   RX Pipe 1 = {0xE7+NODE_ID, 0xE7, 0xE7, 0xE7, 0xE7} ← Indoor's TX for this node
- *   Pipe 0 = TX_ADDR (for auto-ACK)
+ *   TX_ADDR = {0xC2+NODE_ID, 0xC2, ...} -> Indoor RX pipe (1+NODE_ID)
+ *   Pipe 0 = TX_ADDR (auto-ACK for replies)
+ *   Pipe 1 = broadcast command address, Auto-ACK off (filter by target_mask)
  * ============================================================================ */
 extern const uint8_t NRF_TX_ADDR[5];  /**< TX address for this outdoor unit */
-extern const uint8_t NRF_RX_ADDR[5];  /**< RX address for receiving commands */
+extern const uint8_t NRF_RX_ADDR[5];  /**< Legacy unique RX (unused for commands; kept for reference) */
 
 #endif /* MEASUREMENT_UNIT_CONFIG_H */
