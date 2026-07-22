@@ -198,6 +198,15 @@ int main(void)
     Error_Handler();
   }
 
+  if (NRF24_IsPresent(&nrf) != HAL_OK)
+  {
+    PCD8544_SetFont(&LCD, &Font_6x8);
+    PCD8544_SetCursor(&LCD, 0, 0);
+    PCD8544_WriteString(&LCD, "NRF MISS");
+    PCD8544_UpdateScreen(&LCD);
+    Error_Handler();
+  }
+
   WS_InitManager(&wsCtx, WS_NODE_TX_ADDRS, WS_NODE_RX_ADDRS, WS_NODE_COUNT);
 
 

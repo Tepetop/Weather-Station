@@ -53,7 +53,7 @@ static void debug_print_timestamped(const char *msg) {
 static void debug_log_reset_cause(void) {
   uint8_t cause_count = 0U;
 
-  Debug_LogHex("LOG:RESET:CSR=", RCC->CSR);
+  Debug_LogHex("RESET:CSR=", RCC->CSR);
 
   if (__HAL_RCC_GET_FLAG(RCC_FLAG_WWDGRST) != RESET) {
     Debug_Log("LOG:RESET:CAUSE=WWDG");
@@ -145,7 +145,7 @@ void Debug_LogRtcAlarm2(void) {
 
 #ifdef DEBUG_LOG_NRF_EVENTS
 void Debug_LogNrfTxStart(uint8_t node_idx) {
-  Debug_LogValue("LOG:NRF:TX_START node=", node_idx);
+  Debug_LogValue("NRF:TX_START node=", node_idx);
 }
 
 void Debug_LogNrfTxResult(uint8_t success) {
@@ -157,7 +157,7 @@ void Debug_LogNrfTxResult(uint8_t success) {
 }
 
 void Debug_LogNrfRxData(uint8_t node_idx) {
-  Debug_LogValue("LOG:NRF:RX_DATA from node=", node_idx);
+  Debug_LogValue("NRF:RX_DATA from node=", node_idx);
 }
 
 void Debug_LogNrfTimeout(uint8_t is_tx) {
@@ -210,7 +210,7 @@ void Debug_Heartbeat(void) {
   if ((now - last_heartbeat_tick) >= DEBUG_HEARTBEAT_INTERVAL_MS) {
     last_heartbeat_tick = now;
     heartbeat_count++;
-    Debug_LogValue("LOG:HEARTBEAT #", heartbeat_count);
+    Debug_LogValue("HEARTBEAT #", heartbeat_count);
   }
 }
 #else

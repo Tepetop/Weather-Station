@@ -38,6 +38,14 @@ static void ce_high(NRF24_Handle_t *handle) {
 }
 
 /**
+ * @brief Forces Standby-I before register configuration writes (CE low).
+ * @param handle Pointer to the nRF24 handle structure.
+ */
+static void ensure_standby(NRF24_Handle_t *handle) {
+    ce_low(handle);
+}
+
+/**
  * @brief Performs a full-duplex SPI transfer.
  * @param handle Pointer to the nRF24 handle structure.
  * @param tx    Pointer to transmit buffer.
@@ -103,7 +111,7 @@ static HAL_StatusTypeDef read_payload(NRF24_Handle_t *handle, uint8_t cmd, uint8
     HAL_StatusTypeDef ret = spi_transfer(handle, &tx, &rx, 1);
 
     if (ret == HAL_OK) {
-        uint8_t nop[len];
+        uint8_t nop[NRF24_MAX_PAYLOAD_SIZE];
         memset(nop, NRF24_CMD_NOP, len);
         ret = spi_transfer(handle, nop, buf, len);
     }
@@ -150,12 +158,9 @@ HAL_StatusTypeDef NRF24_Init(NRF24_Handle_t *handle, SPI_HandleTypeDef *hspi, GP
     // Power on reset delay - datasheet specifies device needs time after VDD ramp
     handle->delay_us(5000); // 5ms delay for power-on reset
 
-    // Send ACTIVATE command to enable FEATURE, DYNPD, ACK_PAYLOAD, etc.
-    // Required for nRF24L01 (not needed for nRF24L01+ but harmless)
-    NRF24_Activate(handle);
-
-    // Default configuration: CRC enabled (1 byte)
-    HAL_StatusTypeDef status = NRF24_WriteReg(handle, NRF24_REG_CONFIG, 0x08); // EN_CRC
+    // Unlock FEATURE register on legacy clones only when needed (idempotent).
+    HAL_StatusTypeDef status = NRF24_EnsureFeatureRegisterActive(handle);
+    if (status != HAL_OK) return status;
     if (status != HAL_OK) return status;
 
     // Set auto-acknowledgement for all pipes (datasheet default: 0x3F)
@@ -243,8 +248,8 @@ HAL_StatusTypeDef NRF24_WriteReg(NRF24_Handle_t *handle, uint8_t reg, uint8_t va
 * @return HAL status.
 */
 HAL_StatusTypeDef NRF24_ReadRegs(NRF24_Handle_t *handle, uint8_t reg, uint8_t *buf, uint8_t len) {
-    if (handle == NULL || buf == NULL) {
-        return HAL_ERROR; // Invalid handle
+    if (handle == NULL || buf == NULL || len == 0 || len > 5) {
+        return HAL_ERROR;
     }
     return read_payload(handle, NRF24_CMD_R_REGISTER | reg, buf, len);
 }
@@ -258,8 +263,8 @@ HAL_StatusTypeDef NRF24_ReadRegs(NRF24_Handle_t *handle, uint8_t reg, uint8_t *b
 * @return HAL status.
 */
 HAL_StatusTypeDef NRF24_WriteRegs(NRF24_Handle_t *handle, uint8_t reg, uint8_t *buf, uint8_t len) {
-    if (handle == NULL || buf == NULL) {
-        return HAL_ERROR; // Invalid handle
+    if (handle == NULL || buf == NULL || len == 0 || len > 5) {
+        return HAL_ERROR;
     }
     return write_payload(handle, NRF24_CMD_W_REGISTER | reg, buf, len);
 }
@@ -318,11 +323,15 @@ HAL_StatusTypeDef NRF24_SetMode(NRF24_Handle_t *handle, NRF24_Mode_t mode) {
         break;
 
         case NRF24_MODE_STANDBY:
-            config |= NRF24_CONFIG_PWR_UP;
-            status = NRF24_WriteReg(handle, NRF24_REG_CONFIG, config);
-            if (status != HAL_OK) return status;
-            ce_low(handle);
-            handle->delay_us(1500); // Tpd2stby max 1.5ms = 1500µs
+            if (!(config & NRF24_CONFIG_PWR_UP)) {
+                config |= NRF24_CONFIG_PWR_UP;
+                status = NRF24_WriteReg(handle, NRF24_REG_CONFIG, config);
+                if (status != HAL_OK) return status;
+                ce_low(handle);
+                handle->delay_us(1500); // Tpd2stby - only on Power Down -> Standby
+            } else {
+                ce_low(handle);
+            }
         break;
 
         case NRF24_MODE_RX:
@@ -348,6 +357,7 @@ HAL_StatusTypeDef NRF24_SetMode(NRF24_Handle_t *handle, NRF24_Mode_t mode) {
 
 /**
 * @brief Sets the RF channel frequency.
+* @warning Register writes require Power Down or Standby mode (CE low).
 * @param handle Pointer to the nRF24 handle structure.
 * @param channel RF channel number (0-125).
 * @return HAL status.
@@ -356,12 +366,14 @@ HAL_StatusTypeDef NRF24_SetChannel(NRF24_Handle_t *handle, uint8_t channel) {
     if(handle == NULL) {
         return HAL_ERROR; // Invalid handle
     }
+    ensure_standby(handle);
     if (channel > 0x7D) channel = 0x7D;
     return NRF24_WriteReg(handle, NRF24_REG_RF_CH, channel);
 }
 
 /**
 * @brief Sets the air data rate.
+* @warning Register writes require Power Down or Standby mode (CE low).
 * @param handle Pointer to the nRF24 handle structure.
 * @param rate Desired data rate (250kbps, 1Mbps, 2Mbps).
 * @return HAL status.
@@ -370,6 +382,7 @@ HAL_StatusTypeDef NRF24_SetDataRate(NRF24_Handle_t *handle, NRF24_DataRate_t rat
     if(handle == NULL) {
         return HAL_ERROR; // Invalid handle
     }
+    ensure_standby(handle);
     uint8_t rf_setup;
     HAL_StatusTypeDef status = NRF24_ReadReg(handle, NRF24_REG_RF_SETUP, &rf_setup);
     if (status != HAL_OK) return status;
@@ -395,6 +408,7 @@ HAL_StatusTypeDef NRF24_SetDataRate(NRF24_Handle_t *handle, NRF24_DataRate_t rat
 
 /**
 * @brief Sets the power amplifier level.
+* @warning Register writes require Power Down or Standby mode (CE low).
 * @param handle Pointer to the nRF24 handle structure.
 * @param level Desired PA level (-18dBm to 0dBm).
 * @return HAL status.
@@ -403,6 +417,7 @@ HAL_StatusTypeDef NRF24_SetPALevel(NRF24_Handle_t *handle, NRF24_PALevel_t level
     if(handle == NULL) {
         return HAL_ERROR; // Invalid handle
     }
+    ensure_standby(handle);
     uint8_t rf_setup;
     HAL_StatusTypeDef status = NRF24_ReadReg(handle, NRF24_REG_RF_SETUP, &rf_setup);
     if (status != HAL_OK) return status;
@@ -415,6 +430,7 @@ HAL_StatusTypeDef NRF24_SetPALevel(NRF24_Handle_t *handle, NRF24_PALevel_t level
 
 /**
 * @brief Sets the address width for RX and TX addresses.
+* @warning Register writes require Power Down or Standby mode (CE low).
 * @param handle Pointer to the nRF24 handle structure.
 * @param width Address width (3, 4, or 5 bytes).
 * @return HAL status.
@@ -423,11 +439,13 @@ HAL_StatusTypeDef NRF24_SetAddressWidth(NRF24_Handle_t *handle, NRF24_AddrWidth_
     if(handle == NULL) {
         return HAL_ERROR; // Invalid handle
     }
+    ensure_standby(handle);
     return NRF24_WriteReg(handle, NRF24_REG_SETUP_AW, width);
 }
 
 /**
 * @brief Enables or disables auto-acknowledgement for a specific pipe.
+* @warning Register writes require Power Down or Standby mode (CE low).
 * @param handle Pointer to the nRF24 handle structure.
 * @param pipe Pipe number (0-5).
 * @param enable Enable (1) or disable (0) auto-ack.
@@ -437,6 +455,7 @@ HAL_StatusTypeDef NRF24_SetAutoAck(NRF24_Handle_t *handle, uint8_t pipe, uint8_t
     if(handle == NULL || pipe > 0x05) {
         return HAL_ERROR; // Invalid handle
     }
+    ensure_standby(handle);
 
     uint8_t en_aa;
     HAL_StatusTypeDef status = NRF24_ReadReg(handle, NRF24_REG_EN_AA, &en_aa);
@@ -452,6 +471,7 @@ return NRF24_WriteReg(handle, NRF24_REG_EN_AA, en_aa);
 
 /**
 * @brief Enables or disables a specific data pipe.
+* @warning Register writes require Power Down or Standby mode (CE low).
 * @param handle Pointer to the nRF24 handle structure.
 * @param pipe Pipe number (0-5).
 * @param enable Enable (1) or disable (0) the pipe.
@@ -461,6 +481,7 @@ HAL_StatusTypeDef NRF24_EnablePipe(NRF24_Handle_t *handle, uint8_t pipe, uint8_t
     if(handle == NULL || pipe > 0x05) {
         return HAL_ERROR; // Invalid handle
     }
+    ensure_standby(handle);
     uint8_t en_rxaddr;
     HAL_StatusTypeDef status = NRF24_ReadReg(handle, NRF24_REG_EN_RXADDR, &en_rxaddr);
 
@@ -477,6 +498,7 @@ HAL_StatusTypeDef NRF24_EnablePipe(NRF24_Handle_t *handle, uint8_t pipe, uint8_t
 
 /**
 * @brief Sets the RX address for a specific pipe.
+* @warning Register writes require Power Down or Standby mode (CE low).
 * @param handle Pointer to the nRF24 handle structure.
 * @param pipe Pipe number (0-5).
 * @param addr Pointer to the address array.
@@ -487,6 +509,7 @@ HAL_StatusTypeDef NRF24_SetRXAddress(NRF24_Handle_t *handle, uint8_t pipe, const
     if (handle == NULL || pipe > 0x05 || len > 0x05 || len == 0) {
         return HAL_ERROR;
     }
+    ensure_standby(handle);
 
     if (pipe < 0x02) {
         // Pipe 0 and 1 support full 3-5 byte addresses
@@ -499,6 +522,7 @@ HAL_StatusTypeDef NRF24_SetRXAddress(NRF24_Handle_t *handle, uint8_t pipe, const
 
 /**
 * @brief Sets the TX address.
+* @warning Register writes require Power Down or Standby mode (CE low).
 * @param handle Pointer to the nRF24 handle structure.
 * @param addr Pointer to the address array.
 * @param len Length of the address (up to 5 bytes).
@@ -508,11 +532,13 @@ HAL_StatusTypeDef NRF24_SetTXAddress(NRF24_Handle_t *handle, const uint8_t *addr
     if (handle == NULL || len > 0x05) {
         return HAL_ERROR;
     }
+    ensure_standby(handle);
     return NRF24_WriteRegs(handle, NRF24_REG_TX_ADDR, (uint8_t *)addr, len);
 }
 
 /**
 * @brief Sets the payload size for a specific pipe.
+* @warning Register writes require Power Down or Standby mode (CE low).
 * @param handle Pointer to the nRF24 handle structure.
 * @param pipe Pipe number (0-5).
 * @param size Payload size (1-32 bytes).
@@ -522,11 +548,13 @@ HAL_StatusTypeDef NRF24_SetPayloadSize(NRF24_Handle_t *handle, uint8_t pipe, uin
     if (handle == NULL || pipe > 0x05 || size > 0x20) {
         return HAL_ERROR;
     }
+    ensure_standby(handle);
     return NRF24_WriteReg(handle, NRF24_REG_RX_PW_P0 + pipe, size);
 }
 
 /**
 * @brief Enables or disables dynamic payload length for a specific pipe.
+* @warning Register writes require Power Down or Standby mode (CE low).
 * @param handle Pointer to the nRF24 handle structure.
 * @param pipe Pipe number (0-5).
 * @param enable Enable (1) or disable (0) dynamic payload.
@@ -536,6 +564,7 @@ HAL_StatusTypeDef NRF24_EnableDynamicPayload(NRF24_Handle_t *handle, uint8_t pip
     if (handle == NULL || pipe > 0x05) {
         return HAL_ERROR;
     }
+    ensure_standby(handle);
 
     uint8_t dynpd;
     HAL_StatusTypeDef status = NRF24_ReadReg(handle, NRF24_REG_DYNPD, &dynpd);
@@ -572,16 +601,25 @@ HAL_StatusTypeDef NRF24_EnableDynamicPayload(NRF24_Handle_t *handle, uint8_t pip
 * @return 1 if data is available, 0 otherwise.
 */
 uint8_t NRF24_IsDataAvailable(NRF24_Handle_t *handle, uint8_t *pipe) {
-    if(handle == NULL || pipe == NULL) {
-        return 0; // Invalid handle
+    if (handle == NULL || pipe == NULL) {
+        return 0;
     }
-    uint8_t status = NRF24_GetStatus(handle);
 
-    if (status & NRF24_STATUS_RX_DR) {
-        if (pipe) *pipe = (status >> 0x01) & 0x07;
-        return 0x01;
+    uint8_t status = NRF24_GetStatus(handle);
+    uint8_t pipe_no = (status >> 1) & 0x07;
+
+    if ((status & NRF24_STATUS_RX_DR) && (pipe_no <= 5)) {
+        *pipe = pipe_no;
+        return 1;
     }
-    return 0x00;
+
+    uint8_t fifo_status = NRF24_GetFIFOStatus(handle);
+    if (!(fifo_status & NRF24_FIFO_RX_EMPTY) && pipe_no <= 5) {
+        *pipe = pipe_no;
+        return 1;
+    }
+
+    return 0;
 }
 
 /**
@@ -592,8 +630,8 @@ uint8_t NRF24_IsDataAvailable(NRF24_Handle_t *handle, uint8_t *pipe) {
 * @return HAL status.
 */
 HAL_StatusTypeDef NRF24_ReadPayload(NRF24_Handle_t *handle, uint8_t *buf, uint8_t len) {
-    if(handle == NULL || buf == NULL) {
-        return HAL_ERROR; // Invalid handle
+    if (handle == NULL || buf == NULL || len == 0 || len > NRF24_MAX_PAYLOAD_SIZE) {
+        return HAL_ERROR;
     }
     return read_payload(handle, NRF24_CMD_R_RX_PAYLOAD, buf, len);
 }
@@ -639,39 +677,42 @@ HAL_StatusTypeDef NRF24_FlushRX(NRF24_Handle_t *handle) {
 /**
 * @brief Handles IRQ events from the nRF24L01+.
 * @param handle Pointer to the nRF24 handle structure.
+* @return Bitmask of asserted IRQ events (NRF24_IRQ_Event_t).
 */
-void NRF24_IRQ_Handler(NRF24_Handle_t *handle) {
-    if(handle == NULL) {
-        return; // Invalid handle
+uint8_t NRF24_IRQ_Handler(NRF24_Handle_t *handle) {
+    if (handle == NULL) {
+        return NRF24_IRQ_NONE;
     }
-    uint8_t status = NRF24_GetStatus(handle);
 
-    // Use bitwise checks - multiple IRQ flags can be set simultaneously
+    uint8_t status = NRF24_GetStatus(handle);
+    uint8_t events = NRF24_IRQ_NONE;
+
     if (status & NRF24_STATUS_MAX_RT) {
-        // Max retransmits reached - payload is NOT removed from TX FIFO
-        // Per datasheet: MAX_RT must be cleared to enable further communication
-        NRF24_FlushTX(handle);
+        events |= NRF24_IRQ_MAX_RT;
     }
 
     if (status & NRF24_STATUS_TX_DS) {
-        // Data sent successfully (ACK received if auto-ack enabled)
+        events |= NRF24_IRQ_TX_DS;
     }
 
     if (status & NRF24_STATUS_RX_DR) {
-        // Data received and ready in RX FIFO
+        events |= NRF24_IRQ_RX_DR;
     }
 
-    // Clear all asserted IRQ flags by writing 1s to them
     NRF24_ClearIRQ(handle, status & NRF24_STATUS_IRQ_MASK);
+    return events;
 }
 
 /**
 * @brief Sets the CRC mode.
+* @warning Register writes require Power Down or Standby mode (CE low).
 * @param handle Pointer to the nRF24 handle structure.
 * @param crc CRC mode (OFF, 1B, 2B).
 * @return HAL status.
 */
 HAL_StatusTypeDef NRF24_SetCRC(NRF24_Handle_t *handle, NRF24_CRC_t crc) {
+    if (handle == NULL) return HAL_ERROR;
+    ensure_standby(handle);
     uint8_t config;
     HAL_StatusTypeDef status = NRF24_ReadReg(handle, NRF24_REG_CONFIG, &config);
     if (status != HAL_OK) return status;
@@ -691,13 +732,15 @@ HAL_StatusTypeDef NRF24_SetCRC(NRF24_Handle_t *handle, NRF24_CRC_t crc) {
 
 /**
 * @brief Sets the auto retransmit parameters.
+* @warning Register writes require Power Down or Standby mode (CE low).
 * @param handle Pointer to the nRF24 handle structure.
 * @param ard Auto retransmit delay code (0-15).
 * @param arc Auto retransmit count (0-15).
 * @return HAL status.
 */
 HAL_StatusTypeDef NRF24_SetAutoRetr(NRF24_Handle_t *handle, uint8_t ard, uint8_t arc) {
-    if (ard > 15 || arc > 15) return HAL_ERROR;
+    if (handle == NULL || ard > 15 || arc > 15) return HAL_ERROR;
+    ensure_standby(handle);
     uint8_t val = (ard << 4) | arc;
     return NRF24_WriteReg(handle, NRF24_REG_SETUP_RETR, val);
 }
@@ -709,6 +752,8 @@ HAL_StatusTypeDef NRF24_SetAutoRetr(NRF24_Handle_t *handle, uint8_t ard, uint8_t
 * @return HAL status.
 */
 HAL_StatusTypeDef NRF24_EnableDynAck(NRF24_Handle_t *handle, uint8_t enable) {
+    if (handle == NULL) return HAL_ERROR;
+    ensure_standby(handle);
     uint8_t feature;
 
     HAL_StatusTypeDef status = NRF24_ReadReg(handle, NRF24_REG_FEATURE, &feature);
@@ -730,6 +775,9 @@ HAL_StatusTypeDef NRF24_EnableDynAck(NRF24_Handle_t *handle, uint8_t enable) {
 * @return HAL status.
 */
 HAL_StatusTypeDef NRF24_EnableAckPay(NRF24_Handle_t *handle, uint8_t enable) {
+    if (handle == NULL) return HAL_ERROR;
+    ensure_standby(handle);
+
     uint8_t feature;
     HAL_StatusTypeDef status = NRF24_ReadReg(handle, NRF24_REG_FEATURE, &feature);
 
@@ -740,7 +788,10 @@ HAL_StatusTypeDef NRF24_EnableAckPay(NRF24_Handle_t *handle, uint8_t enable) {
         feature &= ~NRF24_FEATURE_EN_ACK_PAY;
     }
 
-    return NRF24_WriteReg(handle, NRF24_REG_FEATURE, feature);
+    status = NRF24_WriteReg(handle, NRF24_REG_FEATURE, feature);
+    if (status != HAL_OK || !enable) return status;
+
+    return NRF24_EnableDynamicPayload(handle, 0, 1);
 }
 
 /**
@@ -799,6 +850,47 @@ HAL_StatusTypeDef NRF24_Activate(NRF24_Handle_t *handle) {
     HAL_StatusTypeDef status = spi_transfer(handle, tx, rx, 2);
     csn_high(handle);
     return status;
+}
+
+/**
+* @brief Ensures the FEATURE register is writable (idempotent ACTIVATE for legacy clones).
+* @param handle Pointer to the nRF24 handle structure.
+* @return HAL status.
+*/
+HAL_StatusTypeDef NRF24_EnsureFeatureRegisterActive(NRF24_Handle_t *handle) {
+    if (handle == NULL) return HAL_ERROR;
+
+    uint8_t feature_before;
+    uint8_t feature_after;
+
+    HAL_StatusTypeDef status = NRF24_ReadReg(handle, NRF24_REG_FEATURE, &feature_before);
+    if (status != HAL_OK) return status;
+
+    status = NRF24_WriteReg(handle, NRF24_REG_FEATURE, feature_before | NRF24_FEATURE_EN_DYN_ACK);
+    if (status != HAL_OK) return status;
+
+    status = NRF24_ReadReg(handle, NRF24_REG_FEATURE, &feature_after);
+    if (status != HAL_OK) {
+        (void)NRF24_WriteReg(handle, NRF24_REG_FEATURE, feature_before);
+        return status;
+    }
+
+    if (!(feature_after & NRF24_FEATURE_EN_DYN_ACK)) {
+        status = NRF24_Activate(handle);
+        if (status != HAL_OK) return status;
+    }
+
+    return NRF24_WriteReg(handle, NRF24_REG_FEATURE, feature_before);
+}
+
+/**
+* @brief Checks whether register configuration writes are safe (CE low).
+* @param handle Pointer to the nRF24 handle structure.
+* @return 1 if safe (Standby/Power Down), 0 if active RX/TX (CE high).
+*/
+uint8_t NRF24_IsSafeToConfigure(NRF24_Handle_t *handle) {
+    if (handle == NULL) return 0;
+    return (HAL_GPIO_ReadPin(handle->ce_port, handle->ce_pin) == GPIO_PIN_RESET) ? 1U : 0U;
 }
 
 /**
@@ -911,8 +1003,8 @@ uint8_t NRF24_GetCarrierDetect(NRF24_Handle_t *handle) {
 /**
 * @brief Verifies that an nRF24L01+ responds on SPI.
 *
-* Checks the fixed STATUS upper nibble (0xE) and performs a write-read
-* test on RF_CH. Floating MISO without a chip typically returns 0x00/0xFF.
+* Performs a STATUS sanity check (RX FIFO empty) and a write-read test on RF_CH.
+* Floating MISO without a chip typically returns 0x00/0xFF.
 *
 * @param handle Pointer to the nRF24 handle structure.
 * @return HAL_OK if the device is present, HAL_ERROR otherwise.
@@ -923,7 +1015,7 @@ HAL_StatusTypeDef NRF24_IsPresent(NRF24_Handle_t *handle) {
     }
 
     uint8_t status = NRF24_GetStatus(handle);
-    if ((status & 0xF0U) != 0xE0U) {
+    if ((status & 0x0EU) != 0x0EU) {
         return HAL_ERROR;
     }
 

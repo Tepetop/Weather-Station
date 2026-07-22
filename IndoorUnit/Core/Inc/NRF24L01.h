@@ -131,6 +131,14 @@ typedef enum {
     NRF24_CRC_2B  = 0x02
 } NRF24_CRC_t;
 
+// IRQ handler return flags
+typedef enum {
+    NRF24_IRQ_NONE   = 0x00,
+    NRF24_IRQ_MAX_RT = 0x01,
+    NRF24_IRQ_TX_DS  = 0x02,
+    NRF24_IRQ_RX_DR  = 0x04
+} NRF24_IRQ_Event_t;
+
 // Structure for device handle
 typedef struct {
     SPI_HandleTypeDef *hspi;
@@ -169,7 +177,7 @@ HAL_StatusTypeDef NRF24_ReadPayload(NRF24_Handle_t *handle, uint8_t *buf, uint8_
 HAL_StatusTypeDef NRF24_WritePayload(NRF24_Handle_t *handle, const uint8_t *buf, uint8_t len);
 HAL_StatusTypeDef NRF24_FlushTX(NRF24_Handle_t *handle);
 HAL_StatusTypeDef NRF24_FlushRX(NRF24_Handle_t *handle);
-void NRF24_IRQ_Handler(NRF24_Handle_t *handle);
+uint8_t NRF24_IRQ_Handler(NRF24_Handle_t *handle);
 HAL_StatusTypeDef NRF24_SetCRC(NRF24_Handle_t *handle, NRF24_CRC_t crc);
 HAL_StatusTypeDef NRF24_SetAutoRetr(NRF24_Handle_t *handle, uint8_t ard, uint8_t arc);
 HAL_StatusTypeDef NRF24_EnableDynAck(NRF24_Handle_t *handle, uint8_t enable);
@@ -177,11 +185,14 @@ HAL_StatusTypeDef NRF24_EnableAckPay(NRF24_Handle_t *handle, uint8_t enable);
 HAL_StatusTypeDef NRF24_WritePayloadNoAck(NRF24_Handle_t *handle, const uint8_t *buf, uint8_t len);
 HAL_StatusTypeDef NRF24_WriteAckPayload(NRF24_Handle_t *handle, uint8_t pipe, const uint8_t *buf, uint8_t len);
 HAL_StatusTypeDef NRF24_Activate(NRF24_Handle_t *handle);
+HAL_StatusTypeDef NRF24_EnsureFeatureRegisterActive(NRF24_Handle_t *handle);
+uint8_t NRF24_IsSafeToConfigure(NRF24_Handle_t *handle);
 uint8_t NRF24_ReadDynamicPayloadWidth(NRF24_Handle_t *handle);
 uint8_t NRF24_GetFIFOStatus(NRF24_Handle_t *handle);
 HAL_StatusTypeDef NRF24_PowerUp(NRF24_Handle_t *handle);
 HAL_StatusTypeDef NRF24_PowerDown(NRF24_Handle_t *handle);
 uint8_t NRF24_GetObserveTX(NRF24_Handle_t *handle);
 uint8_t NRF24_GetCarrierDetect(NRF24_Handle_t *handle);
+HAL_StatusTypeDef NRF24_IsPresent(NRF24_Handle_t *handle);
 
 #endif
