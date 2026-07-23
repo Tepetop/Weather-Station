@@ -523,11 +523,11 @@ static void ws_handle_irq(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg) {
           ctx->nodes[i].response_start_tick = HAL_GetTick();
         }
       }
-      Debug_LogNrfTxResult(1U);
+      Debug_LogNrfTxNoAck();
     } else if (active != NULL) {
       active->last_status = status;
       WS_MarkTxResultFromIrq(ctx, true, status);
-      Debug_LogNrfTxResult(1U);
+      Debug_LogNrfTxNoAck();
     }
   }
 
@@ -1064,6 +1064,13 @@ HAL_StatusTypeDef WS_InitRadioAndStart(WS_Manager_t *ctx, const WS_RuntimeConfig
   NRF24_SetAddressWidth(cfg->nrf, NRF24_AW_5);
   NRF24_SetAutoRetr(cfg->nrf, 1U, 10U);
   (void)NRF24_EnableDynAck(cfg->nrf, 1U);
+  {
+    uint8_t feature = 0U;
+    if ((NRF24_ReadReg(cfg->nrf, NRF24_REG_FEATURE, &feature) == HAL_OK) &&
+        ((feature & NRF24_FEATURE_EN_DYN_ACK) == 0U)) {
+      Debug_Log("LOG:NRF:FEATURE_NO_DYN_ACK");
+    }
+  }
 
   /* Pipe 0: auto-ACK (set to active node TX address) */
   ws_apply_active_node_address(ctx, cfg);
@@ -1205,6 +1212,8 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
   WS_TxEvent_t tx_event = WS_ConsumeTxEvent(ctx, now_tick);
 
   if (tx_event == WS_TX_EVENT_OK) {
+    /* Broadcast TX overwrote TX_ADDR/Pipe0; restore active-node address for RX ACKs. */
+    ws_apply_active_node_address(ctx, cfg);
     ws_start_receive(ctx, cfg);
     if (ctx->parallel_cycle != 0U) {
       ctx->cycle_rx_start_tick = now_tick;
@@ -1235,6 +1244,7 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
         ws_handle_irq(ctx, cfg);
         tx_event = WS_ConsumeTxEvent(ctx, now_tick);
         if (tx_event == WS_TX_EVENT_OK) {
+          ws_apply_active_node_address(ctx, cfg);
           ws_start_receive(ctx, cfg);
           ctx->cycle_rx_start_tick = now_tick;
           ctx->app_state = WS_APP_WAIT_RX_DATA;
@@ -1273,6 +1283,7 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
 
       tx_event = WS_ConsumeTxEvent(ctx, now_tick);
       if (tx_event == WS_TX_EVENT_OK) {
+        ws_apply_active_node_address(ctx, cfg);
         ws_start_receive(ctx, cfg);
         ctx->app_state = WS_APP_WAIT_RX_DATA;
         return;
