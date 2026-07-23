@@ -30,13 +30,10 @@
 /* ============================================================================
  * Node Configuration
  * ============================================================================ */
-/**
- * @brief Node identity (0-3). Override at build time:
- *        cmake -DOUTDOOR_NODE_ID=0  or  -DOUTDOOR_NODE_ID=1
- */
-#ifndef NODE_ID
-#define NODE_ID               1U
-#endif
+/* Undef first: stale cmake -DNODE_ID=1U must not override this header. */
+#undef NODE_ID
+/** @brief Node identity — set per board before building (0 or 1 for WS_NODE_COUNT=2). */
+#define NODE_ID               0U
 
 /* ============================================================================
  * NRF24L01 Configuration
@@ -65,9 +62,8 @@ static const uint8_t NRF_BROADCAST_ADDR[5] = {0xB0U, 0xB0U, 0xB0U, 0xB0U, 0xB0U}
 
 /**
  * @brief Channels transmitted by this outdoor unit (edit per station hardware).
- * @note  Barometric channels follow the driver selected in measurement.h
- *        (bmp280.h or bme280.h). Frame size allows at most WS_MAX_READINGS (5)
- *        entries — to add WS_CH_BME280_HUM, drop another channel first.
+ * @note  Must match sensors included in measurement.h (BMP280_H vs BME280_H).
+ *        Max WS_MAX_READINGS (5) entries per frame.
  */
 #if defined(BMP280_H)
 static const uint8_t ENABLED_CHANNELS[] = {
@@ -76,6 +72,12 @@ static const uint8_t ENABLED_CHANNELS[] = {
     WS_CH_BMP280_TEMP,
     WS_CH_BMP280_PRESS,
     WS_CH_TSL2561_LUX,
+};
+#elif defined(BME280_H)
+static const uint8_t ENABLED_CHANNELS[] = {
+    WS_CH_BME280_TEMP,
+    WS_CH_BME280_PRESS,
+    WS_CH_BME280_HUM,
 };
 #else
 static const uint8_t ENABLED_CHANNELS[] = {

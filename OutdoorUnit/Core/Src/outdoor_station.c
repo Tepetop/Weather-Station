@@ -168,6 +168,7 @@ HAL_StatusTypeDef OutdoorStation_Init(void)
   }
 
   Debug_LogSystemReady(measCtx.sensorErrorCode);
+  Debug_LogValue("LOG:INIT:NODE_ID=", (int32_t)NODE_ID);
   if (measCtx.sensorErrorCode & ERROR_TSL2561)
   {
     Debug_LogSensorError(ERROR_TSL2561, "TSL2561");
@@ -180,7 +181,7 @@ HAL_StatusTypeDef OutdoorStation_Init(void)
   {
     Debug_LogSensorError(ERROR_SI7021, "SI7021");
   }
-    if (measCtx.sensorErrorCode & ERROR_BME280)
+  if (measCtx.sensorErrorCode & ERROR_BME280)
   {
     Debug_LogSensorError(ERROR_BME280, "BME280");
   }

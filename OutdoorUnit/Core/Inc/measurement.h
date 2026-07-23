@@ -10,7 +10,7 @@
 #define MEASUREMENT_H
 
 #include "main.h"
-#if 1
+#if 0
 #include "si7021.h"
 #include "TSL2561.h"
 #include "bmp280.h"

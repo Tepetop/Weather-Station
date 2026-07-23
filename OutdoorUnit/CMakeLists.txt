@@ -62,14 +62,6 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Inc
 )
 
-# Outdoor node identity (0-3). Override: cmake -DOUTDOOR_NODE_ID=0
-set(OUTDOOR_NODE_ID "0" CACHE STRING "Outdoor NODE_ID (0-3)")
-
-# Add project symbols (macros)
-target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE
-    NODE_ID=${OUTDOOR_NODE_ID}U
-)
-
 # Remove wrong libob.a library dependency when using cpp files
 list(REMOVE_ITEM CMAKE_C_IMPLICIT_LINK_LIBRARIES ob)
 
