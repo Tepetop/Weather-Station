@@ -77,14 +77,6 @@ static const uint8_t ENABLED_CHANNELS[] = {
     WS_CH_BMP280_PRESS,
     WS_CH_TSL2561_LUX,
 };
-#elif defined(BME280_H)
-static const uint8_t ENABLED_CHANNELS[] = {
-    WS_CH_SI7021_TEMP,
-    WS_CH_SI7021_HUM,
-    WS_CH_BME280_TEMP,
-    WS_CH_BME280_PRESS,
-    WS_CH_TSL2561_LUX,
-};
 #else
 static const uint8_t ENABLED_CHANNELS[] = {
     WS_CH_SI7021_TEMP,
