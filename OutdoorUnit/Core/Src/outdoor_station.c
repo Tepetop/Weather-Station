@@ -489,7 +489,8 @@ static HAL_StatusTypeDef OutdoorStation_InitCommunication(void)
 
     /* Configure pipes */
     NRF24_SetAutoAck(&nrf, 0, 1);
-    NRF24_SetAutoAck(&nrf, NRF_PIPE_CMD, 0); /* command pipe must not ACK (shared address) */
+    /* EN_AA=1: Indoor uses WritePayloadNoAck so NO_ACK suppresses ACK; EN_AA=0 breaks RX on many clones. */
+    NRF24_SetAutoAck(&nrf, NRF_PIPE_CMD, 1);
     NRF24_EnablePipe(&nrf, 0, 1);
     NRF24_EnablePipe(&nrf, NRF_PIPE_CMD, 1);
     NRF24_SetPayloadSize(&nrf, 0, NRF_PAYLOAD_SIZE);
@@ -580,17 +581,27 @@ static void OutdoorStation_HandleIRQ(void)
     NRF24_ReadPayload(&nrf, rx_data, NRF_CMD_SIZE);
     NRF24_ClearIRQ(&nrf, NRF24_STATUS_RX_DR);
 
-    if (WS_Cmd_DecodeMeasureEx(rx_data, NRF_CMD_SIZE, &cycle_id, &target_mask))
+    if (!WS_Cmd_DecodeMeasureEx(rx_data, NRF_CMD_SIZE, &cycle_id, &target_mask))
+    {
+      Debug_Log("LOG:NRF:RX_DROP_DECODE");
+    }
+    else
     {
       uint8_t node_bit = (uint8_t)(1U << NODE_ID);
-      if ((target_mask == WS_CMD_TARGET_ALL) || ((target_mask & node_bit) != 0U))
+      Debug_LogNrfRxCmd();
+      if ((target_mask != WS_CMD_TARGET_ALL) && ((target_mask & node_bit) == 0U))
       {
-        if (!WS_Cmd_IsDuplicateCycle(cycle_id, outLink.last_cycle_id, outLink.have_last_cycle_id))
-        {
-          outLink.last_cycle_id = cycle_id;
-          outLink.have_last_cycle_id = 1U;
-          outLink.cmd_received = 1;
-        }
+        Debug_Log("LOG:NRF:RX_DROP_MASK");
+      }
+      else if (WS_Cmd_IsDuplicateCycle(cycle_id, outLink.last_cycle_id, outLink.have_last_cycle_id))
+      {
+        Debug_Log("LOG:NRF:RX_DROP_DUP");
+      }
+      else
+      {
+        outLink.last_cycle_id = cycle_id;
+        outLink.have_last_cycle_id = 1U;
+        outLink.cmd_received = 1;
       }
     }
     status = NRF24_GetStatus(&nrf);

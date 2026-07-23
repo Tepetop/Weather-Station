@@ -30,8 +30,13 @@
 /* ============================================================================
  * Node Configuration
  * ============================================================================ */
-/** @brief Node identity — change this per outdoor unit (0-3) */
+/**
+ * @brief Node identity (0-3). Override at build time:
+ *        cmake -DOUTDOOR_NODE_ID=0  or  -DOUTDOOR_NODE_ID=1
+ */
+#ifndef NODE_ID
 #define NODE_ID               1U
+#endif
 
 /* ============================================================================
  * NRF24L01 Configuration
