@@ -38,7 +38,7 @@
 /* ============================================================================
  * NRF24L01 Configuration
  * ============================================================================ */
-#define NRF_CHANNEL               76U     /**< RF channel: 2476 MHz (must match IndoorUnit) */
+#define NRF_CHANNEL               76U     /**< RF channel: 2476 MHz (must match IndoorUnit) */ 
 #define NRF_PAYLOAD_SIZE          WS_PROTOCOL_MAX_PAYLOAD
 #define NRF_CMD_SIZE              WS_CMD_SIZE
 #define CMD_MEASURE               WS_CMD_MEASURE
@@ -46,10 +46,14 @@
 #define NRF_INIT_MAX_RETRIES      3U      /**< Max NRF init retry attempts */
 #define NRF_INIT_RETRY_DELAY_MS   200U    /**< Delay between init retries */
 #define NRF_REINIT_INTERVAL_MS    10000U  /**< Periodic reinit when NRF is missing */
-/** @brief Stagger outdoor reply TX by NODE_ID * this delay (collision avoidance) */
+/** @brief Minimum delay after measure before reply (Indoor must be in RX after broadcast). */
+#define NRF_RESPONSE_BASE_MS      80U
+/** @brief Extra stagger: NODE_ID * this delay (collision avoidance between outdoors). */
 #define NRF_RESPONSE_SLOT_MS      100U
-/** @brief Outdoor RX pipe for broadcast/unicast measure commands (no Auto-ACK) */
-#define NRF_PIPE_CMD              1U
+/** @brief Outdoor RX pipe for broadcast measure commands */
+#define NRF_PIPE_CMD              2U
+/** @brief Max reply TX attempts before link recovery */
+#define NRF_TX_MAX_ATTEMPTS       3U
 
 /** Shared command address — must match IndoorUnit NRF_BROADCAST_ADDR */
 static const uint8_t NRF_BROADCAST_ADDR[5] = {0xB0U, 0xB0U, 0xB0U, 0xB0U, 0xB0U};
@@ -119,6 +123,7 @@ typedef struct {
   uint8_t last_cycle_id;           /**< Last accepted measure cycle id */
   uint8_t have_last_cycle_id;      /**< 1 when last_cycle_id is valid */
   uint8_t tx_delay_armed;          /**< Waiting for NODE_ID response slot */
+  uint8_t tx_attempt_count;        /**< Reply TX attempts in current cycle */
   uint32_t tx_start_tick;          /**< Tick when TX was initiated */
   uint32_t meas_start_tick;        /**< Tick when measurement cycle began */
   uint32_t tx_ready_tick;          /**< Earliest tick allowed to send response */

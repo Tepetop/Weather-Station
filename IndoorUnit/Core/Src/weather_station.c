@@ -1072,11 +1072,11 @@ HAL_StatusTypeDef WS_InitRadioAndStart(WS_Manager_t *ctx, const WS_RuntimeConfig
     }
   }
 
-  /* Pipe 0: auto-ACK (set to active node TX address) */
+  /* Pipe 0: auto-ACK (set to active node TX address); PW matches reply size. */
   ws_apply_active_node_address(ctx, cfg);
   NRF24_EnablePipe(cfg->nrf, 0U, 1U);
   NRF24_SetAutoAck(cfg->nrf, 0U, 1U);
-  NRF24_SetPayloadSize(cfg->nrf, 0U, cfg->cmd_size);
+  NRF24_SetPayloadSize(cfg->nrf, 0U, cfg->payload_size);
 
   /* Pipes 1-N: static RX addresses for each outdoor node (multiceiver) */
   for (uint8_t i = 0U; i < ctx->node_count; i++) {
