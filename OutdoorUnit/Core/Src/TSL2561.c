@@ -1,7 +1,13 @@
+/**
+ * @file    TSL2561.c
+ * @brief   TSL2561 light-to-digital converter driver implementation
+ * @details I2C register access, power control, ADC reads and lux calculation
+ *          per AMS TSL2561 datasheet equations.
+ */
+
 #include "TSL2561.h"
 #include <math.h>
 
-// Helper function to write a single byte to a register
 /**
  * @brief  Helper function to write a single byte to a register
  * @param  sensor Pointer to TSL2561 handle
