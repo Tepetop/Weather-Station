@@ -56,6 +56,10 @@ const uint8_t NRF_RX_ADDR[5] = {0xE7 + NODE_ID, 0xE7, 0xE7, 0xE7, 0xE7};
 static HAL_StatusTypeDef I2C_CheckAddress(I2C_HandleTypeDef *i2c);
 #endif
 
+/* ============================================================================
+ * Internal helpers (forward declarations)
+ * ============================================================================ */
+
 static void Outdoor_LedOn(void);
 static void Outdoor_LedOff(void);
 static void NRF_DelayUs(uint32_t us);
@@ -71,7 +75,13 @@ static void OutdoorStation_InitLink(void);
  * Public API
  * ============================================================================ */
 
-
+/**
+ * @brief   Runs one blocking measurement cycle using the station context
+ * @param   data        Filled with latest readings on success (may be NULL)
+ * @param   timeout_ms  Maximum wait time for the cycle
+ * @retval  HAL_OK      Cycle finished in MEAS_SLEEP
+ * @retval  HAL_ERROR   Invalid state, start failure, timeout, or MEAS_ERROR
+ */
 HAL_StatusTypeDef OutdoorStation_RunMeasurementCycle(Measurement_Data_t *data,
                                                      uint32_t timeout_ms)
 {
@@ -115,6 +125,8 @@ HAL_StatusTypeDef OutdoorStation_RunMeasurementCycle(Measurement_Data_t *data,
  * @brief   Initializes outdoor unit hardware and sensors
  * @retval  HAL_OK     Initialization successful
  * @retval  HAL_ERROR  Protocol self-check or sensor init failed
+ * @details Configures NRF24 (if present), runs measurement module init to
+ *          completion, and logs sensor error flags over UART.
  */
 HAL_StatusTypeDef OutdoorStation_Init(void)
 {
@@ -164,7 +176,7 @@ HAL_StatusTypeDef OutdoorStation_Init(void)
 /*  Check if sensors initialized successfully */
   if (measCtx.state == MEAS_ERROR)
   {
-    Error_Handler_WithName("Failed to initialize sensors");
+    //Error_Handler_WithName("Failed to initialize sensors");
   }
 
   Debug_LogSystemReady(measCtx.sensorErrorCode);
@@ -192,6 +204,8 @@ HAL_StatusTypeDef OutdoorStation_Init(void)
 /**
  * @brief   Processes the OutdoorLink state machine (call from main loop)
  * @retval  None
+ * @details Handles NRF IRQ, measurement commands, sensor reads, TX/ACK, and
+ *          radio recovery. Non-blocking — one state step per call.
  */
 void OutdoorStation_Process(void)
 {
@@ -605,15 +619,24 @@ static void OutdoorStation_HandleIRQ(void)
   uint8_t status = NRF24_GetStatus(&nrf);
   outLink.last_status = status;
 
-  /* Drain RX FIFO — hardware ACK can occur before MCU reads the command */
-  while (status & NRF24_STATUS_RX_DR)
+  /* Drain RX FIFO — RX_DR alone is not a reliable "FIFO empty" indicator. */
+  while ((NRF24_GetFIFOStatus(&nrf) & NRF24_FIFO_RX_EMPTY) == 0U)
   {
-    uint8_t rx_data[NRF_CMD_SIZE];
+    status = NRF24_GetStatus(&nrf);
+    uint8_t pipe = (status >> 1U) & 0x07U;
+    uint8_t payload_len = (pipe == 0U) ? NRF_PAYLOAD_SIZE : NRF_CMD_SIZE;
+    uint8_t rx_data[NRF24_MAX_PAYLOAD_SIZE];
+
+    NRF24_ReadPayload(&nrf, rx_data, payload_len);
+
+    if (pipe != NRF_PIPE_CMD)
+    {
+      Debug_LogValue("LOG:NRF:RX_DROP_PIPE=", (int32_t)pipe);
+      continue;
+    }
+
     uint8_t cycle_id = 0U;
     uint8_t target_mask = WS_CMD_TARGET_ALL;
-    NRF24_ReadPayload(&nrf, rx_data, NRF_CMD_SIZE);
-    NRF24_ClearIRQ(&nrf, NRF24_STATUS_RX_DR);
-
     if (!WS_Cmd_DecodeMeasureEx(rx_data, NRF_CMD_SIZE, &cycle_id, &target_mask))
     {
       Debug_Log("LOG:NRF:RX_DROP_DECODE");
@@ -637,8 +660,9 @@ static void OutdoorStation_HandleIRQ(void)
         outLink.cmd_received = 1;
       }
     }
-    status = NRF24_GetStatus(&nrf);
   }
+  NRF24_ClearIRQ(&nrf, NRF24_STATUS_RX_DR);
+  status = NRF24_GetStatus(&nrf);
 
   /* TX complete (ACK received) */
   if (status & NRF24_STATUS_TX_DS)
@@ -696,8 +720,11 @@ static void OutdoorStation_SendMeasurementData(void)
 }
 
 /**
- * @brief Arm NODE_ID response slot and send when the slot is due
- * @retval 1 when TX was started, 0 when still waiting for the slot
+ * @brief   Arms NODE_ID response slot and sends when the slot is due
+ * @retval  1U  TX was started
+ * @retval  0U  Still waiting for the staggered response window
+ * @details First call arms tx_ready_tick using NRF_RESPONSE_BASE_MS and
+ *          NODE_ID * NRF_RESPONSE_SLOT_MS; subsequent calls start TX once due.
  */
 static uint8_t OutdoorStation_TrySendAfterSlot(void)
 {

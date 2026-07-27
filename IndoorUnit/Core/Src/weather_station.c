@@ -471,47 +471,50 @@ static void ws_handle_irq(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg) {
   WS_NodeState_t *active = WS_GetActiveNode(ctx);
 
   /* Drain RX FIFO — both outdoor replies may arrive before this handler runs. */
-  while (status & NRF24_STATUS_RX_DR) {
+  while ((NRF24_GetFIFOStatus(cfg->nrf) & NRF24_FIFO_RX_EMPTY) == 0U) {
+    status = NRF24_GetStatus(cfg->nrf);
     uint8_t pipe = (status >> WS_STATUS_PIPE_SHIFT) & WS_STATUS_PIPE_MASK;
     uint8_t rx_data[NRF24_MAX_PAYLOAD_SIZE] = {0};
     uint8_t payload_len = (pipe == 0U) ? cfg->cmd_size : cfg->payload_size;
 
     NRF24_ReadPayload(cfg->nrf, rx_data, payload_len);
-    NRF24_ClearIRQ(cfg->nrf, NRF24_STATUS_RX_DR);
 
     /* Map pipe to node index: pipe 1 → node 0, pipe 2 → node 1, etc. */
     uint8_t node_idx = pipe - 1U;
-    if ((pipe >= 1U) && (node_idx < ctx->node_count) &&
-        (payload_len >= WS_PROTOCOL_HEADER_SIZE)) {
-      WS_NodeReadings_t measurement;
-      if (WS_Protocol_Decode(rx_data, payload_len, &measurement)) {
-        WS_NodeState_t *rx_node = &ctx->nodes[node_idx];
-        memcpy(&rx_node->data, &measurement, sizeof(measurement));
-        rx_node->last_status = status;
-        rx_node->state = WS_NODE_DATA_READY;
-        rx_node->retry_count = 0U;
-
-        if (ctx->parallel_cycle != 0U) {
-          ctx->received_mask |= (uint8_t)(1U << node_idx);
-        }
-
-        ctx->latest_data_valid = 1U;
-        ctx->latest_node_index = node_idx;
-        ctx->last_successful_rx_tick = HAL_GetTick();
-        ws_capture_last_successful_time(ctx, cfg);
-        ctx->comm_watchdog_tripped = 0U;
-
-        ws_set_led(cfg, GPIO_PIN_RESET);
-        Debug_LogNrfRxData(node_idx);
-        Debug_LogValue("NRF:RX_PIPE=", pipe);
-      }
+    if ((pipe == 0U) || (node_idx >= ctx->node_count) ||
+        (payload_len < WS_PROTOCOL_HEADER_SIZE)) {
+      Debug_LogValue("NRF:RX_DROP_PIPE=", (int32_t)pipe);
+      continue;
     }
 
-    status = NRF24_GetStatus(cfg->nrf);
-    if ((NRF24_GetFIFOStatus(cfg->nrf) & NRF24_FIFO_RX_EMPTY) != 0U) {
-      break;
+    WS_NodeReadings_t measurement;
+    if (!WS_Protocol_Decode(rx_data, payload_len, &measurement)) {
+      Debug_LogValue("NRF:RX_DROP_DECODE pipe=", (int32_t)pipe);
+      continue;
     }
+
+    WS_NodeState_t *rx_node = &ctx->nodes[node_idx];
+    memcpy(&rx_node->data, &measurement, sizeof(measurement));
+    rx_node->last_status = status;
+    rx_node->state = WS_NODE_DATA_READY;
+    rx_node->retry_count = 0U;
+
+    if (ctx->parallel_cycle != 0U) {
+      ctx->received_mask |= (uint8_t)(1U << node_idx);
+    }
+
+    ctx->latest_data_valid = 1U;
+    ctx->latest_node_index = node_idx;
+    ctx->last_successful_rx_tick = HAL_GetTick();
+    ws_capture_last_successful_time(ctx, cfg);
+    ctx->comm_watchdog_tripped = 0U;
+
+    ws_set_led(cfg, GPIO_PIN_RESET);
+    Debug_LogNrfRxData(node_idx);
+    Debug_LogValue("NRF:RX_PIPE=", pipe);
   }
+  NRF24_ClearIRQ(cfg->nrf, NRF24_STATUS_RX_DR);
+  status = NRF24_GetStatus(cfg->nrf);
 
   if (status & NRF24_STATUS_TX_DS) {
     NRF24_ClearIRQ(cfg->nrf, NRF24_STATUS_TX_DS);

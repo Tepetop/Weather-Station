@@ -33,7 +33,7 @@
 /* Undef first: stale cmake -DNODE_ID=1U must not override this header. */
 #undef NODE_ID
 /** @brief Node identity — set per board before building (0 or 1 for WS_NODE_COUNT=2). */
-#define NODE_ID               0U
+#define NODE_ID               1U
 
 /* ============================================================================
  * NRF24L01 Configuration
@@ -50,8 +50,11 @@
 #define NRF_RESPONSE_BASE_MS      80U
 /** @brief Extra stagger: NODE_ID * this delay (collision avoidance between outdoors). */
 #define NRF_RESPONSE_SLOT_MS      100U
-/** @brief Outdoor RX pipe for broadcast measure commands */
-#define NRF_PIPE_CMD              2U
+/**
+ * @brief Local NRF RX pipe for broadcast measure commands (same on every outdoor unit).
+ * @note  Not NODE_ID — pipe 2 on IndoorUnit is node 1's reply pipe, not the command pipe.
+ */
+#define NRF_PIPE_CMD              1U
 /** @brief Max reply TX attempts before link recovery */
 #define NRF_TX_MAX_ATTEMPTS       3U
 
@@ -166,9 +169,9 @@ extern OutdoorLinkContext_t outLink;  /**< OutdoorLink state machine context */
  *   RX Pipe 1..4   = {0xC2+n, 0xC2, ...} node reply pipes
  *
  * This outdoor unit (NODE_ID):
- *   TX_ADDR = {0xC2+NODE_ID, 0xC2, ...} -> Indoor RX pipe (1+NODE_ID)
+ *   TX_ADDR = {0xC2+NODE_ID, 0xC2, ...} -> Indoor reply RX pipe (1+NODE_ID)
  *   Pipe 0 = TX_ADDR (auto-ACK for replies)
- *   Pipe 1 = broadcast command address, Auto-ACK off (filter by target_mask)
+ *   Pipe NRF_PIPE_CMD (1) = broadcast command address (shared by all outdoors)
  * ============================================================================ */
 extern const uint8_t NRF_TX_ADDR[5];  /**< TX address for this outdoor unit */
 extern const uint8_t NRF_RX_ADDR[5];  /**< Legacy unique RX (unused for commands; kept for reference) */
