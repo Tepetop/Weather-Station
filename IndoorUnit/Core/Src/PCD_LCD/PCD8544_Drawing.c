@@ -1,17 +1,8 @@
-/*
- * PCD8544_Drawing.c
- *
- *  Created on: Feb 12, 2026
- *      Author: remik
- */
 /**
- * --------------------------------------------------------------------------------------------+
- * @desc        LCD PCD8544 Drawing Functions - Advanced graphics primitives
- * --------------------------------------------------------------------------------------------+
- *
- *              Copyright (C) 2026 Remigiusz Pieprzyk
- *              Drawing functions for PCD8544 LCD display including lines and circles
- *
+ * @file PCD8544_Drawing.c
+ * @brief Advanced drawing primitives and chart rendering for PCD8544.
+ * @details Implements Bresenham line/ellipse algorithms, aspect-corrected
+ *          circles, rectangles, and measurement chart drawing.
  */
 
 #include "PCD8544_Drawing.h"
@@ -21,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+/** @brief Clamps a signed 16-bit value to [min, max]. */
 static int16_t PCD8544_ClampI16(int16_t value, int16_t min, int16_t max)
 {
     if (value < min) return min;
@@ -28,11 +20,13 @@ static int16_t PCD8544_ClampI16(int16_t value, int16_t min, int16_t max)
     return value;
 }
 
+/** @brief Returns 1 if pixel coordinates lie within the display bounds. */
 static uint8_t PCD8544_IsPointInBounds(int16_t x, int16_t y)
 {
     return (x >= 0 && x < PCD8544_WIDTH && y >= 0 && y < PCD8544_HEIGHT) ? 1U : 0U;
 }
 
+/** @brief Draws a pixel only when coordinates are inside the display area. */
 static void PCD8544_DrawPixelSafe(PCD8544_t *PCD, int16_t x, int16_t y)
 {
     if (PCD8544_IsPointInBounds(x, y)) {
@@ -40,6 +34,7 @@ static void PCD8544_DrawPixelSafe(PCD8544_t *PCD, int16_t x, int16_t y)
     }
 }
 
+/** @brief Clamps endpoints and delegates to PCD8544_DrawLine when partially visible. */
 static void PCD8544_DrawLineSafe(PCD8544_t *PCD, int16_t x1, int16_t y1, int16_t x2, int16_t y2)
 {
     if (PCD == NULL) {
@@ -67,13 +62,13 @@ static void PCD8544_DrawLineSafe(PCD8544_t *PCD, int16_t x1, int16_t y1, int16_t
  * @details Uses Bresenham's line algorithm for efficient integer-based line drawing.
  *          The algorithm handles all octants and slopes including vertical and horizontal lines.
  *
- * @param   PCD - pointer to PCD8544 structure
+ * @param[in,out] PCD Display driver instance.
  * @param   x1 - starting X coordinate (0-83)
  * @param   y1 - starting Y coordinate (0-47)
  * @param   x2 - ending X coordinate (0-83)
  * @param   y2 - ending Y coordinate (0-47)
  *
- * @return  PCD_Status - PCD_OK on success, error code otherwise
+ * @retval PCD_OK Operation successful.
  */
 PCD_Status PCD8544_DrawLine(PCD8544_t *PCD, uint8_t x1, uint8_t y1, uint8_t x2, uint8_t y2)
 {
@@ -166,13 +161,13 @@ PCD_Status PCD8544_DrawLine(PCD8544_t *PCD, uint8_t x1, uint8_t y1, uint8_t x2, 
  * @details Uses midpoint ellipse algorithm for efficient integer-based ellipse drawing.
  *          Draws in all 4 quadrants simultaneously.
  *
- * @param   PCD - pointer to PCD8544 structure
+ * @param[in,out] PCD Display driver instance.
  * @param   x0 - center X coordinate (0-83)
  * @param   y0 - center Y coordinate (0-47)
  * @param   rx - X radius in pixels
  * @param   ry - Y radius in pixels
  *
- * @return  PCD_Status - PCD_OK on success, error code otherwise
+ * @retval PCD_OK Operation successful.
  */
 PCD_Status  PCD8544_DrawEllipse(PCD8544_t *PCD, uint8_t x0, uint8_t y0, uint8_t rx, uint8_t ry)
 {
@@ -240,6 +235,15 @@ PCD_Status  PCD8544_DrawEllipse(PCD8544_t *PCD, uint8_t x0, uint8_t y0, uint8_t 
     return PCD_OK;
 }
 
+/**
+ * @brief Draws a cross marker centered at (x0, y0).
+ * @param[in,out] PCD  Display driver instance.
+ * @param[in]     x0   Center X coordinate (0–83).
+ * @param[in]     y0   Center Y coordinate (0–47).
+ * @param[in]     size Half-length of each cross arm in pixels.
+ * @retval PCD_OK    Cross drawn successfully.
+ * @retval PCD_ERROR size is zero.
+ */
 PCD_Status PCD8544_DrawCross(PCD8544_t *PCD, uint8_t x0, uint8_t y0, uint8_t size)
 {
     if (size == 0) {
@@ -263,14 +267,14 @@ PCD_Status PCD8544_DrawCross(PCD8544_t *PCD, uint8_t x0, uint8_t y0, uint8_t siz
  *          then calls PCD8544_DrawEllipse. This produces a visually round
  *          circle on displays with non-square pixels.
  *
- * @param   PCD - pointer to PCD8544 structure
+ * @param[in,out] PCD Display driver instance.
  * @param   x0 - center X coordinate (0-83)
  * @param   y0 - center Y coordinate (0-47)
  * @param   r - radius in pixels (X axis reference)
  * @param   yscale - Y scale numerator
  * @param   yscale_den - Y scale denominator
  *
- * @return  PCD_Status - PCD_OK on success, error code otherwise
+ * @retval PCD_OK Operation successful.
  */
 PCD_Status PCD8544_DrawCircle(PCD8544_t *PCD, uint8_t x0, uint8_t y0, uint8_t r)
 {    
@@ -287,13 +291,13 @@ PCD_Status PCD8544_DrawCircle(PCD8544_t *PCD, uint8_t x0, uint8_t y0, uint8_t r)
  * @details Draws horizontal scan lines for each Y position using
  *          computed X boundaries from midpoint ellipse algorithm.
  *
- * @param   PCD - pointer to PCD8544 structure
+ * @param[in,out] PCD Display driver instance.
  * @param   x0 - center X coordinate (0-83)
  * @param   y0 - center Y coordinate (0-47)
  * @param   rx - X radius in pixels
  * @param   ry - Y radius in pixels
  *
- * @return  PCD_Status - PCD_OK on success, error code otherwise
+ * @retval PCD_OK Operation successful.
  */
 PCD_Status PCD8544_DrawFillEllipse(PCD8544_t *PCD, uint8_t x0, uint8_t y0, uint8_t rx, uint8_t ry)
 {
@@ -375,14 +379,14 @@ PCD_Status PCD8544_DrawFillEllipse(PCD8544_t *PCD, uint8_t x0, uint8_t y0, uint8
  *          then calls PCD8544_FillEllipse. This produces a visually round
  *          filled circle on displays with non-square pixels.
  *
- * @param   PCD - pointer to PCD8544 structure
+ * @param[in,out] PCD Display driver instance.
  * @param   x0 - center X coordinate (0-83)
  * @param   y0 - center Y coordinate (0-47)
  * @param   r - radius in pixels (X axis reference)
  * @param   yscale - Y scale numerator
  * @param   yscale_den - Y scale denominator
  *
- * @return  PCD_Status - PCD_OK on success, error code otherwise
+ * @retval PCD_OK Operation successful.
  */
 PCD_Status PCD8544_DrawFillCircle(PCD8544_t *PCD, uint8_t x0, uint8_t y0, uint8_t r)
 {
@@ -398,13 +402,13 @@ PCD_Status PCD8544_DrawFillCircle(PCD8544_t *PCD, uint8_t x0, uint8_t y0, uint8_
  *
  * @details Draws four lines forming a rectangle outline.
  *
- * @param   PCD - pointer to PCD8544 structure
+ * @param[in,out] PCD Display driver instance.
  * @param   x - top-left X coordinate (0-83)
  * @param   y - top-left Y coordinate (0-47)
  * @param   width - rectangle width in pixels
  * @param   height - rectangle height in pixels
  *
- * @return  PCD_Status - PCD_OK on success, error code otherwise
+ * @retval PCD_OK Operation successful.
  */
 PCD_Status PCD8544_DrawRectangle(PCD8544_t *PCD, uint8_t x, uint8_t y, uint8_t width, uint8_t height)
 {
@@ -430,13 +434,13 @@ PCD_Status PCD8544_DrawRectangle(PCD8544_t *PCD, uint8_t x, uint8_t y, uint8_t w
  *
  * @details Fills the rectangle area by drawing horizontal lines.
  *
- * @param   PCD - pointer to PCD8544 structure
+ * @param[in,out] PCD Display driver instance.
  * @param   x - top-left X coordinate (0-83)
  * @param   y - top-left Y coordinate (0-47)
  * @param   width - rectangle width in pixels
  * @param   height - rectangle height in pixels
  *
- * @return  PCD_Status - PCD_OK on success, error code otherwise
+ * @retval PCD_OK Operation successful.
  */
 PCD_Status PCD8544_DrawFillRectangle(PCD8544_t *PCD, uint8_t x, uint8_t y, uint8_t width, uint8_t height)
 {
@@ -462,14 +466,14 @@ PCD_Status PCD8544_DrawFillRectangle(PCD8544_t *PCD, uint8_t x, uint8_t y, uint8
  * @details Draws a rectangle with rounded corners using quarter-circle arcs
  *          at each corner connected by straight lines.
  *
- * @param   PCD - pointer to PCD8544 structure
+ * @param[in,out] PCD Display driver instance.
  * @param   x - top-left X coordinate (0-83)
  * @param   y - top-left Y coordinate (0-47)
  * @param   width - rectangle width in pixels
  * @param   height - rectangle height in pixels
  * @param   r - corner radius in pixels
  *
- * @return  PCD_Status - PCD_OK on success, error code otherwise
+ * @retval PCD_OK Operation successful.
  */
 PCD_Status PCD8544_DrawRoundedRect(PCD8544_t *PCD, uint8_t x, uint8_t y, uint8_t width, uint8_t height, uint8_t r)
 {
@@ -551,14 +555,14 @@ PCD_Status PCD8544_DrawRoundedRect(PCD8544_t *PCD, uint8_t x, uint8_t y, uint8_t
  * @details Fills the rounded rectangle by drawing horizontal lines
  *          and filling corner areas with quarter-circle fills.
  *
- * @param   PCD - pointer to PCD8544 structure
+ * @param[in,out] PCD Display driver instance.
  * @param   x - top-left X coordinate (0-83)
  * @param   y - top-left Y coordinate (0-47)
  * @param   width - rectangle width in pixels
  * @param   height - rectangle height in pixels
  * @param   r - corner radius in pixels
  *
- * @return  PCD_Status - PCD_OK on success, error code otherwise
+ * @retval PCD_OK Operation successful.
  */
 PCD_Status PCD8544_DrawFillRoundedRect(PCD8544_t *PCD, uint8_t x, uint8_t y, uint8_t width, uint8_t height, uint8_t r)
 {
@@ -632,10 +636,10 @@ PCD_Status PCD8544_DrawFillRoundedRect(PCD8544_t *PCD, uint8_t x, uint8_t y, uin
  *          - Bottom row: oldest timestamp (left) and newest timestamp (right)
  *          - Data points displayed in the chart area between rows 1-4
  *
- * @param   PCD - pointer to PCD8544 structure
+ * @param[in,out] PCD Display driver instance.
  * @param   chartData - pointer to chart data structure containing measurements
  *
- * @return  PCD_Status - PCD_OK on success, error code otherwise
+ * @retval PCD_OK Operation successful.
  */
 PCD_Status PCD8544_DrawChart(PCD8544_t *PCD, PCD8544_ChartData_t *chartData)
 {
@@ -827,11 +831,8 @@ PCD_Status PCD8544_DrawChart(PCD8544_t *PCD, PCD8544_ChartData_t *chartData)
 }
 
 /**
- * @brief   Initialize a chart data structure with default values
- *
- * @param   chartData - pointer to chart data structure to initialize
- *
- * @return  none
+ * @brief Initializes a chart data structure with default values.
+ * @param[out] chartData Chart structure to reset.
  */
 void PCD8544_InitChartData(PCD8544_ChartData_t *chartData)
 {
@@ -849,17 +850,12 @@ void PCD8544_InitChartData(PCD8544_ChartData_t *chartData)
 }
 
 /**
- * @brief   Add a data point to the chart
- *
- * @details Adds a new data point with timestamp to the chart. If the chart
- *          is full, oldest data points are shifted out.
- *
- * @param   chartData - pointer to chart data structure
- * @param   value - measurement value (can be in tenths, e.g., 253 for 25.3)
- * @param   hour - hour of measurement (0-23)
- * @param   minute - minute of measurement (0-59)
- *
- * @return  none
+ * @brief Appends a timestamped sample to the chart ring buffer.
+ * @details When full, oldest samples are shifted out.
+ * @param[in,out] chartData Chart series to update.
+ * @param[in]     value     Sample value (scaled per decimalPlaces).
+ * @param[in]     hour      Sample hour (0–23).
+ * @param[in]     minute    Sample minute (0–59).
  */
 void PCD8544_AddChartPoint(PCD8544_ChartData_t *chartData, int16_t value, uint8_t hour, uint8_t minute)
 {
@@ -882,12 +878,9 @@ void PCD8544_AddChartPoint(PCD8544_ChartData_t *chartData, int16_t value, uint8_
 }
 
 /**
- * @brief   Set the chart display type
- *
- * @param   chartData - pointer to chart data structure
- * @param   chartType - chart type (PCD8544_CHART_LINE or PCD8544_CHART_BAR)
- *
- * @return  none
+ * @brief Sets the chart drawing style.
+ * @param[in,out] chartData Chart series to update.
+ * @param[in]     chartType Display style (dot, line, or bar).
  */
 void PCD8544_SetChartType(PCD8544_ChartData_t *chartData, PCD8544_ChartType_t chartType)
 {
