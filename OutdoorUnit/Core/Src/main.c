@@ -31,6 +31,7 @@
 #include "debug_log.h"
 #include "measurement.h"
 #include "measurement_unit_config.h"
+#include "power_mgr.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -61,7 +62,6 @@
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
-void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 /* USER CODE END PFP */
 
@@ -117,6 +117,8 @@ int main(void)
   {
     Error_Handler_WithName("OutdoorStation_Init");
   }
+
+  PowerMgr_Init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -133,6 +135,11 @@ int main(void)
 #ifdef DEBUG_LOG_HEARTBEAT
     Debug_Heartbeat();
 #endif
+
+    if (OutdoorStation_CanSleep() != 0U)
+    {
+      PowerMgr_EnterIdleStop();
+    }
 
   }
   /* USER CODE END 3 */

@@ -54,6 +54,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/measurement.c
     Core/Src/outdoor_station.c
     Core/Src/debug_log.c
+    Core/Src/power_mgr.c
 )
 
 # Add include paths

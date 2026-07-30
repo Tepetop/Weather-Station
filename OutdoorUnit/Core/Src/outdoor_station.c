@@ -428,6 +428,34 @@ void OutdoorStation_Process(void)
 }
 
 /**
+ * @brief   Returns 1 when MCU may enter STOP (NRF stays in RX)
+ */
+uint8_t OutdoorStation_CanSleep(void)
+{
+  if (!nrf_available)
+  {
+    return 0U;
+  }
+
+  if (outLink.state != OUT_LINK_IDLE)
+  {
+    return 0U;
+  }
+
+  if (outLink.irq_flag != 0U || outLink.cmd_received != 0U)
+  {
+    return 0U;
+  }
+
+  if (HAL_GPIO_ReadPin(NRF_IRQ_GPIO_Port, NRF_IRQ_Pin) == GPIO_PIN_RESET)
+  {
+    return 0U;
+  }
+
+  return 1U;
+}
+
+/**
  * @brief   EXTI callback for NRF IRQ pin
  * @param   GPIO_Pin  Pin that triggered the interrupt
  * @retval  None

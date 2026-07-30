@@ -67,6 +67,12 @@ static const uint8_t NRF_BROADCAST_ADDR[5] = {0xB0U, 0xB0U, 0xB0U, 0xB0U, 0xB0U}
 #define OUTDOOR_MEAS_MAX_RETRIES  3U      /**< Max measurement retry attempts */
 #define OUTDOOR_MEAS_TIMEOUT_MS   2000U   /**< Measurement cycle timeout */
 
+/* ============================================================================
+ * Power management (MCU STOP while NRF stays in RX)
+ * ============================================================================ */
+/** @brief RTC alarm period to refresh IWDG while MCU is in STOP (must be < IWDG timeout). */
+#define OUTDOOR_IWDG_PET_SEC      15U
+
 /**
  * @brief Channels transmitted by this outdoor unit (edit per station hardware).
  * @note  Must match sensors included in measurement.h (BMP280_H vs BME280_H).
