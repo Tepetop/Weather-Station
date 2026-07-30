@@ -44,6 +44,7 @@
 #include "weather_station_config.h"
 #include "debug_log.h"
 #include "uart_cmd.h"
+#include "power_mgr.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -67,7 +68,6 @@
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
-void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 
 void EncoderButtonPress(void);
@@ -255,6 +255,8 @@ int main(void)
   MX_WWDG_Init();
   uint32_t wwdg_last_refresh_tick = HAL_GetTick();
 
+  PowerMgr_Init();
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -294,6 +296,15 @@ int main(void)
     #ifdef DEBUG_LOG_HEARTBEAT
         Debug_Heartbeat();
     #endif
+
+    if ((menuContext.state.InScreenSaver != 0U) &&
+        (encoder.ButtonIRQ_Flag == 0U) &&
+        (encoder.IRQ_Flag == 0U) &&
+        (WS_CanSleep(&wsCtx) != 0U))
+    {
+      PowerMgr_EnterIdleStop(&nrf);
+    }
+
   }
   /* USER CODE END 3 */
 }

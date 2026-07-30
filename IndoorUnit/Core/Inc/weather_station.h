@@ -351,4 +351,12 @@ HAL_StatusTypeDef WS_InitRadioAndStart(WS_Manager_t *ctx, const WS_RuntimeConfig
  */
 void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, uint32_t now_tick);
 
+/**
+ * @brief Returns 1 when app/radio link may idle-sleep (caller also gates UI)
+ * @param[in] ctx Manager context
+ * @retval 1 Idle, no pending TX/RX/cycle
+ * @retval 0 Busy or unhealthy
+ */
+uint8_t WS_CanSleep(const WS_Manager_t *ctx);
+
 #endif

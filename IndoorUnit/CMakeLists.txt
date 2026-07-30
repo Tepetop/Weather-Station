@@ -58,6 +58,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/weather_station_ui.c
     Core/Src/debug_log.c
     Core/Src/uart_cmd.c
+    Core/Src/power_mgr.c
 )
 
 # Add include paths
