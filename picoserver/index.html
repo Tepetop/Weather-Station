@@ -1,0 +1,1219 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Pico W - Weather Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-1: #071018;
+            --bg-2: #0b202e;
+            --surface: rgba(8, 20, 33, 0.78);
+            --surface-strong: rgba(8, 25, 40, 0.92);
+            --line: rgba(173, 224, 240, 0.18);
+            --text: #dff2f8;
+            --muted: #9eb8c3;
+            --accent: #1fb89f;
+            --accent-2: #ff9a4c;
+            --good: #2fd680;
+            --warn: #ffc24a;
+            --err: #ff5959;
+            --radius: 16px;
+            --shadow: 0 12px 30px rgba(2, 10, 16, 0.35);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            color: var(--text);
+            font-family: "Space Grotesk", "Segoe UI", sans-serif;
+            background:
+                radial-gradient(circle at 14% 18%, rgba(31, 184, 159, 0.18), transparent 40%),
+                radial-gradient(circle at 88% 8%, rgba(255, 154, 76, 0.2), transparent 32%),
+                linear-gradient(165deg, var(--bg-1), var(--bg-2));
+            padding: 20px;
+        }
+
+        .app {
+            width: 100%;
+            max-width: 1300px;
+            margin: 0 auto;
+            display: grid;
+            gap: 14px;
+        }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(6px);
+        }
+
+        .hero {
+            padding: 20px;
+            display: grid;
+            gap: 10px;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: clamp(24px, 5vw, 36px);
+            letter-spacing: 0.03em;
+        }
+
+        .hero-sub {
+            color: var(--muted);
+            margin: 0;
+            font-size: 14px;
+        }
+
+        .controls {
+            padding: 16px;
+            display: grid;
+            gap: 12px;
+        }
+
+        .controls-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
+        }
+
+        .control-field {
+            display: grid;
+            gap: 6px;
+        }
+
+        label {
+            color: var(--muted);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        select,
+        button,
+        .btn-link {
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 10px 12px;
+            background: var(--surface-strong);
+            color: var(--text);
+            font-family: inherit;
+            font-size: 14px;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            cursor: pointer;
+            transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+        }
+
+        button:hover,
+        .btn-link:hover,
+        select:hover {
+            transform: translateY(-1px);
+            border-color: rgba(31, 184, 159, 0.7);
+        }
+
+        .range-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .range-btn.active {
+            background: linear-gradient(120deg, rgba(31, 184, 159, 0.28), rgba(31, 184, 159, 0.1));
+            border-color: rgba(31, 184, 159, 0.8);
+        }
+
+        .button-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .button-primary {
+            background: linear-gradient(120deg, rgba(31, 184, 159, 0.4), rgba(31, 184, 159, 0.12));
+            border-color: rgba(31, 184, 159, 0.72);
+        }
+
+        .button-secondary {
+            background: linear-gradient(120deg, rgba(255, 154, 76, 0.38), rgba(255, 154, 76, 0.09));
+            border-color: rgba(255, 154, 76, 0.62);
+        }
+
+        .split {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        .panel {
+            padding: 16px;
+            display: grid;
+            gap: 10px;
+        }
+
+        .panel h2 {
+            margin: 0;
+            font-size: 17px;
+        }
+
+        .mono {
+            font-family: "JetBrains Mono", "Consolas", monospace;
+            font-size: 13px;
+        }
+
+        .status-strip {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .status-chip {
+            padding: 8px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            border: 1px solid var(--line);
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .status-chip.ok {
+            border-color: rgba(47, 214, 128, 0.5);
+            color: var(--good);
+        }
+
+        .status-chip.warn {
+            border-color: rgba(255, 194, 74, 0.5);
+            color: var(--warn);
+        }
+
+        .status-chip.err {
+            border-color: rgba(255, 89, 89, 0.54);
+            color: var(--err);
+        }
+
+        .table-wrap {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 780px;
+        }
+
+        th,
+        td {
+            text-align: left;
+            padding: 9px 10px;
+            border-bottom: 1px solid var(--line);
+            font-size: 13px;
+        }
+
+        th {
+            color: var(--muted);
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            font-size: 11px;
+        }
+
+        .status-pill {
+            border-radius: 999px;
+            padding: 4px 8px;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            display: inline-flex;
+            align-items: center;
+        }
+
+        .status-pill.ok {
+            background: rgba(47, 214, 128, 0.2);
+            color: var(--good);
+        }
+
+        .status-pill.warn {
+            background: rgba(255, 194, 74, 0.2);
+            color: var(--warn);
+        }
+
+        .status-pill.err {
+            background: rgba(255, 89, 89, 0.2);
+            color: var(--err);
+        }
+
+        .tabs {
+            padding: 8px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .tab-btn {
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            padding: 10px 16px;
+            background: transparent;
+            color: var(--muted);
+            font-family: inherit;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease, color 0.16s ease;
+        }
+
+        .tab-btn:hover {
+            transform: translateY(-1px);
+            border-color: rgba(31, 184, 159, 0.7);
+        }
+
+        .tab-btn.active {
+            background: linear-gradient(120deg, rgba(31, 184, 159, 0.28), rgba(31, 184, 159, 0.1));
+            border-color: rgba(31, 184, 159, 0.8);
+            color: var(--text);
+        }
+
+        .tab-panel {
+            display: grid;
+            gap: 14px;
+        }
+
+        .tab-panel[hidden] {
+            display: none;
+        }
+
+        .metric-row {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+        }
+
+        .chart-card {
+            padding: 12px;
+        }
+
+        .value-box {
+            display: grid;
+            align-content: center;
+            justify-items: center;
+            gap: 4px;
+            padding: 12px;
+            border-left: 1px solid var(--line);
+            text-align: center;
+        }
+
+        .value-box-label {
+            color: var(--muted);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .value-box-reading {
+            display: flex;
+            align-items: baseline;
+            gap: 4px;
+            font-size: clamp(28px, 4vw, 40px);
+        }
+
+        .value-box-number {
+            font-family: "JetBrains Mono", "Consolas", monospace;
+            font-size: clamp(28px, 4vw, 40px);
+            font-weight: 700;
+            color: var(--accent);
+        }
+
+        .value-box-reading .value-box-number {
+            font-size: 1em;
+        }
+
+        .value-box-unit {
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .value-box-reading .value-box-unit {
+            font-size: 0.55em;
+            line-height: 1;
+        }
+
+        .station-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 12px;
+        }
+
+        .station-card {
+            padding: 14px;
+            display: grid;
+            gap: 10px;
+            align-content: start;
+        }
+
+        .station-card header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .station-card header strong {
+            font-size: 16px;
+        }
+
+        .sensor-group h4 {
+            margin: 0 0 4px 0;
+            color: var(--muted);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .sensor-group div {
+            font-size: 14px;
+        }
+
+        .chart-card h3 {
+            margin: 0 0 6px 0;
+            color: var(--muted);
+            font-size: 13px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+        }
+
+        .chart-wrap {
+            position: relative;
+            height: 220px;
+        }
+
+        .footer {
+            padding: 12px 16px;
+            color: var(--muted);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+            font-size: 12px;
+        }
+
+        .reveal {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+
+        .reveal.show {
+            animation: rise 0.6s ease forwards;
+        }
+
+        @keyframes rise {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @media (max-width: 980px) {
+            .controls-grid,
+            .split,
+            .metric-row {
+                grid-template-columns: 1fr;
+            }
+
+            .value-box {
+                border-left: none;
+                border-top: 1px solid var(--line);
+            }
+
+            .chart-wrap {
+                height: 200px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app">
+        <section class="hero card reveal">
+            <h1>Weather Stations Dashboard</h1>
+            <p class="hero-sub">Weather Station dashboard based on STM32 and Rasberry pi PICO W.</p>
+            <div class="mono">Last refresh: <span id="lastRefresh">-</span></div>
+        </section>
+
+        <nav class="tabs card reveal">
+            <button class="tab-btn active" data-tab="charts" type="button">Wykresy</button>
+            <button class="tab-btn" data-tab="stations" type="button">Stacje pomiarowe</button>
+            <button class="tab-btn" data-tab="logs" type="button">Logi</button>
+        </nav>
+
+        <section class="tab-panel" data-tab-panel="charts">
+            <div class="controls card reveal">
+                <div class="controls-grid">
+                    <div class="control-field">
+                        <label for="stationSelect">Station</label>
+                        <select id="stationSelect"></select>
+                    </div>
+                    <div class="control-field" style="grid-column: span 2;">
+                        <label>Range</label>
+                        <div class="range-buttons" id="rangeButtons">
+                            <button class="range-btn active" data-range="1h">1h</button>
+                            <button class="range-btn" data-range="3h">3h</button>
+                            <button class="range-btn" data-range="1d">1d</button>
+                            <button class="range-btn" data-range="1w">1w</button>
+                        </div>
+                    </div>
+                    <div class="control-field">
+                        <label>Refresh</label>
+                        <div class="button-row">
+                            <button id="refreshBtn" class="button-primary">Refresh now</button>
+                            <button id="triggerBtn" class="button-secondary">Request measurement</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="button-row">
+                    <label style="display:flex; align-items:center; gap:8px; margin:0; text-transform:none; letter-spacing:0; font-size:13px; color:var(--text);">
+                        <input id="autoRefresh" type="checkbox" checked>
+                        Auto refresh each 60s
+                    </label>
+                    <a id="csvBtn" class="btn-link" href="#">Download CSV</a>
+                    <span id="triggerInfo" class="mono"></span>
+                </div>
+            </div>
+
+            <article class="metric-row card reveal">
+                <div class="chart-card">
+                    <h3 id="label-si-temp">Si7021 Temperature [C]</h3>
+                    <div class="chart-wrap"><canvas id="chart-si-temp"></canvas></div>
+                </div>
+                <div class="value-box">
+                    <span class="value-box-label">Aktualnie</span>
+                    <div class="value-box-reading">
+                        <span class="value-box-number" id="value-si-temp">-</span>
+                        <span class="value-box-unit" id="unit-si-temp">C</span>
+                    </div>
+                </div>
+            </article>
+            <article class="metric-row card reveal">
+                <div class="chart-card">
+                    <h3 id="label-si-hum">Si7021 Humidity [%]</h3>
+                    <div class="chart-wrap"><canvas id="chart-si-hum"></canvas></div>
+                </div>
+                <div class="value-box">
+                    <span class="value-box-label">Aktualnie</span>
+                    <div class="value-box-reading">
+                        <span class="value-box-number" id="value-si-hum">-</span>
+                        <span class="value-box-unit" id="unit-si-hum">%</span>
+                    </div>
+                </div>
+            </article>
+            <article class="metric-row card reveal">
+                <div class="chart-card">
+                    <h3 id="label-bmp-temp">BMP280 Temperature [C]</h3>
+                    <div class="chart-wrap"><canvas id="chart-bmp-temp"></canvas></div>
+                </div>
+                <div class="value-box">
+                    <span class="value-box-label">Aktualnie</span>
+                    <div class="value-box-reading">
+                        <span class="value-box-number" id="value-bmp-temp">-</span>
+                        <span class="value-box-unit" id="unit-bmp-temp">C</span>
+                    </div>
+                </div>
+            </article>
+            <article class="metric-row card reveal">
+                <div class="chart-card">
+                    <h3 id="label-bmp-press">BMP280 Pressure [hPa]</h3>
+                    <div class="chart-wrap"><canvas id="chart-bmp-press"></canvas></div>
+                </div>
+                <div class="value-box">
+                    <span class="value-box-label">Aktualnie</span>
+                    <div class="value-box-reading">
+                        <span class="value-box-number" id="value-bmp-press">-</span>
+                        <span class="value-box-unit" id="unit-bmp-press">hPa</span>
+                    </div>
+                </div>
+            </article>
+            <article class="metric-row card reveal">
+                <div class="chart-card">
+                    <h3 id="label-bme-temp">BME280 Temperature [C]</h3>
+                    <div class="chart-wrap"><canvas id="chart-bme-temp"></canvas></div>
+                </div>
+                <div class="value-box">
+                    <span class="value-box-label">Aktualnie</span>
+                    <div class="value-box-reading">
+                        <span class="value-box-number" id="value-bme-temp">-</span>
+                        <span class="value-box-unit" id="unit-bme-temp">C</span>
+                    </div>
+                </div>
+            </article>
+            <article class="metric-row card reveal">
+                <div class="chart-card">
+                    <h3 id="label-bme-press">BME280 Pressure [hPa]</h3>
+                    <div class="chart-wrap"><canvas id="chart-bme-press"></canvas></div>
+                </div>
+                <div class="value-box">
+                    <span class="value-box-label">Aktualnie</span>
+                    <div class="value-box-reading">
+                        <span class="value-box-number" id="value-bme-press">-</span>
+                        <span class="value-box-unit" id="unit-bme-press">hPa</span>
+                    </div>
+                </div>
+            </article>
+            <article class="metric-row card reveal">
+                <div class="chart-card">
+                    <h3 id="label-bme-hum">BME280 Humidity [%]</h3>
+                    <div class="chart-wrap"><canvas id="chart-bme-hum"></canvas></div>
+                </div>
+                <div class="value-box">
+                    <span class="value-box-label">Aktualnie</span>
+                    <div class="value-box-reading">
+                        <span class="value-box-number" id="value-bme-hum">-</span>
+                        <span class="value-box-unit" id="unit-bme-hum">%</span>
+                    </div>
+                </div>
+            </article>
+            <article class="metric-row card reveal">
+                <div class="chart-card">
+                    <h3 id="label-lux">TSL2561 Light [lux]</h3>
+                    <div class="chart-wrap"><canvas id="chart-lux"></canvas></div>
+                </div>
+                <div class="value-box">
+                    <span class="value-box-label">Aktualnie</span>
+                    <div class="value-box-reading">
+                        <span class="value-box-number" id="value-lux">-</span>
+                        <span class="value-box-unit" id="unit-lux">lux</span>
+                    </div>
+                </div>
+            </article>
+        </section>
+
+        <section class="tab-panel" data-tab-panel="stations" hidden>
+            <div class="panel card reveal">
+                <h2>Stacje pomiarowe</h2>
+                <div id="statusStrip" class="status-strip"></div>
+            </div>
+            <div id="stationCards" class="station-cards">
+                <div class="panel card mono">No stations yet.</div>
+            </div>
+        </section>
+
+        <section class="tab-panel" data-tab-panel="logs" hidden>
+            <section class="panel card reveal">
+                <h2>SD log preview</h2>
+                <div class="controls-grid">
+                    <div class="control-field">
+                        <label for="logStationSelect">Log station</label>
+                        <select id="logStationSelect"></select>
+                    </div>
+                    <div class="control-field">
+                        <label>Log actions</label>
+                        <div class="button-row">
+                            <button id="logRefreshBtn" class="button-primary">Refresh logs</button>
+                        </div>
+                    </div>
+                    <div class="control-field" style="grid-column: span 2;">
+                        <label>Log status</label>
+                        <div id="logMeta" class="mono">Waiting for first refresh.</div>
+                    </div>
+                </div>
+                <div class="button-row">
+                    <button id="logFirstBtn" type="button" class="btn-link">First page</button>
+                    <button id="logPrevBtn" type="button" class="btn-link">Previous page</button>
+                    <button id="logNextBtn" type="button" class="btn-link">Next page</button>
+                    <button id="logLastBtn" type="button" class="btn-link">Last page</button>
+                </div>
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Station</th>
+                                <th>Timestamp</th>
+                                <th>Status</th>
+                                <th>Si temp</th>
+                                <th>Si hum</th>
+                                <th>BMP temp</th>
+                                <th>BMP press</th>
+                                <th>BME temp</th>
+                                <th>BME press</th>
+                                <th>BME hum</th>
+                                <th>Lux</th>
+                            </tr>
+                        </thead>
+                        <tbody id="logsTableBody">
+                            <tr><td colspan="11" class="mono">No SD logs loaded yet.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        </section>
+
+        <footer class="footer card reveal">
+            <span>UART -> STM32F103 + DS3231 | storage -> SD JSON lines</span>
+            <a class="btn-link" href="/shutdown">Stop server</a>
+        </footer>
+    </div>
+
+    <script>
+        const SERIES_LIMIT = 90;
+        const LOGS_PAGE_SIZE = 20;
+
+        const state = {
+            station: "avg",
+            range: "1h",
+            timer: null,
+            charts: {},
+            activeTab: "charts",
+            sensorMeta: [],
+            logsStation: "all",
+            logsOffset: 0,
+            logsTotal: 0,
+            refreshBusy: false
+        };
+
+        const metrics = [
+            { suffix: "si-temp", chartId: "chart-si-temp", key: "si7021_temp", color: "#2fd680", fallbackLabel: "Si7021 Temperature [C]", fallbackUnit: "C" },
+            { suffix: "si-hum", chartId: "chart-si-hum", key: "si7021_hum", color: "#40d5ff", fallbackLabel: "Si7021 Humidity [%]", fallbackUnit: "%" },
+            { suffix: "bmp-temp", chartId: "chart-bmp-temp", key: "bmp280_temp", color: "#ff9a4c", fallbackLabel: "BMP280 Temperature [C]", fallbackUnit: "C" },
+            { suffix: "bmp-press", chartId: "chart-bmp-press", key: "bmp280_press", color: "#f7de55", fallbackLabel: "BMP280 Pressure [hPa]", fallbackUnit: "hPa" },
+            { suffix: "bme-temp", chartId: "chart-bme-temp", key: "bme280_temp", color: "#ff6f91", fallbackLabel: "BME280 Temperature [C]", fallbackUnit: "C" },
+            { suffix: "bme-press", chartId: "chart-bme-press", key: "bme280_press", color: "#c7f464", fallbackLabel: "BME280 Pressure [hPa]", fallbackUnit: "hPa" },
+            { suffix: "bme-hum", chartId: "chart-bme-hum", key: "bme280_hum", color: "#7d8cff", fallbackLabel: "BME280 Humidity [%]", fallbackUnit: "%" },
+            { suffix: "lux", chartId: "chart-lux", key: "tsl2561_lux", color: "#e4f9ff", fallbackLabel: "TSL2561 Light [lux]", fallbackUnit: "lux" }
+        ];
+
+        const FALLBACK_SENSOR_FIELDS = [
+            { field: "si7021_temp", sensor: "Si7021", quantity: "Temperatura", unit: "\u00b0C" },
+            { field: "si7021_hum", sensor: "Si7021", quantity: "Wilgotno\u015b\u0107", unit: "%" },
+            { field: "bmp280_temp", sensor: "BMP280", quantity: "Temperatura", unit: "\u00b0C" },
+            { field: "bmp280_press", sensor: "BMP280", quantity: "Ci\u015bnienie", unit: "hPa" },
+            { field: "tsl2561_lux", sensor: "TSL2561", quantity: "Nat\u0119\u017cenie \u015bwiat\u0142a", unit: "lx" },
+            { field: "bme280_temp", sensor: "BME280", quantity: "Temperatura", unit: "\u00b0C" },
+            { field: "bme280_press", sensor: "BME280", quantity: "Ci\u015bnienie", unit: "hPa" },
+            { field: "bme280_hum", sensor: "BME280", quantity: "Wilgotno\u015b\u0107", unit: "%" }
+        ];
+
+        function statusClass(status) {
+            const value = String(status || "WARN").toUpperCase();
+            if (value === "OK") return "ok";
+            if (value === "ERR" || value.startsWith("ERR:")) return "err";
+            return "warn";
+        }
+
+        function formatTs(ts) {
+            if (typeof ts !== "string" || ts.length < 19) return ts || "-";
+            if (state.range === "1d" || state.range === "1w") {
+                return ts.slice(8, 10) + "." + ts.slice(5, 7) + " " + ts.slice(11, 16);
+            }
+            return ts.slice(11, 16);
+        }
+
+        function displayTimestamp(ts) {
+            if (typeof ts !== "string") return ts || "-";
+            return ts.replace("T", " ");
+        }
+
+        function formatValue(value) {
+            return value === null || value === undefined ? "-" : String(value);
+        }
+
+        async function fetchJson(url, options) {
+            const response = await fetch(url, options);
+            if (!response.ok) {
+                throw new Error("HTTP " + response.status + " for " + url);
+            }
+            return await response.json();
+        }
+
+        function createChart(canvasId, color) {
+            const ctx = document.getElementById(canvasId).getContext("2d");
+            return new Chart(ctx, {
+                type: "line",
+                data: {
+                    labels: [],
+                    datasets: [{
+                        data: [],
+                        borderColor: color,
+                        backgroundColor: color + "20",
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        tension: 0.24,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: false,
+                    interaction: { mode: "index", intersect: false },
+                    scales: {
+                        x: {
+                            ticks: { color: "#9eb8c3", maxTicksLimit: 8 },
+                            grid: { color: "rgba(173, 224, 240, 0.14)" }
+                        },
+                        y: {
+                            ticks: { color: "#9eb8c3" },
+                            grid: { color: "rgba(173, 224, 240, 0.14)" }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: "rgba(7, 16, 24, 0.95)",
+                            titleColor: "#dff2f8",
+                            bodyColor: "#dff2f8"
+                        }
+                    }
+                }
+            });
+        }
+
+        function initCharts() {
+            metrics.forEach((metric) => {
+                state.charts[metric.chartId] = createChart(metric.chartId, metric.color);
+            });
+        }
+
+        async function loadSensorMeta() {
+            try {
+                const payload = await fetchJson("/api/sensors");
+                const fields = Array.isArray(payload.fields) && payload.fields.length
+                    ? payload.fields
+                    : FALLBACK_SENSOR_FIELDS;
+                state.sensorMeta = fields;
+            } catch (error) {
+                state.sensorMeta = FALLBACK_SENSOR_FIELDS;
+            }
+
+            const metaByField = {};
+            state.sensorMeta.forEach((meta) => { metaByField[meta.field] = meta; });
+
+            metrics.forEach((metric) => {
+                const meta = metaByField[metric.key];
+                const label = meta ? (meta.sensor + " - " + meta.quantity) : metric.fallbackLabel;
+                const unit = meta ? meta.unit : metric.fallbackUnit;
+                document.getElementById("label-" + metric.suffix).textContent = label;
+                document.getElementById("unit-" + metric.suffix).textContent = unit;
+            });
+        }
+
+        function updateCsvLink() {
+            const url = "/api/data?station=" + encodeURIComponent(state.station)
+                + "&range=" + encodeURIComponent(state.range)
+                + "&format=csv";
+            document.getElementById("csvBtn").href = url;
+        }
+
+        async function loadStations() {
+            const payload = await fetchJson("/api/stations");
+            const select = document.getElementById("stationSelect");
+            const logSelect = document.getElementById("logStationSelect");
+            const previous = state.station;
+            const previousLogStation = state.logsStation;
+
+            select.innerHTML = "";
+            logSelect.innerHTML = "";
+
+            const avgOption = document.createElement("option");
+            avgOption.value = "avg";
+            avgOption.textContent = "AVG (all stations)";
+            select.appendChild(avgOption);
+
+            const allLogsOption = document.createElement("option");
+            allLogsOption.value = "all";
+            allLogsOption.textContent = "All SD logs";
+            logSelect.appendChild(allLogsOption);
+
+            const stations = Array.isArray(payload.stations) ? payload.stations : [];
+            stations.forEach((stationId) => {
+                const option = document.createElement("option");
+                option.value = stationId;
+                option.textContent = stationId;
+                select.appendChild(option);
+
+                const logOption = document.createElement("option");
+                logOption.value = stationId;
+                logOption.textContent = stationId;
+                logSelect.appendChild(logOption);
+            });
+
+            if (["avg"].concat(stations).includes(previous)) {
+                state.station = previous;
+            } else {
+                state.station = "avg";
+            }
+            select.value = state.station;
+
+            if (["all"].concat(stations).includes(previousLogStation)) {
+                state.logsStation = previousLogStation;
+            } else {
+                state.logsStation = "all";
+            }
+            logSelect.value = state.logsStation;
+            updateCsvLink();
+        }
+
+        async function loadSeries() {
+            const url = "/api/data?station=" + encodeURIComponent(state.station)
+                + "&range=" + encodeURIComponent(state.range)
+                + "&limit=" + SERIES_LIMIT;
+            const payload = await fetchJson(url);
+            const rows = Array.isArray(payload.data) ? payload.data : [];
+
+            const labels = rows.map((row) => formatTs(row.timestamp));
+            const lastRow = rows.length ? rows[rows.length - 1] : null;
+
+            metrics.forEach((metric) => {
+                const chart = state.charts[metric.chartId];
+                chart.data.labels = labels;
+                chart.data.datasets[0].data = rows.map((row) => {
+                    const value = row[metric.key];
+                    return value === null || value === undefined ? null : Number(value);
+                });
+                chart.update();
+
+                document.getElementById("value-" + metric.suffix).textContent =
+                    formatValue(lastRow ? lastRow[metric.key] : null);
+            });
+        }
+
+        function renderStatusStrip(rows) {
+            const strip = document.getElementById("statusStrip");
+            if (!rows.length) {
+                strip.innerHTML = '<span class="status-chip warn">No station status available</span>';
+                return;
+            }
+
+            strip.innerHTML = rows.map((row) => {
+                const cls = statusClass(row.status);
+                return '<span class="status-chip ' + cls + '">' + row.station_id + ': ' + row.status + '</span>';
+            }).join("");
+        }
+
+        function groupSensorsForStation(row, sensorMeta) {
+            const groups = {};
+            const order = [];
+
+            sensorMeta.forEach((meta) => {
+                const value = row[meta.field];
+                if (value === null || value === undefined) return;
+                if (!groups[meta.sensor]) {
+                    groups[meta.sensor] = [];
+                    order.push(meta.sensor);
+                }
+                groups[meta.sensor].push(meta.quantity + ": " + value + " " + meta.unit);
+            });
+
+            return order.map((sensor) => ({ sensor, lines: groups[sensor] }));
+        }
+
+        function renderStationCards(rows, sensorMeta) {
+            const container = document.getElementById("stationCards");
+            if (!rows.length) {
+                container.innerHTML = '<div class="panel card mono">No stations yet.</div>';
+                return;
+            }
+
+            container.innerHTML = rows.map((row) => {
+                const cls = statusClass(row.status);
+                const groups = groupSensorsForStation(row, sensorMeta);
+                const groupsHtml = groups.length
+                    ? groups.map((group) => (
+                        '<div class="sensor-group"><h4>' + group.sensor + '</h4>'
+                        + group.lines.map((line) => '<div>' + line + '</div>').join("")
+                        + '</div>'
+                    )).join("")
+                    : '<div class="mono">Brak danych z czujnik\u00f3w.</div>';
+
+                return '<article class="station-card card">'
+                    + '<header>'
+                    + '<strong>' + row.station_id + '</strong>'
+                    + '<span class="status-pill ' + cls + '">' + row.status + '</span>'
+                    + '<span class="mono">' + displayTimestamp(row.timestamp) + '</span>'
+                    + '</header>'
+                    + groupsHtml
+                    + '</article>';
+            }).join("");
+        }
+
+        function renderLogsTable(rows) {
+            const body = document.getElementById("logsTableBody");
+            if (!rows.length) {
+                body.innerHTML = '<tr><td colspan="11" class="mono">No SD log entries for selected page.</td></tr>';
+                return;
+            }
+
+            body.innerHTML = rows.map((row) => {
+                const cls = statusClass(row.status);
+                return "<tr>"
+                    + "<td>" + (row.station_id || "-") + "</td>"
+                    + "<td class=\"mono\">" + displayTimestamp(row.timestamp) + "</td>"
+                    + "<td><span class=\"status-pill " + cls + "\">" + (row.status || "-") + "</span></td>"
+                    + "<td>" + (row.si7021_temp ?? "-") + "</td>"
+                    + "<td>" + (row.si7021_hum ?? "-") + "</td>"
+                    + "<td>" + (row.bmp280_temp ?? "-") + "</td>"
+                    + "<td>" + (row.bmp280_press ?? "-") + "</td>"
+                    + "<td>" + (row.bme280_temp ?? "-") + "</td>"
+                    + "<td>" + (row.bme280_press ?? "-") + "</td>"
+                    + "<td>" + (row.bme280_hum ?? "-") + "</td>"
+                    + "<td>" + (row.tsl2561_lux ?? "-") + "</td>"
+                    + "</tr>";
+            }).join("");
+        }
+
+        function updateLogsMeta(payload) {
+            const meta = document.getElementById("logMeta");
+            const firstButton = document.getElementById("logFirstBtn");
+            const prevButton = document.getElementById("logPrevBtn");
+            const nextButton = document.getElementById("logNextBtn");
+            const lastButton = document.getElementById("logLastBtn");
+            const total = Number(payload.total || 0);
+            const count = Number(payload.count || 0);
+            const start = total === 0 ? 0 : state.logsOffset + 1;
+            const end = state.logsOffset + count;
+            state.logsTotal = total;
+
+            if (payload.sd_available === false) {
+                meta.textContent = "SD card unavailable. Nothing can be shown.";
+            } else {
+                meta.textContent = "Showing " + start + "-" + end + " of " + total + " newest saved rows.";
+            }
+
+            firstButton.disabled = state.logsOffset <= 0;
+            prevButton.disabled = state.logsOffset <= 0;
+            nextButton.disabled = end >= total;
+            lastButton.disabled = end >= total;
+        }
+
+        async function loadLogs() {
+            const url = "/api/logs?station=" + encodeURIComponent(state.logsStation)
+                + "&offset=" + encodeURIComponent(state.logsOffset)
+                + "&limit=" + LOGS_PAGE_SIZE;
+            const payload = await fetchJson(url);
+            const rows = Array.isArray(payload.data) ? payload.data : [];
+            renderLogsTable(rows);
+            updateLogsMeta(payload);
+        }
+
+        async function loadLatestStationRows() {
+            const payload = await fetchJson("/api/latest");
+            const rows = Array.isArray(payload.data) ? payload.data : [];
+            renderStatusStrip(rows);
+            renderStationCards(rows, state.sensorMeta);
+        }
+
+        function latestStamp(payload) {
+            const rows = Array.isArray(payload && payload.data) ? payload.data : [];
+            return rows.map((row) => row.station_id + ":" + (row.timestamp || "")).sort().join("|");
+        }
+
+        function sleep(ms) {
+            return new Promise((resolve) => setTimeout(resolve, ms));
+        }
+
+        async function waitForNewMeasurement(beforeStamp, timeoutMs) {
+            const deadline = Date.now() + timeoutMs;
+            while (Date.now() < deadline) {
+                await sleep(2500);
+                try {
+                    const payload = await fetchJson("/api/latest");
+                    if (latestStamp(payload) !== beforeStamp) {
+                        return true;
+                    }
+                } catch (error) {
+                    // keep waiting through transient API errors
+                }
+            }
+            return false;
+        }
+
+        async function requestMeasurement() {
+            const info = document.getElementById("triggerInfo");
+            const button = document.getElementById("triggerBtn");
+            button.disabled = true;
+            info.textContent = "sending...";
+
+            try {
+                let beforeStamp = "";
+                try {
+                    beforeStamp = latestStamp(await fetchJson("/api/latest"));
+                } catch (error) {
+                    beforeStamp = "";
+                }
+
+                const response = await fetch("/api/trigger", { method: "POST" });
+                const payload = await response.json();
+                if (payload.status === "queued") {
+                    info.textContent = "measurement queued";
+                    const done = await waitForNewMeasurement(beforeStamp, 45000);
+                    if (done) {
+                        info.textContent = "measurement done";
+                        await refreshAll();
+                    } else {
+                        info.textContent = "queued (no new data yet)";
+                    }
+                } else if (payload.status === "busy") {
+                    info.textContent = "STM32 busy";
+                } else if (payload.status === "timeout") {
+                    info.textContent = "UART timeout";
+                } else {
+                    info.textContent = "trigger error";
+                }
+            } catch (error) {
+                info.textContent = "trigger failed";
+            } finally {
+                button.disabled = false;
+            }
+        }
+
+        function switchTab(tabName) {
+            state.activeTab = tabName;
+            document.querySelectorAll(".tab-btn").forEach((btn) => {
+                btn.classList.toggle("active", btn.dataset.tab === tabName);
+            });
+            document.querySelectorAll(".tab-panel").forEach((panel) => {
+                panel.hidden = panel.dataset.tabPanel !== tabName;
+            });
+        }
+
+        async function withRefreshLock(task) {
+            if (state.refreshBusy) {
+                return;
+            }
+            state.refreshBusy = true;
+            try {
+                await task();
+            } finally {
+                state.refreshBusy = false;
+            }
+        }
+
+        async function loadActiveTabData() {
+            if (state.activeTab === "charts") {
+                await loadSeries();
+            } else if (state.activeTab === "stations") {
+                await loadLatestStationRows();
+            } else if (state.activeTab === "logs") {
+                await loadLogs();
+            }
+        }
+
+        async function refreshAll() {
+            await withRefreshLock(async () => {
+                try {
+                    await loadStations();
+                    await loadActiveTabData();
+                    document.getElementById("lastRefresh").textContent = new Date().toLocaleString();
+                } catch (error) {
+                    console.error(error);
+                    document.getElementById("lastRefresh").textContent = "error";
+                }
+            });
+        }
+
+        function setupUiEvents() {
+            document.getElementById("stationSelect").addEventListener("change", async (event) => {
+                state.station = event.target.value;
+                updateCsvLink();
+                await withRefreshLock(loadSeries);
+            });
+
+            document.getElementById("logStationSelect").addEventListener("change", async (event) => {
+                state.logsStation = event.target.value;
+                state.logsOffset = 0;
+                await withRefreshLock(loadLogs);
+            });
+
+            document.querySelectorAll(".tab-btn").forEach((btn) => {
+                btn.addEventListener("click", async () => {
+                    switchTab(btn.dataset.tab);
+                    await withRefreshLock(loadActiveTabData);
+                });
+            });
+
+            document.querySelectorAll(".range-btn").forEach((button) => {
+                button.addEventListener("click", async () => {
+                    document.querySelectorAll(".range-btn").forEach((other) => other.classList.remove("active"));
+                    button.classList.add("active");
+                    state.range = button.dataset.range;
+                    updateCsvLink();
+                    await withRefreshLock(loadSeries);
+                });
+            });
+
+            document.getElementById("refreshBtn").addEventListener("click", refreshAll);
+            document.getElementById("triggerBtn").addEventListener("click", requestMeasurement);
+            document.getElementById("logRefreshBtn").addEventListener("click", async () => {
+                state.logsOffset = 0;
+                await withRefreshLock(loadLogs);
+            });
+            document.getElementById("logFirstBtn").addEventListener("click", async () => {
+                state.logsOffset = 0;
+                await withRefreshLock(loadLogs);
+            });
+            document.getElementById("logPrevBtn").addEventListener("click", async () => {
+                if (state.logsOffset < LOGS_PAGE_SIZE) {
+                    state.logsOffset = 0;
+                } else {
+                    state.logsOffset -= LOGS_PAGE_SIZE;
+                }
+                await withRefreshLock(loadLogs);
+            });
+            document.getElementById("logNextBtn").addEventListener("click", async () => {
+                state.logsOffset += LOGS_PAGE_SIZE;
+                await withRefreshLock(loadLogs);
+            });
+            document.getElementById("logLastBtn").addEventListener("click", async () => {
+                if (state.logsTotal <= 0) {
+                    state.logsOffset = 0;
+                } else {
+                    state.logsOffset = Math.floor((state.logsTotal - 1) / LOGS_PAGE_SIZE) * LOGS_PAGE_SIZE;
+                }
+                await withRefreshLock(loadLogs);
+            });
+
+            const autoRefresh = document.getElementById("autoRefresh");
+            autoRefresh.addEventListener("change", () => {
+                if (state.timer) {
+                    clearInterval(state.timer);
+                    state.timer = null;
+                }
+                if (autoRefresh.checked) {
+                    state.timer = setInterval(refreshAll, 60000);
+                }
+            });
+            state.timer = setInterval(refreshAll, 60000);
+        }
+
+        function revealCards() {
+            document.querySelectorAll(".reveal").forEach((node, index) => {
+                node.style.animationDelay = (index * 70) + "ms";
+                node.classList.add("show");
+            });
+        }
+
+        async function init() {
+            initCharts();
+            await loadSensorMeta();
+            setupUiEvents();
+            revealCards();
+            await refreshAll();
+        }
+
+        init();
+    </script>
+</body>
+</html>

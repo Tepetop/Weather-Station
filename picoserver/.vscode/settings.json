@@ -1,0 +1,15 @@
+{
+    "python.languageServer": "None",
+    "python.terminal.activateEnvironment": false,
+    "micropico.openOnStart": true,
+    "cursorpyright.analysis.typeCheckingMode": "basic",
+    "cursorpyright.analysis.diagnosticSeverityOverrides": {
+        "reportMissingModuleSource": "none"
+    },
+    "cursorpyright.analysis.typeshedPaths": [
+        "/home/tepe/.micropico-stubs/included"
+    ],
+    "cursorpyright.analysis.extraPaths": [
+        "/home/tepe/.micropico-stubs/included"
+    ]
+}
