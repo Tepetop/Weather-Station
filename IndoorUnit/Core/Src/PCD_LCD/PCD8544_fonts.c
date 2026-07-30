@@ -1,8 +1,8 @@
-/*
- * PCD8544_fonts.h
- *
- *  Created on: Apr 17, 2025
- *      Author: Remik
+/**
+ * @file PCD8544_fonts.c
+ * @brief Bitmap font glyph data for the PCD8544 display.
+ * @details Implements ASCII bitmap arrays and PCD8544_Font_t descriptors
+ *          selected at compile time via PCD8544_config.h.
  */
 
 #include "PCD8544_fonts.h"
@@ -512,22 +512,27 @@ static const uint16_t Font16x26 [] = {
 #endif
 
 #ifdef PCD8544_INCLUDE_FONT6x8
+/** @brief 6×8 pixel ASCII font instance */
 const PCD8544_Font_t Font_6x8 = {6, 8, F6x8};
 #endif
 
 #ifdef PCD8544_INCLUDE_FONT11x15
+/** @brief 11×15 pixel ASCII font instance */
 const PCD8544_Font_t Font_11x15 = {11, 15, F11x15};
 #endif
 
 #ifdef SSD1306_INCLUDE_FONT_7x10
+/** @brief 7×10 pixel ASCII font instance */
 const PCD8544_Font_t Font_7x10 = {7, 10, Font7x10};
 #endif
 
 #ifdef SSD1306_INCLUDE_FONT_11x18
+/** @brief 11×18 pixel ASCII font instance */
 const PCD8544_Font_t Font_11x18 = {11, 18, Font11x18};
 #endif
 
 #ifdef SSD1306_INCLUDE_FONT_16x26
+/** @brief 16×26 pixel ASCII font instance */
 const PCD8544_Font_t Font_16x26 = {16, 26, Font16x26};
 #endif
 

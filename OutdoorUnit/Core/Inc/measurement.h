@@ -10,12 +10,13 @@
 #define MEASUREMENT_H
 
 #include "main.h"
-
-// #include "si7021.h"
-// #include "TSL2561.h"
-// #include "bmp280.h"
+#if 0
+#include "si7021.h"
+#include "TSL2561.h"
+#include "bmp280.h"
+#else
 #include "bme280.h"
-
+#endif
 
 #include "stm32_hal_legacy.h"
 #include "stm32f1xx_hal_def.h"

@@ -1,9 +1,10 @@
-/*
- * menu.c
- *
- *  Created on: Oct 10, 2024
- *      Author: remik
+/**
+ * @file PCD8544_Menu.c
+ * @brief Linked-list menu navigation implementation for the PCD8544 display.
+ * @details Menu tree traversal, encoder/button action handling, cursor rendering,
+ *          and framebuffer refresh for the indoor unit UI.
  */
+
 #include "PCD8544_Menu.h"
 #include "PCD8544.h"
 #include "PCD8544_config.h"
@@ -12,11 +13,11 @@
 /*							FUNCTIONS							*/
 
 /**
- * @desc    Initialize menu
- *
- * @param	Pointer to first menu according to menu_description, pointer to the menu instance
- *
- * @return  Menu status
+ * @brief Initializes menu context with the root menu tree.
+ * @param[in]  root    Root menu node (first top-level item).
+ * @param[out] content Menu context to initialize.
+ * @retval Menu_OK    Context initialized successfully.
+ * @retval Menu_Error Invalid root or content pointer.
  */
 Menu_Status Menu_Init(Menu_t *root, Menu_Context_t *content)
 {
@@ -44,11 +45,11 @@ Menu_Status Menu_Init(Menu_t *root, Menu_Context_t *content)
 }
 
 /**
- * @desc    Refresh LCD with current settings. This function iterate throught poitners of all lined menu members.
- *
- * @param
- *
- * @return  Menu status
+ * @brief Updates inverted cursor highlight for the current selection.
+ * @param[in,out] PCD     Display driver instance.
+ * @param[in,out] content Menu context with current cursor position.
+ * @retval Menu_OK    Cursor sign updated successfully.
+ * @retval Menu_Error Invalid pointer.
  */
 Menu_Status Menu_SetCursorSign(PCD8544_t *PCD, Menu_Context_t *content)
 {
@@ -94,11 +95,11 @@ Menu_Status Menu_SetCursorSign(PCD8544_t *PCD, Menu_Context_t *content)
 }
 
 /**
- * @desc    Refresh LCD with current settings. This function iterate throught poitners of all lined menu members.
- *
- * @param
- *
- * @return  Menu status
+ * @brief Renders the current menu level into the display framebuffer.
+ * @param[in,out] PCD     Display driver instance.
+ * @param[in,out] content Menu context with active menu branch.
+ * @retval Menu_OK    Menu drawn to buffer successfully.
+ * @retval Menu_Error Invalid pointer.
  */
 Menu_Status Menu_RefreshDisplay(PCD8544_t *PCD, Menu_Context_t *content)
 {
@@ -261,11 +262,11 @@ Menu_Status Menu_RefreshDisplay(PCD8544_t *PCD, Menu_Context_t *content)
 }
 
 /**
- * @desc    Select next node in linked list struct
- *
- * @param   uint8_t x, uint8_t y, - position,  char *str - pointer to string
- *
- * @return  Menu status
+ * @brief Moves selection to the next menu item and refreshes the display.
+ * @param[in,out] PCD     Display driver instance.
+ * @param[in,out] content Menu context to advance.
+ * @retval Menu_OK    Selection moved or blocked at end of list.
+ * @retval Menu_Error Invalid pointer or no next item available.
  */
 Menu_Status Menu_Next(PCD8544_t *PCD, Menu_Context_t *content)
 {
@@ -337,11 +338,11 @@ Menu_Status Menu_Next(PCD8544_t *PCD, Menu_Context_t *content)
 }
 
 /**
- * @desc    Select previous node in linked list struct
- *
- * @param   uint8_t x, uint8_t y, - position,  char *str - pointer to string
- *
- * @return  Menu status
+ * @brief Moves selection to the previous menu item and refreshes the display.
+ * @param[in,out] PCD     Display driver instance.
+ * @param[in,out] content Menu context to move backward.
+ * @retval Menu_OK    Selection moved or blocked at start of list.
+ * @retval Menu_Error Invalid pointer or no previous item available.
  */
 Menu_Status Menu_Previev(PCD8544_t *PCD, Menu_Context_t *content)
 {
@@ -396,11 +397,11 @@ Menu_Status Menu_Previev(PCD8544_t *PCD, Menu_Context_t *content)
 }
 
 /**
- * @desc    Enter current menu node in linked  list struct
- *
- * @param   uint8_t x, uint8_t y, - position,  char *str - pointer to string
- *
- * @return  Menu status
+ * @brief Enters a submenu, executes a leaf callback, or opens a details view.
+ * @param[in,out] PCD     Display driver instance.
+ * @param[in,out] content Menu context for the current selection.
+ * @retval Menu_OK    Enter action handled successfully.
+ * @retval Menu_Error Invalid pointer, depth limit, or missing child.
  */
 Menu_Status Menu_Enter(PCD8544_t *PCD, Menu_Context_t *content)
 {
@@ -481,11 +482,11 @@ Menu_Status Menu_Enter(PCD8544_t *PCD, Menu_Context_t *content)
 }
 
 /**
- * @desc    Return to previous menu node in linked list
- *
- * @param   uint8_t x, uint8_t y, - position,  char *str - pointer to string
- *
- * @return  Menu status
+ * @brief Returns to the parent menu or exits a special overlay view.
+ * @param[in,out] PCD     Display driver instance.
+ * @param[in,out] content Menu context to restore from navigation stack.
+ * @retval Menu_OK    Escape handled successfully.
+ * @retval Menu_Error Invalid pointer or stack underflow.
  */
 Menu_Status Menu_Escape(PCD8544_t *PCD, Menu_Context_t *content)
 {
@@ -537,12 +538,11 @@ Menu_Status Menu_Escape(PCD8544_t *PCD, Menu_Context_t *content)
 /*							STATE MACHINE FUNCTIONS							*/
 
 /**
- * @desc    Main menu task function to be called from main loop
- *          Processes pending menu actions set by button interrupts
- *
- * @param   PCD8544_t pointer, Menu_Context_t pointer
- *
- * @return  Menu status
+ * @brief Processes one pending menu action from the navigation state machine.
+ * @param[in,out] PCD     Display driver instance.
+ * @param[in,out] content Menu context with actionPending flag.
+ * @retval Menu_OK    Task step completed (action cleared when handled).
+ * @retval Menu_Error Invalid pointer.
  */
 Menu_Status Menu_Task(PCD8544_t *PCD, Menu_Context_t *content)
 {
@@ -612,13 +612,9 @@ Menu_Status Menu_Task(PCD8544_t *PCD, Menu_Context_t *content)
 }
 
 /**
- * @desc    Set menu action (generic function)
- *          Can be called from button interrupts
- *
- * @param   content - Menu context pointer
- * @param   action - Menu action to set
- *
- * @return  None
+ * @brief Queues a generic menu navigation action (safe from interrupt context).
+ * @param[in,out] content Menu context to update.
+ * @param[in]     action  Navigation action to queue.
  */
 void Menu_SetAction(Menu_Context_t *content, Menu_Action_t action)
 {
@@ -630,12 +626,8 @@ void Menu_SetAction(Menu_Context_t *content, Menu_Action_t action)
 }
 
 /**
- * @desc    Set next menu action
- *          Call this from button interrupt for "down" or "next" button
- *
- * @param   content - Menu context pointer
- *
- * @return  None
+ * @brief Queues MENU_ACTION_NEXT (typically from encoder or button ISR).
+ * @param[in,out] content Menu context to update.
  */
 void Menu_SetNextAction(Menu_Context_t *content)
 {
@@ -643,12 +635,8 @@ void Menu_SetNextAction(Menu_Context_t *content)
 }
 
 /**
- * @desc    Set previous menu action
- *          Call this from button interrupt for "up" or "previous" button
- *
- * @param   content - Menu context pointer
- *
- * @return  None
+ * @brief Queues MENU_ACTION_PREV (typically from encoder or button ISR).
+ * @param[in,out] content Menu context to update.
  */
 void Menu_SetPrevAction(Menu_Context_t *content)
 {
@@ -656,12 +644,8 @@ void Menu_SetPrevAction(Menu_Context_t *content)
 }
 
 /**
- * @desc    Set enter menu action
- *          Call this from button interrupt for "enter" or "select" button
- *
- * @param   content - Menu context pointer
- *
- * @return  None
+ * @brief Queues MENU_ACTION_ENTER (typically from select button ISR).
+ * @param[in,out] content Menu context to update.
  */
 void Menu_SetEnterAction(Menu_Context_t *content)
 {
@@ -669,12 +653,8 @@ void Menu_SetEnterAction(Menu_Context_t *content)
 }
 
 /**
- * @desc    Set escape menu action
- *          Call this from button interrupt for "back" or "escape" button
- *
- * @param   content - Menu context pointer
- *
- * @return  None
+ * @brief Queues MENU_ACTION_ESCAPE (typically from back button ISR).
+ * @param[in,out] content Menu context to update.
  */
 void Menu_SetEscapeAction(Menu_Context_t *content)
 {

@@ -226,6 +226,7 @@ int main(void)
   wsRuntime.rx_timeout_ms = NRF_RX_TIMEOUT_MS;
   wsRuntime.comm_watchdog_timeout_ms = NRF_COMM_WATCHDOG_TIMEOUT_MS;
   wsRuntime.huart_pico = &huart1;
+  wsRuntime.broadcast_addr = NRF_BROADCAST_ADDR;
 
   /*  If NRF24L01 initialization fails, display error on LCD , go to error handler*/
   if (WS_InitRadioAndStart(&wsCtx, &wsRuntime) != HAL_OK) {

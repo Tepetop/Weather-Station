@@ -1,12 +1,20 @@
+/**
+ * @file    si7021.c
+ * @brief   Si7021 temperature and humidity sensor driver implementation
+ * @details I2C register access, configuration and compensated RH/T measurements
+ *          with CRC-8 verification on hold-mode conversions.
+ */
+
 #include "si7021.h"
 
 /**
- * @brief Read sensor register
- * @param hsi7021 Pointer to the configuration structure
- * @param reg_cmd Register read command or measurement command (e.g. SI7021_CMD_READ_USER_REG1, SI7021_CMD_MEASURE_RH_HOLD)
- * @param value Pointer to buffer storing read data
- * @param size Number of bytes to read
- * @return Operation status
+ * @brief   Reads a register or performs a measurement command
+ * @param   hsi7021  Pointer to device handle
+ * @param   reg_cmd  Register read or measurement command
+ * @param   value    Destination buffer
+ * @param   size     Number of bytes to read
+ * @retval  HAL_OK     Read successful
+ * @retval  HAL_ERROR  Null pointer or I2C failure
  */
 HAL_StatusTypeDef Si7021_ReadRegister(Si7021_t *hsi7021, Si7021_Command_t reg_cmd, uint8_t *value, uint8_t size)
 {
@@ -33,11 +41,12 @@ HAL_StatusTypeDef Si7021_ReadRegister(Si7021_t *hsi7021, Si7021_Command_t reg_cm
 }
 
 /**
- * @brief Write to sensor register
- * @param hsi7021 Pointer to the configuration structure
- * @param reg_cmd Register write command (e.g. SI7021_CMD_WRITE_USER_REG1)
- * @param value Value to write
- * @return Operation status
+ * @brief   Writes a single byte to a sensor register
+ * @param   hsi7021  Pointer to device handle
+ * @param   reg_cmd  Register write command
+ * @param   value    Byte value to write
+ * @retval  HAL_OK     Write successful
+ * @retval  HAL_ERROR  I2C failure
  */
 HAL_StatusTypeDef Si7021_WriteRegister(Si7021_t *hsi7021, Si7021_Command_t reg_cmd, uint8_t value)
 {
@@ -45,9 +54,10 @@ HAL_StatusTypeDef Si7021_WriteRegister(Si7021_t *hsi7021, Si7021_Command_t reg_c
 }
 
 /**
- * @brief Read factory settings
- * @param hsi7021 Pointer to the configuration structure
- * @return Operation status
+ * @brief   Reads firmware revision into the device handle
+ * @param   hsi7021  Pointer to device handle
+ * @retval  HAL_OK     Firmware read successfully
+ * @retval  HAL_ERROR  I2C failure
  */
 HAL_StatusTypeDef Si7021_ReadFirmware(Si7021_t *hsi7021)
 {
@@ -55,9 +65,10 @@ HAL_StatusTypeDef Si7021_ReadFirmware(Si7021_t *hsi7021)
 }
 
 /**
- * @brief Software reset of sensor to factory settings
- * @param hsi7021 Pointer to the configuration structure
- * @return Operation status
+ * @brief   Performs a software reset of the sensor
+ * @param   hsi7021  Pointer to device handle
+ * @retval  HAL_OK     Reset command issued
+ * @retval  HAL_ERROR  I2C failure
  */
 HAL_StatusTypeDef Si7021_SoftwareReset(Si7021_t *hsi7021)
 {
@@ -65,12 +76,13 @@ HAL_StatusTypeDef Si7021_SoftwareReset(Si7021_t *hsi7021)
 }
 
 /**
- * @brief Initialize Si7021 sensor
- * @param hsi7021 Pointer to sensor configuration structure
- * @param hi2c Pointer to I2C handle
- * @param address I2C address of sensor
- * @param resolution Measurement resolution setting
- * @return Operation status (HAL_OK if successful)
+ * @brief   Initializes the Si7021 device handle
+ * @param   hsi7021      Pointer to device handle
+ * @param   hi2c         Pointer to HAL I2C handle
+ * @param   address      7-bit I2C address
+ * @param   resolution   Initial RH/temperature resolution
+ * @retval  HAL_OK     Initialization successful
+ * @retval  HAL_ERROR  Null pointer or firmware read failure
  */
 HAL_StatusTypeDef Si7021_Init(Si7021_t *hsi7021, I2C_HandleTypeDef *hi2c, uint8_t address, Si7021_Resolution_t resolution)
 {
@@ -89,10 +101,11 @@ HAL_StatusTypeDef Si7021_Init(Si7021_t *hsi7021, I2C_HandleTypeDef *hi2c, uint8_
 }
 
 /**
- * @brief Set measurement resolution
- * @param hsi7021 Pointer to the configuration structure
- * @param resolution Selected resolution
- * @return Operation status
+ * @brief   Sets humidity and temperature measurement resolution
+ * @param   hsi7021      Pointer to device handle
+ * @param   resolution   Resolution setting
+ * @retval  HAL_OK     Resolution written to user register 1
+ * @retval  HAL_ERROR  Null pointer or I2C failure
  */
 HAL_StatusTypeDef Si7021_SetResolution(Si7021_t *hsi7021, Si7021_Resolution_t resolution)
 {
@@ -133,9 +146,10 @@ HAL_StatusTypeDef Si7021_SetResolution(Si7021_t *hsi7021, Si7021_Resolution_t re
 }
 
 /**
- * @brief Read current measurement resolution
- * @param hsi7021 Pointer to the configuration structure
- * @return Operation status
+ * @brief   Reads resolution from user register 1 into data.resolution
+ * @param   hsi7021  Pointer to device handle
+ * @retval  HAL_OK     Resolution cached in handle
+ * @retval  HAL_ERROR  Null pointer or I2C failure
  */
 HAL_StatusTypeDef Si7021_GetResolution(Si7021_t *hsi7021)
 {
@@ -156,10 +170,11 @@ HAL_StatusTypeDef Si7021_GetResolution(Si7021_t *hsi7021)
 }
 
 /**
- * @brief Set heater to specified current value
- * @param hsi7021 Pointer to the configuration structure
- * @param current Adjustable current value. At 3.3V maximum current is 94mA
- * @return Operation status
+ * @brief   Sets on-chip heater current
+ * @param   hsi7021  Pointer to device handle
+ * @param   current  Desired heater current in mA (3–94 at 3.3 V)
+ * @retval  HAL_OK     Heater register written
+ * @retval  HAL_ERROR  Null pointer or I2C failure
  */
 HAL_StatusTypeDef Si7021_SetHeaterCurrent(Si7021_t *hsi7021, uint8_t current)
 {
@@ -176,9 +191,10 @@ HAL_StatusTypeDef Si7021_SetHeaterCurrent(Si7021_t *hsi7021, uint8_t current)
 }
 
 /**
- * @brief Get current heater current setting
- * @param hsi7021 Pointer to the configuration structure
- * @return Operation status
+ * @brief   Reads heater current setting into data.heater_current
+ * @param   hsi7021  Pointer to device handle
+ * @retval  HAL_OK     Heater current cached in handle
+ * @retval  HAL_ERROR  Null pointer or I2C failure
  */
 HAL_StatusTypeDef Si7021_GetHeaterCurrent(Si7021_t *hsi7021)
 {
@@ -197,10 +213,10 @@ HAL_StatusTypeDef Si7021_GetHeaterCurrent(Si7021_t *hsi7021)
 }
 
 /**
- * @brief Helper function to compute CRC-8 with polynomial 0x31
- * @param data Pointer to data for CRC calculation
- * @param len Data length
- * @return Calculated checksum
+ * @brief   Computes CRC-8 with polynomial 0x31
+ * @param   data  Pointer to data for CRC calculation
+ * @param   len   Data length in bytes
+ * @retval  Calculated CRC-8 checksum
  */
 static uint8_t Si7021_ComputeCRC8(uint8_t *data, uint8_t len) 
 {
@@ -223,9 +239,10 @@ static uint8_t Si7021_ComputeCRC8(uint8_t *data, uint8_t len)
 }
 
 /**
- * @brief Read humidity with checksum verification
- * @param hsi7021 Pointer to the configuration structure
- * @return Operation status
+ * @brief   Measures relative humidity with CRC verification
+ * @param   hsi7021  Pointer to device handle
+ * @retval  HAL_OK     Humidity available in data.humidity
+ * @retval  HAL_ERROR  Null pointer, I2C failure, or CRC mismatch
  */
 HAL_StatusTypeDef Si7021_ReadHumidity(Si7021_t *hsi7021)
 {
@@ -258,9 +275,10 @@ HAL_StatusTypeDef Si7021_ReadHumidity(Si7021_t *hsi7021)
 }
 
 /**
- * @brief Read temperature with checksum verification
- * @param hsi7021 Pointer to the configuration structure
- * @return Operation status
+ * @brief   Measures temperature with CRC verification
+ * @param   hsi7021  Pointer to device handle
+ * @retval  HAL_OK     Temperature available in data.temperature
+ * @retval  HAL_ERROR  Null pointer, I2C failure, or CRC mismatch
  */
 HAL_StatusTypeDef Si7021_ReadTemperature(Si7021_t *hsi7021)
 {
@@ -287,9 +305,10 @@ HAL_StatusTypeDef Si7021_ReadTemperature(Si7021_t *hsi7021)
 }
 
 /**
- * @brief Read humidity and temperature. Temperature reading from previous humidity measurement (no checksum for 0xE0 command)
- * @param hsi7021 Pointer to the configuration structure
- * @return Operation status
+ * @brief   Measures humidity then reads temperature from previous RH conversion
+ * @param   hsi7021  Pointer to device handle
+ * @retval  HAL_OK     data.humidity and data.temperature updated
+ * @retval  HAL_ERROR  Humidity or temperature read failure
  */
 HAL_StatusTypeDef Si7021_ReadHumidityAndTemperature(Si7021_t *hsi7021)
 {

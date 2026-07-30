@@ -5,6 +5,9 @@
  * nRF24 binary frame (max 32 B):
  *   [version][sensor_status][count][channel_id+float] * count
  *
+ * nRF24 measure command (8 B):
+ *   [WS_CMD_MEASURE][cycle_id][target_mask][padding]
+ *
  * UART line to Pico (example, BMP280 station):
  *   DATA:2026-05-09T11:06:01,S0,01:23.45,02:65.20,03:18.10,04:1013.25,05:120.0,OK\n
  *
@@ -32,6 +35,25 @@
  * @note 32 B payload allows at most 5 records: 3 + 5 * 5 = 28 B
  */
 #define WS_MAX_READINGS          5U
+
+/* ============================================================================
+ * Measure command (nRF24, 8-byte fixed payload)
+ * ============================================================================ */
+
+/** @brief Measure command byte (nRF24 command payload) */
+#define WS_CMD_MEASURE           0x01U
+/** @brief Fixed command payload size used by Indoor/Outdoor radios */
+#define WS_CMD_SIZE              8U
+/** @brief Byte offset of cycle_id inside the measure command payload */
+#define WS_CMD_CYCLE_ID_OFFSET   1U
+/** @brief Byte offset of target node bitmask (bit N = NODE_ID N) */
+#define WS_CMD_TARGET_MASK_OFFSET 2U
+/** @brief target_mask value meaning "all nodes" */
+#define WS_CMD_TARGET_ALL        0xFFU
+
+/* ============================================================================
+ * Measurement payload types and API
+ * ============================================================================ */
 
 /**
  * @brief Channel IDs: sensor type + physical quantity (fixed registry)
@@ -129,5 +151,79 @@ uint8_t WS_ChannelSensorError(uint8_t channel_id);
  * @retval  false  Encode, decode, or value verification failed
  */
 bool WS_Protocol_SelfCheck(void);
+
+/* ============================================================================
+ * Measure command and cycle coordination API
+ * ============================================================================ */
+
+/**
+ * @brief   Encodes a broadcast measure command into an 8-byte nRF24 payload
+ * @param   cycle_id  Measurement cycle identifier (0–255, wraps)
+ * @param   buf       Destination buffer (must be at least WS_CMD_SIZE bytes)
+ * @param   buf_size  Capacity of @p buf
+ * @retval  true      Command encoded (target_mask = WS_CMD_TARGET_ALL)
+ * @retval  false     Invalid buffer or insufficient size
+ * @details Wire layout: [WS_CMD_MEASURE][cycle_id][WS_CMD_TARGET_ALL][padding]
+ */
+bool WS_Cmd_EncodeMeasure(uint8_t cycle_id, uint8_t *buf, uint8_t buf_size);
+
+/**
+ * @brief   Encodes a measure command with cycle id and target node bitmask
+ * @param   cycle_id     Measurement cycle identifier
+ * @param   target_mask  Bit N set selects NODE_ID N; WS_CMD_TARGET_ALL = all nodes
+ * @param   buf          Destination buffer (must be at least WS_CMD_SIZE bytes)
+ * @param   buf_size     Capacity of @p buf
+ * @retval  true         Command encoded
+ * @retval  false        Invalid buffer or insufficient size
+ */
+bool WS_Cmd_EncodeMeasureTo(uint8_t cycle_id, uint8_t target_mask, uint8_t *buf, uint8_t buf_size);
+
+/**
+ * @brief   Decodes a measure command payload (cycle id only)
+ * @param   buf            Source command buffer
+ * @param   len            Buffer length in bytes
+ * @param   out_cycle_id   Receives cycle id on success (may be NULL)
+ * @retval  true           Valid WS_CMD_MEASURE frame
+ * @retval  false          NULL buffer, too short, or wrong command byte
+ */
+bool WS_Cmd_DecodeMeasure(const uint8_t *buf, uint8_t len, uint8_t *out_cycle_id);
+
+/**
+ * @brief   Decodes a measure command including optional target node mask
+ * @param   buf              Source command buffer
+ * @param   len              Buffer length in bytes
+ * @param   out_cycle_id     Receives cycle id (may be NULL)
+ * @param   out_target_mask  Receives target bitmask (may be NULL); defaults to
+ *                           WS_CMD_TARGET_ALL when byte absent or zero
+ * @retval  true             Valid WS_CMD_MEASURE frame
+ * @retval  false            NULL buffer, too short, or wrong command byte
+ */
+bool WS_Cmd_DecodeMeasureEx(const uint8_t *buf, uint8_t len, uint8_t *out_cycle_id, uint8_t *out_target_mask);
+
+/**
+ * @brief   Detects a duplicate measurement cycle id
+ * @param   cycle_id       Incoming cycle id from command payload
+ * @param   last_cycle_id  Previously accepted cycle id
+ * @param   have_last      Non-zero when @p last_cycle_id is valid
+ * @retval  true           Same cycle id as last accepted command
+ * @retval  false          First cycle or different cycle id
+ */
+bool WS_Cmd_IsDuplicateCycle(uint8_t cycle_id, uint8_t last_cycle_id, uint8_t have_last);
+
+/**
+ * @brief   Builds the expected response bitmask for a parallel measurement cycle
+ * @param   node_count  Number of outdoor nodes (0–8)
+ * @retval  uint8_t     Bit mask with bits 0..(node_count-1) set; 0xFF when node_count >= 8
+ */
+uint8_t WS_Cycle_ExpectedMask(uint8_t node_count);
+
+/**
+ * @brief   Checks whether all expected node responses were received
+ * @param   expected_mask  Bits that must be set (from WS_Cycle_ExpectedMask)
+ * @param   received_mask  Accumulated response bits for the current cycle
+ * @retval  true           Every expected bit is present in @p received_mask
+ * @retval  false          At least one expected node has not responded
+ */
+bool WS_Cycle_IsComplete(uint8_t expected_mask, uint8_t received_mask);
 
 #endif /* WS_PROTOCOL_H */

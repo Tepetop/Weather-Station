@@ -1,34 +1,28 @@
-/*
- * PCD_LCD.c
- *
- *  Created on: Sep 25, 2024
- *      Author: remik
- */
 /**
- * --------------------------------------------------------------------------------------------+
- * @desc        LCD driver PCD8544 / Nokia 5110, 3110 /
- * --------------------------------------------------------------------------------------------+
- *
- *              Copyright (C) 2024 Remigiusz Pieprzyk
- *              Library writen for SMT32 with HAL support based on Marian Hrinko (mato.hrinko@gmail.com)
- *              https://github.com/Matiasus/PCD8544/tree/master
- *
- *          VERY IMPORTANT !!! PINS CE AND RST MUST BE IN HIGH STATE AFTER GPIO INIT !!!!!
- *
- *
- *
- *
-*/
+ * @file PCD8544.c
+ * @brief PCD8544 (Nokia 5110) LCD driver implementation.
+ * @details SPI/GPIO low-level routines, framebuffer management, text rendering,
+ *          and screen update. CE and RST pins must be HIGH after GPIO init.
+ */
 
 #include "PCD8544.h"
 #include "stm32f1xx_hal_gpio.h"
 
 /**
- * @desc    Initialise pcd8544 controller
- *
- * @param   void
- *
- * @return  void
+ * @brief Initializes the PCD8544 controller, framebuffer, and default font.
+ * @param[out]    PCD       Display driver instance to initialize.
+ * @param[in]     hspi      SPI handle used for display communication.
+ * @param[in]     dc_port   GPIO port for the DC (data/command) pin.
+ * @param[in]     dc_pin    GPIO pin number for DC.
+ * @param[in]     ce_port   GPIO port for the CE (chip enable) pin.
+ * @param[in]     ce_pin    GPIO pin number for CE.
+ * @param[in]     rst_port  GPIO port for the RST (reset) pin.
+ * @param[in]     rst_pin   GPIO pin number for RST.
+ * @param[in]     blk_port  GPIO port for the backlight pin.
+ * @param[in]     blk_pin   GPIO pin number for backlight.
+ * @retval PCD_OK             Initialization successful.
+ * @retval PCD_OutOfBounds    PCD or hspi pointer is NULL.
+ * @retval PCD_TransmitError  Controller command sequence failed.
  */
 PCD_Status PCD8544_Init (PCD8544_t *PCD, SPI_HandleTypeDef *hspi, GPIO_TypeDef *dc_port, uint16_t dc_pin,
 		GPIO_TypeDef *ce_port, uint16_t ce_pin, GPIO_TypeDef *rst_port, uint16_t rst_pin, GPIO_TypeDef *blk_port, uint16_t blk_pin)
@@ -98,11 +92,11 @@ PCD_Status PCD8544_Init (PCD8544_t *PCD, SPI_HandleTypeDef *hspi, GPIO_TypeDef *
 }
 
 /**
- * @desc    Command send
- *
- * @param   char
- *
- * @return  void
+ * @brief Sends a single controller command byte over SPI.
+ * @param[in,out] PCD  Display driver instance.
+ * @param[in]     data Command byte to transmit.
+ * @retval PCD_OK             Command sent successfully.
+ * @retval PCD_TransmitError  SPI transmit failed.
  */
 PCD_Status PCD8544_CommandSend (PCD8544_t *PCD, uint8_t data)
 {
@@ -121,11 +115,11 @@ PCD_Status PCD8544_CommandSend (PCD8544_t *PCD, uint8_t data)
 }
 
 /**
- * @desc    Send data from buffer to PCD8544
- *
- * @param   uint8_t *data
- *
- * @return  PCD_Status
+ * @brief Transmits framebuffer bytes to the display using blocking SPI.
+ * @param[in,out] PCD  Display driver instance.
+ * @param[in]     data Pointer to byte buffer (full framebuffer size).
+ * @retval PCD_OK             Transfer completed successfully.
+ * @retval PCD_TransmitError  SPI transmit failed.
  */
 PCD_Status PCD8544_SendDataFromBuffer (PCD8544_t *PCD,  uint8_t *data)
 {
@@ -144,13 +138,12 @@ PCD_Status PCD8544_SendDataFromBuffer (PCD8544_t *PCD,  uint8_t *data)
 }
 
 /**
- * @desc    Display bitmap on screen. DO NOT UPDATE SCREEN AFTER THIS FUNCTION!!
- *
- * @param   PCD - pointer to PCD type struct
- * @param	bitmap - pointer to bitmap array
- * @param   size - sizeof bitmap
- *
- * @return  PCD_Status
+ * @brief Transmits raw bitmap data directly to the display (blocking SPI).
+ * @param[in,out] PCD    Display driver instance.
+ * @param[in]     bitmap Pointer to bitmap byte array.
+ * @param[in]     size   Number of bytes to transmit.
+ * @retval PCD_OK             Transfer completed successfully.
+ * @retval PCD_TransmitError  SPI transmit failed.
  */
 PCD_Status PCD8544_DrawBitMap(PCD8544_t *PCD, uint8_t *bitmap, uint16_t size)
 {
@@ -169,12 +162,11 @@ PCD_Status PCD8544_DrawBitMap(PCD8544_t *PCD, uint8_t *bitmap, uint16_t size)
 }
 
 /**
- * @desc    Set communication mode (blocking or DMA)
- *
- * @param   PCD - pointer to PCD type struct
- * @param   mode - communication mode (PCD_SPI_MODE_BLOCKING or PCD_SPI_MODE_DMA)
- *
- * @return  PCD_Status
+ * @brief Sets SPI transfer mode for screen updates and bitmap transfers.
+ * @param[in,out] PCD  Display driver instance.
+ * @param[in]     mode Blocking or DMA SPI mode.
+ * @retval PCD_OK      Mode applied successfully.
+ * @retval PCD_ERROR   NULL pointer or invalid mode value.
  */
 PCD_Status PCD8544_SetCommunicationMode(PCD8544_t *PCD, PCD_SPI_Mode mode)
 {
@@ -194,12 +186,11 @@ PCD_Status PCD8544_SetCommunicationMode(PCD8544_t *PCD, PCD_SPI_Mode mode)
 }
 
 /**
- * @desc    Set font for PCD8544
- *
- * @param   PCD - pointer to PCD type struct
- * @param   Font - pointer to font structure
- *
- * @return  PCD_Status
+ * @brief Selects the active font and recalculates character grid dimensions.
+ * @param[in,out] PCD  Display driver instance.
+ * @param[in]     Font Font descriptor with width, height, and glyph data.
+ * @retval PCD_OK      Font applied successfully.
+ * @retval PCD_ERROR   PCD or Font pointer is NULL.
  */
 PCD_Status PCD8544_SetFont(PCD8544_t *PCD, const PCD8544_Font_t *Font)
 {
@@ -221,13 +212,12 @@ PCD_Status PCD8544_SetFont(PCD8544_t *PCD, const PCD8544_Font_t *Font)
 }
 
 /**
- * @desc    Send data from buffer to PCD8544 using DMA
- *
- * @param   PCD - pointer to PCD type struct
- * @param   data - pointer to data buffer
- * @param   size - size of data to send
- *
- * @return  PCD_Status
+ * @brief Transmits a byte buffer to the display using DMA SPI.
+ * @param[in,out] PCD  Display driver instance.
+ * @param[in]     data Pointer to byte buffer.
+ * @param[in]     size Number of bytes to transmit.
+ * @retval PCD_OK             DMA transfer started successfully.
+ * @retval PCD_TransmitError  SPI DMA setup failed.
  */
 PCD_Status PCD8544_SendDataFromBuffer_DMA (PCD8544_t *PCD, uint8_t *data, uint16_t size)
 {
@@ -247,13 +237,12 @@ PCD_Status PCD8544_SendDataFromBuffer_DMA (PCD8544_t *PCD, uint8_t *data, uint16
 }
 
 /**
- * @desc    Display bitmap on screen using DMA. DO NOT UPDATE SCREEN AFTER THIS FUNCTION!!
- *
- * @param   PCD - pointer to PCD type struct
- * @param	bitmap - pointer to bitmap array
- * @param   size - sizeof bitmap
- *
- * @return  PCD_Status
+ * @brief Transmits raw bitmap data directly to the display (DMA SPI).
+ * @param[in,out] PCD    Display driver instance.
+ * @param[in]     bitmap Pointer to bitmap byte array.
+ * @param[in]     size   Number of bytes to transmit.
+ * @retval PCD_OK             DMA transfer started successfully.
+ * @retval PCD_TransmitError  SPI DMA setup failed.
  */
 PCD_Status PCD8544_DrawBitMap_DMA(PCD8544_t *PCD, uint8_t *bitmap, uint16_t size)
 {
@@ -273,13 +262,8 @@ PCD_Status PCD8544_DrawBitMap_DMA(PCD8544_t *PCD, uint8_t *bitmap, uint16_t size
 }
 
 /**
- * @desc    DMA transfer complete callback
- *          This function should be called from HAL_SPI_TxCpltCallback in user code
- *          User needs to deselect the device (CE pin) after DMA transfer
- *
- * @param   PCD - pointer to PCD type struct
- *
- * @return  void
+ * @brief DMA transfer-complete callback; deselects CE after SPI DMA TX.
+ * @param[in,out] PCD Display driver instance.
  */
 void PCD8544_TxCpltCallback(PCD8544_t *PCD)
 {
@@ -295,11 +279,8 @@ void PCD8544_TxCpltCallback(PCD8544_t *PCD)
 
 
 /**
- * @desc    Reset impulse required on init
- *
- * @param   void
- *
- * @return  void
+ * @brief Applies hardware reset pulse to the display controller.
+ * @param[in,out] PCD Display driver instance.
  */
 void PCD8544_ResetImpulse (PCD8544_t *PCD)
 {
@@ -309,11 +290,8 @@ void PCD8544_ResetImpulse (PCD8544_t *PCD)
 }
 
 /**
- * @desc    Clear buffer
- *
- * @param   void
- *
- * @return  void
+ * @brief Clears the internal framebuffer to zero without updating the display.
+ * @param[in,out] PCD Display driver instance.
  */
 void PCD8544_ClearBuffer (PCD8544_t *PCD)
 {
@@ -321,11 +299,10 @@ void PCD8544_ClearBuffer (PCD8544_t *PCD)
 }
 
 /**
- * @desc    Clear screen
- *
- * @param   PCD - pointer to PCD type struct
- *
- * @return  PCD_Status
+ * @brief Clears the framebuffer and pushes a blank screen to the display.
+ * @param[in,out] PCD Display driver instance.
+ * @retval PCD_OK             Screen cleared successfully.
+ * @retval PCD_TransmitError  SPI transfer of cleared buffer failed.
  */
 PCD_Status PCD8544_ClearScreen (PCD8544_t *PCD)
 {
@@ -346,11 +323,10 @@ PCD_Status PCD8544_ClearScreen (PCD8544_t *PCD)
 }
 
 /**
- * @desc    Update screen with buffer data
- *
- * @param   PCD - pointer to PCD type struct
- *
- * @return  PCD_Status
+ * @brief Pushes the internal framebuffer contents to the display.
+ * @param[in,out] PCD Display driver instance.
+ * @retval PCD_OK             Framebuffer transferred successfully.
+ * @retval PCD_TransmitError  SPI transfer failed.
  */
 PCD_Status PCD8544_UpdateScreen (PCD8544_t *PCD)
 {
@@ -370,13 +346,12 @@ PCD_Status PCD8544_UpdateScreen (PCD8544_t *PCD)
 }
 
 /**
- * @desc   Set cursor on x and y position, depends on font chosen
- *
- * @param   PCD - pointer to PCD type struct
- * @param   x - row position in character units
- * @param   y - col position in character units
- *
- * @return  PCD_Status
+ * @brief Sets the text cursor position in character grid coordinates.
+ * @param[in,out] PCD Display driver instance.
+ * @param[in]     x   Column index (0 to PCD8544_COLS - 1).
+ * @param[in]     y   Row index (0 to PCD8544_ROWS - 1).
+ * @retval PCD_OK           Cursor set successfully.
+ * @retval PCD_OutOfBounds  x or y exceeds character grid.
  */
 PCD_Status PCD8544_SetCursor(PCD8544_t *PCD, uint8_t x, uint8_t y)
 {
@@ -392,13 +367,12 @@ PCD_Status PCD8544_SetCursor(PCD8544_t *PCD, uint8_t x, uint8_t y)
 }
 
 /**
- * @desc    Draw pixel on x, y position
- *
- * @param   PCD - pointer to struct
- * @param   x - row position in pixels
- * @param   y - col position in pixels
- *
- * @return  PCD_Status
+ * @brief Sets a single pixel in the framebuffer.
+ * @param[in,out] PCD Display driver instance.
+ * @param[in]     x   X coordinate in pixels (0 to PCD8544_WIDTH - 1).
+ * @param[in]     y   Y coordinate in pixels (0 to PCD8544_HEIGHT - 1).
+ * @retval PCD_OK           Pixel drawn successfully.
+ * @retval PCD_OutOfBounds  Coordinates outside display area.
  */
 PCD_Status PCD8544_DrawPixel(PCD8544_t *PCD, uint8_t x, uint8_t y)
 {
@@ -416,13 +390,12 @@ PCD_Status PCD8544_DrawPixel(PCD8544_t *PCD, uint8_t x, uint8_t y)
 }
 
 /**
- * @desc    Write char into PCD buffer
- *
- * @param   PCD - pointer to PCD type struct
- * @param   znak - pointer to char
- * @param   Font - pointer to struct contains font type
- *
- * @return  PCD_Status
+ * @brief Writes one ASCII character at the current cursor using the active font.
+ * @param[in,out] PCD  Display driver instance.
+ * @param[in]     znak Pointer to single-character string.
+ * @retval PCD_OK           Character written successfully.
+ * @retval PCD_ERROR        NULL character or font data pointer.
+ * @retval PCD_OutOfBounds  Character code outside supported range.
  */
 PCD_Status PCD8544_WriteChar(PCD8544_t *PCD, const char *znak)
 {
@@ -467,6 +440,14 @@ PCD_Status PCD8544_WriteChar(PCD8544_t *PCD, const char *znak)
     return PCD_OK;
 }
 
+/**
+ * @brief Writes one ASCII character using multi-bank tall font rendering.
+ * @param[in,out] PCD  Display driver instance.
+ * @param[in]     znak Pointer to single-character string.
+ * @retval PCD_OK           Character written successfully.
+ * @retval PCD_ERROR        NULL character or font data pointer.
+ * @retval PCD_OutOfBounds  Character code outside supported range.
+ */
 PCD_Status PCD8544_WriteCharBig(PCD8544_t *PCD, const char *znak)
 {
     if (NULL == znak || NULL == PCD->font.font)
@@ -519,13 +500,11 @@ PCD_Status PCD8544_WriteCharBig(PCD8544_t *PCD, const char *znak)
 }
 
 /**
- * @desc    Write string into PCD buffer
- *
- * @param   PCD - pointer to PCD type struct
- * @param   str - pointer to char
- * @param   Font - pointer to struct contains font type
- *
- * @return  PCD_Status
+ * @brief Writes a null-terminated string at the current cursor position.
+ * @param[in,out] PCD Display driver instance.
+ * @param[in]     str Null-terminated ASCII string.
+ * @retval PCD_OK    String written successfully.
+ * @retval PCD_ERROR str pointer is NULL.
  */
 PCD_Status PCD8544_WriteString(PCD8544_t *PCD, const char *str)
 {
@@ -544,6 +523,13 @@ PCD_Status PCD8544_WriteString(PCD8544_t *PCD, const char *str)
     return PCD_OK;
 }
 
+/**
+ * @brief Writes a null-terminated string using tall-font character rendering.
+ * @param[in,out] PCD Display driver instance.
+ * @param[in]     str Null-terminated ASCII string.
+ * @retval PCD_OK    String written successfully.
+ * @retval PCD_ERROR str pointer is NULL.
+ */
 PCD_Status PCD8544_WriteStringBig(PCD8544_t *PCD, const char *str)
 {
     // Check if string exists
@@ -562,11 +548,14 @@ PCD_Status PCD8544_WriteStringBig(PCD8544_t *PCD, const char *str)
 }
 
 /**
- * @desc    Write value to buffer.
- *
- * @param   uint8_t x, uint8_t y - position, int16_t number - value to write
- *
- * @return  PCD Status
+ * @brief Writes a signed integer at a character grid position.
+ * @param[in,out] PCD    Display driver instance.
+ * @param[in]     x      Column index for the number.
+ * @param[in]     y      Row index for the number.
+ * @param[in]     number Value to format and write.
+ * @retval PCD_OK           Operation completed (may return PCD_ERROR if incomplete).
+ * @retval PCD_OutOfBounds  Grid position or formatted length out of range.
+ * @retval PCD_ERROR        Internal write path not fully implemented.
  */
 PCD_Status PCD8544_WriteNumberToBuffer(PCD8544_t *PCD, uint8_t x, uint8_t y, int16_t number)
 {
@@ -614,11 +603,13 @@ PCD_Status PCD8544_WriteNumberToBuffer(PCD8544_t *PCD, uint8_t x, uint8_t y, int
 }
 
 /**
- * @desc    Clear selected region of buffer (clear one row in screen)
- *
- * @param   uint8_t x, uint8_t y - x and y position, uint8_t NumOfChars - number of chars to delete (from single line 14 is MAX)
- *
- * @return  PCD_Status
+ * @brief Clears a horizontal region of the framebuffer in character units.
+ * @param[in,out] PCD        Display driver instance.
+ * @param[in]     x          Starting column index.
+ * @param[in]     y          Row index.
+ * @param[in]     NumOfChars Number of character cells to clear.
+ * @retval PCD_OK           Region cleared successfully.
+ * @retval PCD_OutOfBounds  Grid position out of range.
  */
 PCD_Status PCD8544_ClearBufferRegion(PCD8544_t *PCD, uint8_t x, uint8_t y, uint8_t NumOfChars)
 {
@@ -646,11 +637,11 @@ PCD_Status PCD8544_ClearBufferRegion(PCD8544_t *PCD, uint8_t x, uint8_t y, uint8
 }
 
 /**
- * @desc    Clear one line from buffer
- *
- * @param   uint8_t y - row
- *
- * @return  void
+ * @brief Clears one full text row in the framebuffer.
+ * @param[in,out] PCD Display driver instance.
+ * @param[in]     y   Row index to clear.
+ * @retval PCD_OK           Line cleared successfully.
+ * @retval PCD_OutOfBounds  Row index out of range.
  */
 PCD_Status PCD8544_ClearBufferLine(PCD8544_t *PCD, uint8_t y)
 {
@@ -670,11 +661,13 @@ PCD_Status PCD8544_ClearBufferLine(PCD8544_t *PCD, uint8_t y)
 }
 
 /**
- * @desc    Invert selected region in one line in bufer
- *
- * @param   uint8_t x, uint8_t y - x and y position, uint8_t NumOfChars - number of chars to delete (from signle line 14 is MAX)
- *
- * @return  PCD_Status
+ * @brief Inverts a horizontal region of the framebuffer in character units.
+ * @param[in,out] PCD        Display driver instance.
+ * @param[in]     x          Starting column index.
+ * @param[in]     y          Row index.
+ * @param[in]     NumOfChars Number of character cells to invert.
+ * @retval PCD_OK           Region inverted successfully.
+ * @retval PCD_OutOfBounds  Grid position out of range.
  */
 PCD_Status PCD8544_InvertSelectedRegion(PCD8544_t *PCD, uint8_t x, uint8_t y, uint8_t NumOfChars)
 {
@@ -703,11 +696,11 @@ PCD_Status PCD8544_InvertSelectedRegion(PCD8544_t *PCD, uint8_t x, uint8_t y, ui
 }
 
 /**
- * @desc    Inverty one line from buffer
- *
- * @param   uint8_t y - row
- *
- * @return  void
+ * @brief Inverts one full text row in the framebuffer.
+ * @param[in,out] PCD Display driver instance.
+ * @param[in]     y   Row index to invert.
+ * @retval PCD_OK           Line inverted successfully.
+ * @retval PCD_OutOfBounds  Row index out of range.
  */
 PCD_Status PCD8544_InvertLine(PCD8544_t *PCD, uint8_t y)
 {
@@ -727,6 +720,13 @@ PCD_Status PCD8544_InvertLine(PCD8544_t *PCD, uint8_t y)
     return PCD_OK;
 }
 
+/**
+ * @brief Draws a centered title row formatted as "-TITLE-".
+ * @param[in,out] PCD   Display driver instance.
+ * @param[in]     title Null-terminated title string (without dash padding).
+ * @retval PCD_OK    Title drawn successfully.
+ * @retval PCD_ERROR PCD or title pointer is NULL.
+ */
 PCD_Status PCD_8544_DrawCenteredTitle(PCD8544_t *PCD, const char *title)
 {
   if(PCD == NULL || title == NULL)
@@ -752,6 +752,10 @@ PCD_Status PCD_8544_DrawCenteredTitle(PCD8544_t *PCD, const char *title)
   return status;
 }
 
+/**
+ * @brief Turns the display backlight on.
+ * @param[in,out] PCD Display driver instance.
+ */
 void PCD8544_SetBacklight(PCD8544_t *PCD)
 {
   if (PCD == NULL)
@@ -761,6 +765,10 @@ void PCD8544_SetBacklight(PCD8544_t *PCD)
   HAL_GPIO_WritePin(PCD->BLK_GPIOPort, PCD->BLK_GpioPin, GPIO_PIN_SET);
 }
 
+/**
+ * @brief Turns the display backlight off.
+ * @param[in,out] PCD Display driver instance.
+ */
 void PCD8544_ResetBacklight(PCD8544_t *PCD)
 {
   if (PCD == NULL)

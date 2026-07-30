@@ -1,8 +1,8 @@
-/*
- * menu_description.h
- *
- *  Created on: Nov 4, 2024
- *      Author: Tepetop
+/**
+ * @file PCD8544_Menu_config.h
+ * @brief Application menu tree definition for the indoor weather station.
+ * @details Instantiates linked Menu_t nodes, wires parent/child/sibling links,
+ *          and binds leaf items to WS_UI view callbacks.
  */
 
 #ifndef INC_PCD8544_MENU_CONFIG_H_
@@ -13,9 +13,13 @@
 #include "weather_station_ui.h"
 #include "main.h"
 
+/** @brief Shared escape handler that queues MENU_ACTION_ESCAPE for Menu_Task */
 extern void Menu_EscapeWraper(void);
 
-/*		Definicja struktur 		*/
+/* ============================================================================
+ * Menu tree nodes (forward declarations)
+ * ============================================================================ */
+
 Menu_t StronaDomyslna;
 Menu_t Ustawienia;
 	Menu_t Wykresy;
@@ -34,7 +38,9 @@ Menu_t Ustawienia;
 		Menu_t powrotCentralna;
 	Menu_t PowrotUstawienia;
 
-/*   																	MENU POMIAROWE														*/
+/* ============================================================================
+ * Menu tree initialization
+ * ============================================================================ */
 
 //					name;  					next;   		  	prev;   		   child;  			parent;		 		menuFunction;
 
@@ -59,6 +65,5 @@ Menu_t Ustawienia = {"Ustawienia", 				NULL,  			  	&StronaDomyslna, 	&Wykresy, 
 		Menu_t powrotCentralna = {"Powrot",   	NULL, 			  &ustawieniaRTC, 		NULL, 				&StacjaCentralna, 	Menu_EscapeWraper}; 		// Opcja powrotu do menu StacjaCentralna
 
 	Menu_t PowrotUstawienia = {"Powrot", 	  	NULL, 	  	  	&StacjaCentralna, 		NULL, 				&Ustawienia, 		Menu_EscapeWraper}; 		// Opcja powrotu do menu Ustawienia
-
 
 #endif /* INC_PCD8544_MENU_CONFIG_H_ */

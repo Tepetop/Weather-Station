@@ -56,6 +56,10 @@ const uint8_t NRF_RX_ADDR[5] = {0xE7 + NODE_ID, 0xE7, 0xE7, 0xE7, 0xE7};
 static HAL_StatusTypeDef I2C_CheckAddress(I2C_HandleTypeDef *i2c);
 #endif
 
+/* ============================================================================
+ * Internal helpers (forward declarations)
+ * ============================================================================ */
+
 static void Outdoor_LedOn(void);
 static void Outdoor_LedOff(void);
 static void NRF_DelayUs(uint32_t us);
@@ -64,13 +68,20 @@ static void OutdoorStation_TryReinitNrf(void);
 static void OutdoorStation_StartReceive(void);
 static void OutdoorStation_HandleIRQ(void);
 static void OutdoorStation_SendMeasurementData(void);
+static uint8_t OutdoorStation_TrySendAfterSlot(void);
 static void OutdoorStation_InitLink(void);
 
 /* ============================================================================
  * Public API
  * ============================================================================ */
 
-
+/**
+ * @brief   Runs one blocking measurement cycle using the station context
+ * @param   data        Filled with latest readings on success (may be NULL)
+ * @param   timeout_ms  Maximum wait time for the cycle
+ * @retval  HAL_OK      Cycle finished in MEAS_SLEEP
+ * @retval  HAL_ERROR   Invalid state, start failure, timeout, or MEAS_ERROR
+ */
 HAL_StatusTypeDef OutdoorStation_RunMeasurementCycle(Measurement_Data_t *data,
                                                      uint32_t timeout_ms)
 {
@@ -114,6 +125,8 @@ HAL_StatusTypeDef OutdoorStation_RunMeasurementCycle(Measurement_Data_t *data,
  * @brief   Initializes outdoor unit hardware and sensors
  * @retval  HAL_OK     Initialization successful
  * @retval  HAL_ERROR  Protocol self-check or sensor init failed
+ * @details Configures NRF24 (if present), runs measurement module init to
+ *          completion, and logs sensor error flags over UART.
  */
 HAL_StatusTypeDef OutdoorStation_Init(void)
 {
@@ -163,10 +176,11 @@ HAL_StatusTypeDef OutdoorStation_Init(void)
 /*  Check if sensors initialized successfully */
   if (measCtx.state == MEAS_ERROR)
   {
-    Error_Handler_WithName("Failed to initialize sensors");
+    //Error_Handler_WithName("Failed to initialize sensors");
   }
 
   Debug_LogSystemReady(measCtx.sensorErrorCode);
+  Debug_LogValue("LOG:INIT:NODE_ID=", (int32_t)NODE_ID);
   if (measCtx.sensorErrorCode & ERROR_TSL2561)
   {
     Debug_LogSensorError(ERROR_TSL2561, "TSL2561");
@@ -179,7 +193,7 @@ HAL_StatusTypeDef OutdoorStation_Init(void)
   {
     Debug_LogSensorError(ERROR_SI7021, "SI7021");
   }
-    if (measCtx.sensorErrorCode & ERROR_BME280)
+  if (measCtx.sensorErrorCode & ERROR_BME280)
   {
     Debug_LogSensorError(ERROR_BME280, "BME280");
   }
@@ -190,6 +204,8 @@ HAL_StatusTypeDef OutdoorStation_Init(void)
 /**
  * @brief   Processes the OutdoorLink state machine (call from main loop)
  * @retval  None
+ * @details Handles NRF IRQ, measurement commands, sensor reads, TX/ACK, and
+ *          radio recovery. Non-blocking — one state step per call.
  */
 void OutdoorStation_Process(void)
 {
@@ -223,6 +239,8 @@ void OutdoorStation_Process(void)
         outLink.cmd_received = 0;
         outLink.meas_retry_count = 0;
         outLink.meas_started = 0;
+        outLink.tx_delay_armed = 0;
+        outLink.tx_attempt_count = 0;
         outLink.meas_start_tick = HAL_GetTick();
 
 #if USE_LED_INDICATOR
@@ -248,28 +266,28 @@ void OutdoorStation_Process(void)
         }
       }
 
-      /* Measurement cycle complete - send data */
+      /* Measurement cycle complete - wait NODE_ID slot, then send data */
       if (outLink.meas_started && measCtx.state == MEAS_SLEEP)
       {
-        OutdoorStation_SendMeasurementData();
-        outLink.state = OUT_LINK_TX_SENDING;
-
-        Debug_LogMeasDone();
-
+        if (OutdoorStation_TrySendAfterSlot() != 0U)
+        {
+          outLink.state = OUT_LINK_TX_SENDING;
+          Debug_LogMeasDone();
+        }
         break;
       }
 
       /* Critical sensor error - retry or send partial data */
       if (measCtx.state == MEAS_ERROR)
       {
-        /* No sensors available at all - send error status immediately */
+        /* No sensors available at all - send error status after slot delay */
         if (measCtx.sensorsInitialized == 0)
         {
-          OutdoorStation_SendMeasurementData();
-          outLink.state = OUT_LINK_TX_SENDING;
-
-          Debug_LogMeasNoSensors();
-
+          if (OutdoorStation_TrySendAfterSlot() != 0U)
+          {
+            outLink.state = OUT_LINK_TX_SENDING;
+            Debug_LogMeasNoSensors();
+          }
           break;
         }
 
@@ -283,10 +301,11 @@ void OutdoorStation_Process(void)
         }
         else
         {
-          /* Max retries exhausted - send whatever data we have with error flags */
-          OutdoorStation_SendMeasurementData();
-          outLink.state = OUT_LINK_TX_SENDING;
-          Debug_LogMeasMaxRetries();
+          if (OutdoorStation_TrySendAfterSlot() != 0U)
+          {
+            outLink.state = OUT_LINK_TX_SENDING;
+            Debug_LogMeasMaxRetries();
+          }
         }
         break;
       }
@@ -294,22 +313,22 @@ void OutdoorStation_Process(void)
       /* Measurement timeout guard */
       if ((HAL_GetTick() - outLink.meas_start_tick) > OUTDOOR_MEAS_TIMEOUT_MS)
       {
-        OutdoorStation_SendMeasurementData();
-        outLink.state = OUT_LINK_TX_SENDING;
-
-        Debug_LogMeasTimeout();
-
+        if (OutdoorStation_TrySendAfterSlot() != 0U)
+        {
+          outLink.state = OUT_LINK_TX_SENDING;
+          Debug_LogMeasTimeout();
+        }
       }
       break;
 
     case OUT_LINK_TX_SENDING:
-      /* Poll NRF status for missed IRQ during TX */
+      /* Poll NRF status and handle TX IRQ immediately (avoid deferring past timeout). */
       if (!outLink.tx_done)
       {
         uint8_t st = NRF24_GetStatus(&nrf);
         if (st & (NRF24_STATUS_TX_DS | NRF24_STATUS_MAX_RT))
         {
-          outLink.irq_flag = 1;
+          OutdoorStation_HandleIRQ();
         }
       }
 
@@ -319,30 +338,61 @@ void OutdoorStation_Process(void)
         outLink.tx_done = 0;
         outLink.tx_in_progress = 0;
 
-        Debug_LogNrfTxResult(outLink.tx_ok);
+        if (outLink.tx_ok)
+        {
+          Debug_LogNrfTxResult(1U);
+#if USE_LED_INDICATOR
+          Outdoor_LedOff();
+#endif
+#if USE_TIMER_PROFILING
+          Debug_LogElapsedMs(HAL_GetTick() - outLink.tx_start_tick);
+#endif
+          OutdoorStation_StartReceive();
+          outLink.state = OUT_LINK_IDLE;
+          break;
+        }
+
+        /* No ACK — retry a few times before recovery (Indoor may still be switching to RX). */
+        Debug_LogNrfTxResult(0U);
+        if (outLink.tx_attempt_count < NRF_TX_MAX_ATTEMPTS)
+        {
+          OutdoorStation_SendMeasurementData();
+          break;
+        }
 
 #if USE_LED_INDICATOR
         Outdoor_LedOff();
 #endif
-
 #if USE_TIMER_PROFILING
         Debug_LogElapsedMs(HAL_GetTick() - outLink.tx_start_tick);
 #endif
-
         OutdoorStation_StartReceive();
         outLink.state = OUT_LINK_IDLE;
         break;
       }
 
-      /* TX timeout - hardware did not respond */
+      /* TX timeout - hardware did not assert TX_DS/MAX_RT */
       if (outLink.tx_in_progress && (HAL_GetTick() - outLink.tx_start_tick) > NRF_TX_TIMEOUT_MS)
       {
+        uint8_t st = NRF24_GetStatus(&nrf);
+        outLink.last_status = st;
+        if (st & (NRF24_STATUS_TX_DS | NRF24_STATUS_MAX_RT))
+        {
+          OutdoorStation_HandleIRQ();
+          break;
+        }
 
         Debug_LogNrfTimeout();
-
+        Debug_LogHex("LOG:NRF:TX_STATUS=", st);
 #if USE_TIMER_PROFILING
         Debug_LogElapsedMs(HAL_GetTick() - outLink.tx_start_tick);
 #endif
+
+        if (outLink.tx_attempt_count < NRF_TX_MAX_ATTEMPTS)
+        {
+          OutdoorStation_SendMeasurementData();
+          break;
+        }
 
         outLink.state = OUT_LINK_RECOVERY;
       }
@@ -481,16 +531,17 @@ static HAL_StatusTypeDef OutdoorStation_InitCommunication(void)
 
     /* Configure addresses (multiceiver - derived from NODE_ID) */
     NRF24_SetTXAddress(&nrf, NRF_TX_ADDR, 5);
-    NRF24_SetRXAddress(&nrf, 0, NRF_TX_ADDR, 5);
-    NRF24_SetRXAddress(&nrf, 1, NRF_RX_ADDR, 5);
+    NRF24_SetRXAddress(&nrf, 0, NRF_TX_ADDR, 5);              /* Pipe 0: ACK for replies */
+    NRF24_SetRXAddress(&nrf, NRF_PIPE_CMD, NRF_BROADCAST_ADDR, 5); /* Pipe 1: shared cmds */
 
     /* Configure pipes */
     NRF24_SetAutoAck(&nrf, 0, 1);
-    NRF24_SetAutoAck(&nrf, 1, 1);
+    /* EN_AA=1: Indoor uses WritePayloadNoAck so NO_ACK suppresses ACK; EN_AA=0 breaks RX on many clones. */
+    NRF24_SetAutoAck(&nrf, NRF_PIPE_CMD, 1);
     NRF24_EnablePipe(&nrf, 0, 1);
-    NRF24_EnablePipe(&nrf, 1, 1);
+    NRF24_EnablePipe(&nrf, NRF_PIPE_CMD, 1);
     NRF24_SetPayloadSize(&nrf, 0, NRF_PAYLOAD_SIZE);
-    NRF24_SetPayloadSize(&nrf, 1, NRF_CMD_SIZE);
+    NRF24_SetPayloadSize(&nrf, NRF_PIPE_CMD, NRF_CMD_SIZE);
 
     Debug_LogNrfInit(1U);
     Debug_LogNrfListening();
@@ -568,19 +619,50 @@ static void OutdoorStation_HandleIRQ(void)
   uint8_t status = NRF24_GetStatus(&nrf);
   outLink.last_status = status;
 
-  /* Drain RX FIFO — hardware ACK can occur before MCU reads the command */
-  while (status & NRF24_STATUS_RX_DR)
+  /* Drain RX FIFO — RX_DR alone is not a reliable "FIFO empty" indicator. */
+  while ((NRF24_GetFIFOStatus(&nrf) & NRF24_FIFO_RX_EMPTY) == 0U)
   {
-    uint8_t rx_data[NRF_CMD_SIZE];
-    NRF24_ReadPayload(&nrf, rx_data, NRF_CMD_SIZE);
-    NRF24_ClearIRQ(&nrf, NRF24_STATUS_RX_DR);
-
-    if (rx_data[0] == CMD_MEASURE)
-    {
-      outLink.cmd_received = 1;
-    }
     status = NRF24_GetStatus(&nrf);
+    uint8_t pipe = (status >> 1U) & 0x07U;
+    uint8_t payload_len = (pipe == 0U) ? NRF_PAYLOAD_SIZE : NRF_CMD_SIZE;
+    uint8_t rx_data[NRF24_MAX_PAYLOAD_SIZE];
+
+    NRF24_ReadPayload(&nrf, rx_data, payload_len);
+
+    if (pipe != NRF_PIPE_CMD)
+    {
+      Debug_LogValue("LOG:NRF:RX_DROP_PIPE=", (int32_t)pipe);
+      continue;
+    }
+
+    uint8_t cycle_id = 0U;
+    uint8_t target_mask = WS_CMD_TARGET_ALL;
+    if (!WS_Cmd_DecodeMeasureEx(rx_data, NRF_CMD_SIZE, &cycle_id, &target_mask))
+    {
+      Debug_Log("LOG:NRF:RX_DROP_DECODE");
+    }
+    else
+    {
+      uint8_t node_bit = (uint8_t)(1U << NODE_ID);
+      Debug_LogNrfRxCmd();
+      if ((target_mask != WS_CMD_TARGET_ALL) && ((target_mask & node_bit) == 0U))
+      {
+        Debug_Log("LOG:NRF:RX_DROP_MASK");
+      }
+      else if (WS_Cmd_IsDuplicateCycle(cycle_id, outLink.last_cycle_id, outLink.have_last_cycle_id))
+      {
+        Debug_Log("LOG:NRF:RX_DROP_DUP");
+      }
+      else
+      {
+        outLink.last_cycle_id = cycle_id;
+        outLink.have_last_cycle_id = 1U;
+        outLink.cmd_received = 1;
+      }
+    }
   }
+  NRF24_ClearIRQ(&nrf, NRF24_STATUS_RX_DR);
+  status = NRF24_GetStatus(&nrf);
 
   /* TX complete (ACK received) */
   if (status & NRF24_STATUS_TX_DS)
@@ -624,14 +706,42 @@ static void OutdoorStation_SendMeasurementData(void)
   outLink.tx_done = 0;
   outLink.tx_ok = 0;
   outLink.tx_in_progress = 1;
+  outLink.tx_attempt_count++;
   outLink.tx_start_tick = HAL_GetTick();
 
-  /* Configure and send */
+  /* Re-assert reply address (Pipe0 must match TX_ADDR for Auto-ACK). */
   NRF24_SetMode(&nrf, NRF24_MODE_STANDBY);
+  NRF24_SetTXAddress(&nrf, NRF_TX_ADDR, 5);
+  NRF24_SetRXAddress(&nrf, 0, NRF_TX_ADDR, 5);
   NRF24_FlushTX(&nrf);
   NRF24_ClearIRQ(&nrf, NRF24_STATUS_IRQ_MASK);
   NRF24_WritePayload(&nrf, wire, NRF_PAYLOAD_SIZE);
   NRF24_SetMode(&nrf, NRF24_MODE_TX);
+}
+
+/**
+ * @brief   Arms NODE_ID response slot and sends when the slot is due
+ * @retval  1U  TX was started
+ * @retval  0U  Still waiting for the staggered response window
+ * @details First call arms tx_ready_tick using NRF_RESPONSE_BASE_MS and
+ *          NODE_ID * NRF_RESPONSE_SLOT_MS; subsequent calls start TX once due.
+ */
+static uint8_t OutdoorStation_TrySendAfterSlot(void)
+{
+  if (!outLink.tx_delay_armed)
+  {
+    outLink.tx_delay_armed = 1U;
+    /* Base delay: Indoor must leave broadcast TX and enter Multiceiver RX. */
+    outLink.tx_ready_tick = HAL_GetTick() + NRF_RESPONSE_BASE_MS + (NODE_ID * NRF_RESPONSE_SLOT_MS);
+  }
+
+  if (HAL_GetTick() < outLink.tx_ready_tick)
+  {
+    return 0U;
+  }
+
+  OutdoorStation_SendMeasurementData();
+  return 1U;
 }
 
 /**
@@ -648,7 +758,12 @@ static void OutdoorStation_InitLink(void)
   outLink.meas_started = 0U;
   outLink.meas_retry_count = 0U;
   outLink.last_status = 0U;
+  outLink.last_cycle_id = 0U;
+  outLink.have_last_cycle_id = 0U;
+  outLink.tx_delay_armed = 0U;
+  outLink.tx_attempt_count = 0U;
   outLink.tx_start_tick = 0U;
   outLink.meas_start_tick = 0U;
+  outLink.tx_ready_tick = 0U;
   outLink.state = OUT_LINK_IDLE;
 }

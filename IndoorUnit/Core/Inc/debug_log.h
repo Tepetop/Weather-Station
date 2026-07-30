@@ -97,6 +97,11 @@ void Debug_LogNrfTxStart(uint8_t node_idx);
 void Debug_LogNrfTxResult(uint8_t success);
 
 /**
+ * @brief Log NRF NoAck TX success (TX_DS without peer ACK)
+ */
+void Debug_LogNrfTxNoAck(void);
+
+/**
  * @brief Log NRF RX data received
  * @param[in] node_idx Node index data came from
  */
@@ -144,6 +149,7 @@ void Debug_LogBoot(void);
 #define Debug_LogRtcAlarm2()
 #define Debug_LogNrfTxStart(node_idx)
 #define Debug_LogNrfTxResult(success)
+#define Debug_LogNrfTxNoAck()
 #define Debug_LogNrfRxData(node_idx)
 #define Debug_LogNrfTimeout(is_tx)
 #define Debug_LogMenuAction(action_name)

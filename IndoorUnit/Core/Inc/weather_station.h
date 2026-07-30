@@ -102,6 +102,7 @@ typedef struct {
   uint32_t rx_timeout_ms;        /**< RX response timeout (ms) */
   uint32_t comm_watchdog_timeout_ms; /**< Max allowed time without valid RX data (ms) */
   UART_HandleTypeDef *huart_pico;/**< UART handle for Pico W CSV output (can be NULL) */
+  const uint8_t *broadcast_addr; /**< 5-byte broadcast TX address for parallel cycles */
 } WS_RuntimeConfig_t;
 
 /**
@@ -137,8 +138,16 @@ typedef struct {
   DS3231_DateTime last_successful_rx_time; /**< RTC date/time of last valid measurement */
   volatile uint8_t last_successful_rx_time_valid; /**< 1 when last_successful_rx_time is valid */
   volatile uint8_t comm_watchdog_tripped; /**< 1 when communication watchdog timed out */
-  uint8_t cycle_nodes_remaining;       /**< Nodes left in scheduled multi-node cycle */
+  uint8_t cycle_nodes_remaining;       /**< Nodes left in scheduled multi-node cycle (legacy sequential) */
   uint32_t next_measure_earliest_tick; /**< Earliest tick for next TX in a multi-node cycle */
+  uint8_t cycle_id;                    /**< Current/last broadcast measure cycle id */
+  uint8_t expected_mask;               /**< Bitmask of nodes expected in parallel cycle */
+  uint8_t received_mask;               /**< Bitmask of nodes that replied in parallel cycle */
+  uint8_t cycle_pending;               /**< 1 when a parallel cycle is queued */
+  uint8_t parallel_cycle;              /**< 1 while a parallel broadcast cycle is active */
+  uint8_t cycle_tx_done;               /**< 1 when broadcast command TX_DS was observed */
+  uint32_t cycle_tx_start_tick;        /**< Tick when broadcast TX started */
+  uint32_t cycle_rx_start_tick;        /**< Tick when waiting for parallel replies started */
   WS_AppState_t app_state;             /**< Current application state */
   WS_NodeState_t nodes[WS_MAX_NODES];  /**< Array of node state structures */
 } WS_Manager_t;
@@ -208,11 +217,10 @@ bool WS_ShouldFallbackToStatusRead(const WS_Manager_t *ctx);
 void WS_RequestMeasurementForActiveNode(WS_Manager_t *ctx);
 
 /**
- * @brief Requests measurements from all outdoor nodes in sequence
+ * @brief Requests measurements from all outdoor nodes in one parallel cycle
  * @param[in,out] ctx Manager context
- * @details Starts a round-robin cycle at the current active node. After each
- *          successful response the next node is queued automatically until all
- *          nodes in node_count have been polled.
+ * @details Queues a single broadcast measure command (NoAck). Outdoor replies
+ *          are collected concurrently on MultiCeiver RX pipes 1..N.
  */
 void WS_RequestMeasurementCycle(WS_Manager_t *ctx);
 

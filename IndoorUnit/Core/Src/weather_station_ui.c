@@ -1,3 +1,11 @@
+/**
+ * @file    weather_station_ui.c
+ * @brief   Indoor weather station user interface implementation
+ * @details Renders PCD8544 LCD views (menu, charts, station status, RTC edit,
+ *          screen saver) and drives the UI state machine. Integrates encoder
+ *          input, chart data buffering, and weather-station manager callbacks.
+ */
+
 #include "weather_station_ui.h"
 
 #include "debug_log.h"
@@ -887,7 +895,7 @@ void WS_UI_TakeMeasurement(void) {
   if (WS_UI.ws_ctx == NULL) {
     return;
   }
-  WS_RequestMeasurementForActiveNode(WS_UI.ws_ctx);
+  WS_RequestMeasurementCycle(WS_UI.ws_ctx);
 }
 
 /**

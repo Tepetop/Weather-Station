@@ -1,42 +1,45 @@
-/*
- * button_debounce.c
- *
- *  Created on: Sep 6, 2024
- *      Author: remik
+/**
+ * @file    button_debounce.c
+ * @brief   GPIO button debounce library implementation
+ * @details Active-low button state machine with debounce, long-press, and
+ *          repeat timing. Supports polling and EXTI interrupt modes.
  */
+
 #include "main.h"
 #include "button_debounce.h"
 
 /**
- * @desc    Button init
- *
- * @param   Key - button struct, other variables are easy to understand
- * @param   IOMode - BUTTON_MODE_POLLING or BUTTON_MODE_INTERRUPT
- *
- * @return  void
+ * @brief   Initializes a button instance
+ * @param   Key             Button handle to initialize
+ * @param   GpioPort        GPIO port of the button
+ * @param   GpioPin         GPIO pin of the button
+ * @param   TimerDebounce   Debounce time in milliseconds
+ * @param   TimerLongPress  Long-press threshold in milliseconds
+ * @param   TimerRepeat     Repeat interval in milliseconds
+ * @param   IOMode          BUTTON_MODE_POLLING or BUTTON_MODE_INTERRUPT
+ * @retval  None
  */
 void ButtonInitKey(Button_t* Key, GPIO_TypeDef* GpioPort, uint16_t GpioPin, uint32_t TimerDebounce,
 					uint32_t TimerLongPress, uint32_t TimerRepeat, BUTTON_IO_MODE IOMode)
 {
-	Key->State = IDLE; // Set initial state for the button
-	Key->IOMode = IOMode; // Set IO Mode (Polling or Interrupt)
+	Key->State = IDLE;
+	Key->IOMode = IOMode;
 
-	Key->GpioPort = GpioPort; // Remember GPIO Port for the button
-	Key->GpioPin = GpioPin; // Remember GPIO Pin for the button
+	Key->GpioPort = GpioPort;
+	Key->GpioPin = GpioPin;
 
-	Key->TimerDebounce = TimerDebounce; // Remember Debounce Time for the button
-	Key->TimerLongPress = TimerLongPress; // Remember Long Press Time for the button
-	Key->TimerRepeat = TimerRepeat; // Remember Repeat Time for the button
+	Key->TimerDebounce = TimerDebounce;
+	Key->TimerLongPress = TimerLongPress;
+	Key->TimerRepeat = TimerRepeat;
 	
-	Key->InterruptFlag = 0; // Clear interrupt flag
+	Key->InterruptFlag = 0;
 }
 
 /**
- * @desc    Setting the time of debounce
- *
- * @param   Key - button struct, other variables are easy to understand
- *
- * @return  void
+ * @brief   Sets debounce duration
+ * @param   Key          Button handle
+ * @param   Milliseconds Debounce time in milliseconds
+ * @retval  None
  */
 void ButtonSetDebounceTime(Button_t* Key, uint32_t Milliseconds)
 {
@@ -44,11 +47,10 @@ void ButtonSetDebounceTime(Button_t* Key, uint32_t Milliseconds)
 }
 
 /**
- * @desc    Setting the time of a long button press
- *
- * @param   Key - button struct, other variables are easy to understand
- *
- * @return  void
+ * @brief   Sets long-press threshold
+ * @param   Key          Button handle
+ * @param   Milliseconds Long-press time in milliseconds
+ * @retval  None
  */
 void ButtonSetLongPressTime(Button_t* Key, uint32_t Milliseconds)
 {
@@ -56,11 +58,10 @@ void ButtonSetLongPressTime(Button_t* Key, uint32_t Milliseconds)
 }
 
 /**
- * @desc    Setting the time of a repeat time delay
- *
- * @param   Key - button struct, other variables are easy to understands
- *
- * @return  void
+ * @brief   Sets repeat interval while button is held
+ * @param   Key          Button handle
+ * @param   Milliseconds Repeat interval in milliseconds
+ * @retval  None
  */
 void ButtonSetRepeatTime(Button_t* Key, uint32_t Milliseconds)
 {
@@ -68,11 +69,10 @@ void ButtonSetRepeatTime(Button_t* Key, uint32_t Milliseconds)
 }
 
 /**
- * @desc    Assigning a callback for the press function
- *
- * @param   Key - button struct, pointer to callback
- *
- * @return  void
+ * @brief   Registers callback for stable press event
+ * @param   Key       Button handle
+ * @param   Callback  Function to call on press (may be NULL)
+ * @retval  None
  */
 void ButtonRegisterPressCallback(Button_t* Key, void (*Callback)(void))
 {
@@ -80,11 +80,10 @@ void ButtonRegisterPressCallback(Button_t* Key, void (*Callback)(void))
 }
 
 /**
- * @desc    Assigning a callback for the long press function
- *
- * @param   Key - button struct, pointer to callback
- *
- * @return  void
+ * @brief   Registers callback for long-press event
+ * @param   Key       Button handle
+ * @param   Callback  Function to call on long press (may be NULL)
+ * @retval  None
  */
 void ButtonRegisterLongPressCallback(Button_t* Key, void (*Callback)(void))
 {
@@ -92,11 +91,10 @@ void ButtonRegisterLongPressCallback(Button_t* Key, void (*Callback)(void))
 }
 
 /**
- * @desc    Assigning a callback for the repeat press function
- *
- * @param   Key - button struct, pointer to callback
- *
- * @return  void
+ * @brief   Registers callback for repeat-while-held event
+ * @param   Key       Button handle
+ * @param   Callback  Function to call on each repeat (may be NULL)
+ * @retval  None
  */
 void ButtonRegisterRepeatCallback(Button_t* Key, void (*Callback)(void))
 {
@@ -104,11 +102,10 @@ void ButtonRegisterRepeatCallback(Button_t* Key, void (*Callback)(void))
 }
 
 /**
- * @desc    Assigning a callback for the button release callback
- *
- * @param   Key - button struct, pointer to callback
- *
- * @return  void
+ * @brief   Registers callback for release event
+ * @param   Key       Button handle
+ * @param   Callback  Function to call on release (may be NULL)
+ * @retval  None
  */
 void ButtonRegisterReleaseCalllback(Button_t* Key, void(*Callback)(void))
 {
@@ -116,11 +113,9 @@ void ButtonRegisterReleaseCalllback(Button_t* Key, void(*Callback)(void))
 }
 
 /**
- * @desc    Check if button is pressed
- *
- * @param   Key - button struct
- *
- * @return  void
+ * @brief   Returns whether the button is currently pressed (active low)
+ * @param   Key  Button handle
+ * @retval  1 if pressed, 0 if released
  */
 static uint8_t ButtonIsPressed(Button_t* Key)
 {
@@ -128,200 +123,168 @@ static uint8_t ButtonIsPressed(Button_t* Key)
 }
 
 /**
- * @desc    Button idle routine
- *
- * @param   Key - button struct
- *
- * @return  void
+ * @brief   IDLE state handler: detect press or interrupt flag
+ * @param   Key  Button handle
+ * @retval  None
  */
 static void ButtonIdleRoutine(Button_t* Key)
 {
-	// In INTERRUPT mode, wait for interrupt flag
 	if(Key->IOMode == BUTTON_MODE_INTERRUPT)
 	{
 		if(Key->InterruptFlag)
 		{
-			Key->State = DEBOUNCE; // Jump to DEBOUNCE State
-			Key->LastTick = HAL_GetTick(); // Remember current tick for Debounce software timer
+			Key->State = DEBOUNCE;
+			Key->LastTick = HAL_GetTick();
 		}
 	}
-	else // POLLING mode
+	else
 	{
-		// Check if button was pressed
 		if(ButtonIsPressed(Key))
 		{
-			// Button was pressed for the first time
-			Key->State = DEBOUNCE; // Jump to DEBOUNCE State
-			Key->LastTick = HAL_GetTick(); // Remember current tick for Debounce software timer
+			Key->State = DEBOUNCE;
+			Key->LastTick = HAL_GetTick();
 		}
 	}
 }
 
 /**
- * @desc    Button debounce function, if button is sill pressed after delay go to next routine
- *
- * @param   Key - button struct
- *
- * @return  void
+ * @brief   DEBOUNCE state handler: wait for stable press
+ * @param   Key  Button handle
+ * @retval  None
  */
 static void ButtonDebounceRoutine(Button_t* Key)
 {
-	// Wait for Debounce Timer elapsed
 	if((HAL_GetTick() - Key->LastTick) > Key->TimerDebounce)
 	{
-		// After Debounce Timer elapsed check if button is still pressed
 		if(ButtonIsPressed(Key))
 		{
 			if(Key->IOMode == BUTTON_MODE_INTERRUPT)
 			{
-				Key->InterruptFlag = 0; // Clear latched interrupt after debounce validation
+				Key->InterruptFlag = 0;
 			}
 
-			// Still pressed
-			Key->State = PRESSED; // Jump to PRESSED state
-			Key->LastTick = HAL_GetTick(); // Remember current tick for Long Press action
+			Key->State = PRESSED;
+			Key->LastTick = HAL_GetTick();
 
-			if(Key->ButtonPressed != NULL) // Check if callback for pressed button exists
+			if(Key->ButtonPressed != NULL)
 			{
-				Key->ButtonPressed(); // If exists - do the callback function
+				Key->ButtonPressed();
 			}
 		}
 		else
 		{
 			if(Key->IOMode == BUTTON_MODE_INTERRUPT)
 			{
-				Key->InterruptFlag = 0; // Drop stale interrupt when press was not stable
+				Key->InterruptFlag = 0;
 			}
 
-			// If button was released during debounce time
-			Key->State = IDLE; // Go back do IDLE state
+			Key->State = IDLE;
 		}
 	}
 }
 
 /**
- * @desc    Button pressed routine, if button is pressed go to repeat routine or do longpress routine
- *
- * @param   Key - button struct
- *
- * @return  void
+ * @brief   PRESSED state handler: detect release or long press
+ * @param   Key  Button handle
+ * @retval  None
  */
 static void ButtonPressedRoutine(Button_t* Key)
 {
-	// Check if button was released
 	if(!ButtonIsPressed(Key))
 	{
 		Key->InterruptFlag = 0;
 #if BUTTON_RELEASE_ACTION
-		// If released go to RELEASE state
 		Key->State = RELEASE;
 #else
-		// If released - go back to IDLE state
 		Key->State = IDLE;
 #endif
 	}
 	else
 	{
-		// If button is still pressed
-		if((HAL_GetTick() - Key->LastTick) > Key->TimerLongPress) // Check if Long Press Timer elapsed
+		if((HAL_GetTick() - Key->LastTick) > Key->TimerLongPress)
 		{
-			Key->State = REPEAT; // Jump to REPEAT State
-			Key->LastTick = HAL_GetTick(); // Remember current tick for Repeat Timer
+			Key->State = REPEAT;
+			Key->LastTick = HAL_GetTick();
 
-			if(Key->ButtonLongPressed != NULL) // Check if callback for Long Press exists
+			if(Key->ButtonLongPressed != NULL)
 			{
-				Key->ButtonLongPressed(); // If exists - do the callback function
+				Key->ButtonLongPressed();
 			}
 		}
 	}
 }
 
 /**
- * @desc   Button repeat routine, if button is held for certain time execute this function
- *
- * @param   Key - button struct
- *
- * @return  void
+ * @brief   REPEAT state handler: fire repeat callback while held
+ * @param   Key  Button handle
+ * @retval  None
  */
 static void ButtonRepeatRoutine(Button_t* Key)
 {
-	// Check if button was released
 	if(!ButtonIsPressed(Key))
 	{
 		Key->InterruptFlag = 0;
 #if BUTTON_RELEASE_ACTION
-		// If released go to RELEASE state
 		Key->State = RELEASE;
 #else
-		// If released - go back to IDLE state
 		Key->State = IDLE;
 #endif
 	}
 	else
 	{
-		// If button is still pressed
-		if((HAL_GetTick() - Key->LastTick) > Key->TimerRepeat) // Check if Repeat Timer elapsed
+		if((HAL_GetTick() - Key->LastTick) > Key->TimerRepeat)
 		{
-			Key->LastTick = HAL_GetTick(); // Reload last tick for next Repeat action
+			Key->LastTick = HAL_GetTick();
 
-			if(Key->ButtonRepeat != NULL) // Check if callback for repeat action exists
+			if(Key->ButtonRepeat != NULL)
 			{
-				Key->ButtonRepeat(); // If exists - do the callback function
+				Key->ButtonRepeat();
 			}
 		}
 	}
 }
 
 /**
- * @desc   Button release routine, execute after release the button
- *
- * @param   Key - button struct
- *
- * @return  void
+ * @brief   RELEASE state handler: invoke release callback
+ * @param   Key  Button handle
+ * @retval  None
  */
 static void ButtonReleaseRoutine(Button_t* Key)
 {
 	Key->State = IDLE;
 
-	if(Key->ButtonRelease != NULL) // Check if callback for release action exists
+	if(Key->ButtonRelease != NULL)
 		{
-			Key->ButtonRelease(); // If exists - do the callback function
+			Key->ButtonRelease();
 		}
 }
 
 /**
- * @desc   Button state machine
- *
- * @param   Key - button struct
- *
- * @return  void
+ * @brief   Runs one step of the button state machine
+ * @param   Key  Button handle
+ * @retval  None
  */
 void ButtonTask(Button_t* Key)
 {
 	switch(Key->State)
 	{
 		case IDLE:
-			// do IDLE
 			ButtonIdleRoutine(Key);
 			break;
 
 		case DEBOUNCE:
-			// do DEBOUNCE
 			ButtonDebounceRoutine(Key);
 			break;
 
 		case PRESSED:
-			// do PRESSED
 			ButtonPressedRoutine(Key);
 			break;
 
 		case REPEAT:
-			// do REPEAT
 			ButtonRepeatRoutine(Key);
 			break;
 
 		case RELEASE:
-			// do RELEASE
 			ButtonReleaseRoutine(Key);
 			break;
 
@@ -331,21 +294,16 @@ void ButtonTask(Button_t* Key)
 }
 
 /**
- * @desc   Button interrupt handler - call this function from GPIO EXTI interrupt
- *         This function should be called from HAL_GPIO_EXTI_Callback
- *         Automatically checks if the interrupt is for the button's GPIO pin
- *
- * @param   Key - button struct
- * @param   GPIO_Pin - pin that triggered the interrupt (from HAL_GPIO_EXTI_Callback)
- *
- * @return  void
+ * @brief   EXTI callback helper for interrupt mode
+ * @param   Key       Button handle
+ * @param   GPIO_Pin  Pin that triggered the interrupt
+ * @retval  None
+ * @details Call from HAL_GPIO_EXTI_Callback. Latches an event only when idle.
  */
 void ButtonIRQHandler(Button_t* Key, uint16_t GPIO_Pin)
 {
-	// Latch a new event only while idle to avoid stale interrupts from contact bounce
 	if(Key->IOMode == BUTTON_MODE_INTERRUPT && GPIO_Pin == Key->GpioPin && Key->State == IDLE)
 	{
-		// Set flag to be processed in ButtonTask
 		Key->InterruptFlag = 1;
 	}
 }

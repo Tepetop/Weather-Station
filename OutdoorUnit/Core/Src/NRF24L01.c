@@ -1,3 +1,12 @@
+/**
+ * @file    NRF24L01.c
+ * @brief   nRF24L01+ 2.4 GHz transceiver driver (SPI)
+ * @details STM32 HAL SPI driver for Nordic nRF24L01(+). Provides register
+ *          access, TX/RX payload handling, IRQ processing, and radio
+ *          configuration (channel, data rate, PA level, pipes, CRC).
+ *          Static helpers manage CSN/CE timing and SPI transfers.
+ */
+
 #include "NRF24L01.h"
 #include <string.h>
 

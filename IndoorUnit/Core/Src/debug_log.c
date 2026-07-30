@@ -156,6 +156,10 @@ void Debug_LogNrfTxResult(uint8_t success) {
   }
 }
 
+void Debug_LogNrfTxNoAck(void) {
+  Debug_Log("LOG:NRF:TX_OK (NoAck sent)");
+}
+
 void Debug_LogNrfRxData(uint8_t node_idx) {
   Debug_LogValue("NRF:RX_DATA from node=", node_idx);
 }
@@ -170,6 +174,7 @@ void Debug_LogNrfTimeout(uint8_t is_tx) {
 #else
 void Debug_LogNrfTxStart(uint8_t node_idx) { (void)node_idx; }
 void Debug_LogNrfTxResult(uint8_t success) { (void)success; }
+void Debug_LogNrfTxNoAck(void) {}
 void Debug_LogNrfRxData(uint8_t node_idx) { (void)node_idx; }
 void Debug_LogNrfTimeout(uint8_t is_tx) { (void)is_tx; }
 #endif

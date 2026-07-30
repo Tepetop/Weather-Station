@@ -11,6 +11,11 @@ import re
 import time
 
 try:
+    import gc
+except ImportError:  # pragma: no cover
+    gc = None
+
+try:
     import orjson as json  # type: ignore[import-not-found]
 except ImportError:
     import json
@@ -694,6 +699,11 @@ class Response:
                         raise
                 if hasattr(iter, 'aclose'):  # pragma: no branch
                     await iter.aclose()  # type: ignore[attr-defined]
+            elif hasattr(self.body, 'close'):  # pragma: no cover
+                # Ensure file/generator cleanup for HEAD responses.
+                result = self.body.close()
+                if iscoroutine(result):
+                    await result
 
         except OSError as exc:  # pragma: no cover
             if exc.errno in MUTED_SOCKET_ERRORS or \
@@ -1395,31 +1405,58 @@ class Microdot:
 
     async def handle_request(self, reader, writer):
         req = None
+        res = None
         try:
-            req = await Request.create(self, reader, writer,
-                                       writer.get_extra_info('peername'))
-        except OSError as exc:  # pragma: no cover
-            if exc.errno in MUTED_SOCKET_ERRORS:
-                pass
-            else:
-                raise
-        except Exception as exc:  # pragma: no cover
-            print_exception(exc)
+            try:
+                req = await Request.create(self, reader, writer,
+                                           writer.get_extra_info('peername'))
+            except OSError as exc:  # pragma: no cover
+                if exc.errno in MUTED_SOCKET_ERRORS:
+                    pass
+                else:
+                    raise
+            except Exception as exc:  # pragma: no cover
+                print_exception(exc)
 
-        res = await self.dispatch_request(req)
-        try:
-            if res != Response.already_handled:  # pragma: no branch
-                await res.write(writer)
-            await writer.aclose()
-        except OSError as exc:  # pragma: no cover
-            if exc.errno in MUTED_SOCKET_ERRORS:
+            try:
+                res = await self.dispatch_request(req)
+            except MemoryError:  # pragma: no cover
+                if gc is not None:
+                    gc.collect()
+                res = Response(b'oom', status_code=503,
+                               headers={'Content-Type': 'text/plain'})
+
+            try:
+                if res != Response.already_handled:  # pragma: no branch
+                    await res.write(writer)
+            except MemoryError:  # pragma: no cover
+                if gc is not None:
+                    gc.collect()
+            except OSError as exc:  # pragma: no cover
+                if exc.errno in MUTED_SOCKET_ERRORS:
+                    pass
+                else:
+                    raise
+            if self.debug and req:  # pragma: no cover
+                print('{method} {path} {status_code}'.format(
+                    method=req.method, path=req.path,
+                    status_code=res.status_code))
+        finally:
+            try:
+                await writer.aclose()
+            except Exception:  # pragma: no cover
                 pass
-            else:
-                raise
-        if self.debug and req:  # pragma: no cover
-            print('{method} {path} {status_code}'.format(
-                method=req.method, path=req.path,
-                status_code=res.status_code))
+            if res is not None and res != Response.already_handled:
+                body = getattr(res, 'body', None)
+                if body is not None and hasattr(body, 'close'):
+                    try:
+                        result = body.close()
+                        if iscoroutine(result):  # pragma: no cover
+                            await result
+                    except Exception:  # pragma: no cover
+                        pass
+            req = None
+            res = None
 
     def get_request_handlers(self, req, attr, local_first=True):
         handlers = getattr(self, attr + '_handlers')
@@ -1507,6 +1544,11 @@ class Microdot:
                         # if the route is not found, return a 404 or 405
                         # response as appropriate
                         res = await self.error_response(req, f, 'Not found')
+                except MemoryError:  # pragma: no cover
+                    if gc is not None:
+                        gc.collect()
+                    res = Response(b'oom', status_code=503,
+                                   headers={'Content-Type': 'text/plain'})
                 except HTTPException as exc:
                     # an HTTP exception was raised while handling this request
                     res = await self.error_response(req, exc.status_code,

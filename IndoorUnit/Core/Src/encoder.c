@@ -1,20 +1,13 @@
+/**
+ * @file    encoder.c
+ * @brief   Rotary encoder driver for STM32 timer encoder mode
+ * @details The hardware timer counts on input edges (TI1/TI2). Direction is
+ *          read from the CR1.DIR bit via __HAL_TIM_IS_TIM_COUNTING_DOWN().
+ *          Signed 16-bit counter deltas handle wrap-around correctly.
+ */
+
 #include "encoder.h"
 #include <stdint.h>
-
-/* ═══════════════════════════════════════════════════════════════════════════
- *  Encoder library for STM32 timer in encoder mode.
- *
- *  The hardware timer counts automatically on input edges:
- *    • Pin A (TI1) edges   → counter increments  (DIR = 0, forward)
- *    • Pin B (TI2) level   → determines counting direction
- *  When the encoder reverses, the DIR bit in CR1 flips and the
- *  counter starts decrementing, so the net delta already reflects
- *  correct bidirectional movement.
- *
- *  Direction is read directly from the CR1.DIR bit via
- *  __HAL_TIM_IS_TIM_COUNTING_DOWN(), which maps to:
- *      TIMx->CR1 & TIM_CR1_DIR
- * ═══════════════════════════════════════════════════════════════════════════ */
 
 /**
  * @brief  Initialise encoder instance and start the timer in encoder mode.

@@ -1,0 +1,1172 @@
+import network
+import machine
+import time
+import os
+import json
+import asyncio
+import gc
+from microdot import Microdot, Response, send_file
+from sdcard import SDCard
+import ws_uart
+
+# Wi-Fi configuration
+SSID = "Miminet"
+PASSWORD = "21590801"
+
+# Data mode
+SIMULATE = False # Set to True to enable simulation mode (no real sensors)
+
+# UART configuration (Pico W UART1: GP4 TX, GP5 RX)
+UART_ID = 0
+UART_BAUDRATE = 115200
+UART_TX_PIN = 0
+UART_RX_PIN = 1
+MAX_UART_LINE_BYTES = 240
+UART_EXCHANGE_TIMEOUT_S = 3
+
+# API and storage settings
+RANGE_SECONDS = {
+    "1h": 3600,
+    "3h": 10800,
+    "1d": 86400,
+    "1w": 604800,
+}
+DEFAULT_RANGE = "1h"
+MAX_API_POINTS = 120
+MAX_API_AVG_POINTS = 90
+MAX_LOG_VIEW_ROWS = 60
+RAM_LIMIT_PER_STATION = 60
+RAM_LOG_LIMIT = 20
+
+# Hardware
+led = machine.Pin("LED", machine.Pin.OUT)
+led.value(0)
+uart = machine.UART(
+    UART_ID,
+    baudrate=UART_BAUDRATE,
+    tx=machine.Pin(UART_TX_PIN),
+    rx=machine.Pin(UART_RX_PIN),
+)
+
+# SD card (SPI0)
+spi = machine.SPI(0,
+                  baudrate=1000000,
+                  polarity=0,
+                  phase=0,
+                  sck=machine.Pin(18),
+                  mosi=machine.Pin(19),
+                  miso=machine.Pin(16))
+cs = machine.Pin(17, machine.Pin.OUT)
+
+SD_MOUNT = "/sd"
+LEGACY_LOG_FILE = SD_MOUNT + "/log.json"
+UART_TEXT_LOG_FILE = SD_MOUNT + "/uart_log.txt"
+SD_INIT_BAUDRATES = (1320000, 1000000, 400000, 100000)
+SD_INIT_MAX_ATTEMPTS = 3
+RAM_LOGS = []
+sd = None
+SD_WRITE_READY = False
+SD_INIT_DISABLED = False
+
+STATION_DATA = {}
+_uart_response_line = None
+_uart_cmd_lock = None
+_api_heavy_lock = None
+_MEM_FREE_MIN = None
+_sd_unavailable_count = 0
+_sd_last_error = None
+
+
+def _get_uart_cmd_lock():
+    global _uart_cmd_lock
+    if _uart_cmd_lock is None:
+        _uart_cmd_lock = asyncio.Lock()
+    return _uart_cmd_lock
+
+
+def _get_api_heavy_lock():
+    global _api_heavy_lock
+    if _api_heavy_lock is None:
+        _api_heavy_lock = asyncio.Lock()
+    return _api_heavy_lock
+
+
+def _note_mem():
+    global _MEM_FREE_MIN
+    free = gc.mem_free()
+    if _MEM_FREE_MIN is None or free < _MEM_FREE_MIN:
+        _MEM_FREE_MIN = free
+    return free
+
+
+def _append_ram_log(entry):
+    RAM_LOGS.append(entry)
+    if len(RAM_LOGS) > RAM_LOG_LIMIT:
+        RAM_LOGS.pop(0)
+
+
+def _safe_station_id(raw_station_id):
+    return ws_uart.safe_station_id(raw_station_id)
+
+
+def _station_log_file(station_id):
+    return SD_MOUNT + "/log_" + station_id + ".json"
+
+
+def _is_sd_available():
+    try:
+        os.listdir(SD_MOUNT)
+        return True
+    except OSError:
+        return False
+
+
+def _unmount_sd():
+    try:
+        os.umount(SD_MOUNT)
+    except OSError:
+        pass
+
+
+def _mark_sd_unavailable(reason=None):
+    global sd, SD_WRITE_READY
+    if reason:
+        print("SD disconnected:", reason)
+    SD_WRITE_READY = False
+    _unmount_sd()
+    sd = None
+
+
+def _normalize_range(range_key):
+    if range_key in RANGE_SECONDS:
+        return range_key
+    return DEFAULT_RANGE
+
+
+def _parse_limit(raw_limit, fallback):
+    try:
+        limit = int(raw_limit)
+        if limit < 1:
+            return fallback
+        if limit > MAX_API_POINTS:
+            return MAX_API_POINTS
+        return limit
+    except Exception:
+        return fallback
+
+
+def _parse_non_negative_int(raw_value, fallback=0):
+    try:
+        value = int(raw_value)
+        if value < 0:
+            return fallback
+        return value
+    except Exception:
+        return fallback
+
+
+def _sanitize_error_source(raw_source):
+    source = str(raw_source).upper().strip()
+    if not source:
+        return "UNKNOWN"
+
+    allowed = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
+    cleaned = ""
+    for ch in source:
+        if ch in allowed:
+            cleaned += ch
+
+    if not cleaned:
+        return "UNKNOWN"
+    return cleaned[:24]
+
+
+def _normalize_status(raw_status):
+    status = str(raw_status).upper().strip()
+
+    if status == "OK":
+        return "OK"
+    if status == "WARN":
+        return "WARN"
+    if status == "ERR":
+        return "ERR:UNKNOWN"
+    if status.startswith("ERR:"):
+        # STM32 may send ERR:SI7021,BMP280,TSL2561
+        source = status[4:].replace(",", "_").replace(" ", "")
+        return "ERR:" + _sanitize_error_source(source)
+
+    return "WARN"
+
+
+def _status_rank(status):
+    normalized = _normalize_status(status)
+    if normalized.startswith("ERR:"):
+        return 2
+    if normalized == "WARN":
+        return 1
+    return 0
+
+
+def _add_average_field(bucket, field_name, value):
+    if value is None:
+        return
+    sum_key = field_name + "_sum"
+    count_key = field_name + "_count"
+    bucket[sum_key] = bucket.get(sum_key, 0.0) + float(value)
+    bucket[count_key] = bucket.get(count_key, 0) + 1
+
+
+def _finalize_average_bucket(bucket):
+    result = {"status": bucket.get("status", "OK")}
+    for field_name in ws_uart.SENSOR_FIELDS:
+        count = bucket.get(field_name + "_count", 0)
+        if count > 0:
+            total = bucket.get(field_name + "_sum", 0.0)
+            if field_name == "tsl2561_lux":
+                result[field_name] = int(round(total / count))
+            elif field_name in ("bmp280_press", "bme280_press"):
+                result[field_name] = round(total / count, 2)
+            else:
+                result[field_name] = round(total / count, 1)
+        else:
+            result[field_name] = None
+    return result
+
+
+def _worst_status(left, right):
+    if _status_rank(right) > _status_rank(left):
+        return right
+    return left
+
+
+def _timestamp_to_epoch(timestamp):
+    if not isinstance(timestamp, str) or len(timestamp) != 19:
+        return None
+    if timestamp[4] != "-" or timestamp[7] != "-" or timestamp[10] != "T":
+        return None
+    if timestamp[13] != ":" or timestamp[16] != ":":
+        return None
+
+    try:
+        year = int(timestamp[0:4])
+        month = int(timestamp[5:7])
+        day = int(timestamp[8:10])
+        hour = int(timestamp[11:13])
+        minute = int(timestamp[14:16])
+        second = int(timestamp[17:19])
+    except ValueError:
+        return None
+
+    try:
+        return int(time.mktime((year, month, day, hour, minute, second, 0, 0)))
+    except Exception:
+        return None
+
+
+def _downsample_entries(entries, max_points=MAX_API_POINTS):
+    total = len(entries)
+    if total <= max_points:
+        return entries
+
+    stride = (total + max_points - 1) // max_points
+    sampled = []
+    for i in range(total):
+        if i % stride == 0:
+            sampled.append(entries[i])
+
+    if sampled and sampled[-1] != entries[-1]:
+        sampled.append(entries[-1])
+    return sampled
+
+
+def _format_sensor_value(field_name, raw_value):
+    if raw_value is None:
+        return None
+    if field_name == "tsl2561_lux":
+        return int(float(raw_value))
+    if field_name in ("bmp280_press", "bme280_press"):
+        return round(float(raw_value), 2)
+    return round(float(raw_value), 1)
+
+
+def _format_entry(payload):
+    try:
+        entry = {
+            "timestamp": str(payload["timestamp"]),
+            "status": _normalize_status(payload["status"]),
+        }
+        for field_name in ws_uart.SENSOR_FIELDS:
+            entry[field_name] = _format_sensor_value(field_name, payload.get(field_name))
+    except Exception:
+        return None, None
+
+    epoch = _timestamp_to_epoch(entry["timestamp"])
+    if epoch is None:
+        return None, None
+    return entry, epoch
+
+
+def _parse_uart_measurement_line(line):
+    station_id, payload = ws_uart.parse_measurement_line(line)
+    entry, _ = _format_entry(payload)
+    if entry is None:
+        raise ValueError("invalid data payload")
+    return station_id, entry
+
+
+def _deliver_uart_response(line):
+    global _uart_response_line
+    if _uart_response_line is None:
+        _uart_response_line = line
+
+
+async def uart_exchange(cmd_line, timeout_s=UART_EXCHANGE_TIMEOUT_S):
+    global _uart_response_line
+
+    async with _get_uart_cmd_lock():
+        _uart_response_line = None
+
+        uart.write((cmd_line + "\r\n").encode())
+        try:
+            uart.flush()
+        except AttributeError:
+            pass
+
+        print("UART TX:", cmd_line)
+
+        deadline = time.ticks_add(time.ticks_ms(), int(timeout_s * 1000))
+        while time.ticks_diff(deadline, time.ticks_ms()) > 0:
+            if _uart_response_line is not None:
+                print("UART RX:", _uart_response_line)
+                return _uart_response_line
+            await asyncio.sleep_ms(10)
+
+        print("UART timeout waiting for response to:", cmd_line)
+        raise asyncio.TimeoutError()
+
+
+def _verify_sd_write_ready():
+    if not _is_sd_available():
+        return False
+
+    probe_path = SD_MOUNT + "/writecheck.tmp"
+    try:
+        with open(probe_path, "w") as f:
+            f.write("ok")
+        try:
+            os.remove(probe_path)
+        except OSError as e:
+            # Write path works; leftover probe file is non-fatal.
+            print("SD probe cleanup failed:", e)
+        return True
+    except OSError as e:
+        print("SD write probe failed:", e)
+        _append_ram_log({"kind": "sd_probe_error", "error": str(e)})
+        return False
+
+
+def mount_sd():
+    for baudrate in SD_INIT_BAUDRATES:
+        try:
+            _unmount_sd()
+            time.sleep_ms(250)
+            card = SDCard(spi, cs, baudrate=baudrate)
+            os.mount(card, SD_MOUNT)
+            if _verify_sd_write_ready():
+                print("Karta SD zamontowana w", SD_MOUNT, "(baudrate:", baudrate, ")")
+                return card
+            print("SD zapis nieudany (baudrate", baudrate, ") — sprobuj nizszy.")
+        except OSError as e:
+            print("Init SD nieudany (baudrate", baudrate, "):", e)
+
+        _unmount_sd()
+        time.sleep_ms(400)
+
+    return None
+
+
+def _init_sd_at_startup():
+    global sd, SD_WRITE_READY, SD_INIT_DISABLED
+
+    for attempt in range(1, SD_INIT_MAX_ATTEMPTS + 1):
+        print("Proba montowania karty SD:", attempt, "/", SD_INIT_MAX_ATTEMPTS)
+        card = mount_sd()
+        if card is not None:
+            sd = card
+            SD_WRITE_READY = True
+            print("SD connected and writable.")
+            return True
+
+        if attempt < SD_INIT_MAX_ATTEMPTS:
+            time.sleep_ms(800)
+
+    sd = None
+    SD_WRITE_READY = False
+    SD_INIT_DISABLED = True
+    print(
+        "Karta SD niedostepna po",
+        SD_INIT_MAX_ATTEMPTS,
+        "probach. Praca bez zapisu na SD.",
+    )
+    return False
+
+
+def _ensure_sd_ready():
+    global sd, SD_WRITE_READY
+
+    if SD_INIT_DISABLED and not SD_WRITE_READY:
+        return
+
+    if SD_WRITE_READY:
+        if not _is_sd_available():
+            _mark_sd_unavailable("card removed")
+        return
+
+    card = mount_sd()
+    if card is None:
+        sd = None
+        SD_WRITE_READY = False
+        return
+
+    sd = card
+    SD_WRITE_READY = True
+    print("SD connected and writable.")
+
+
+def _append_station_entry(station_id, entry):
+    entries = STATION_DATA.get(station_id)
+    if entries is None:
+        entries = []
+        STATION_DATA[station_id] = entries
+
+    entries.append(entry)
+    if len(entries) > RAM_LIMIT_PER_STATION:
+        entries.pop(0)
+
+
+def log_station_to_sd(station_id, entry):
+    global _sd_unavailable_count, _sd_last_error
+
+    payload = {"station_id": station_id, "timestamp": entry["timestamp"], "status": entry["status"]}
+    for field_name in ws_uart.SENSOR_FIELDS:
+        payload[field_name] = entry.get(field_name)
+
+    if not _is_sd_available():
+        _sd_unavailable_count += 1
+        _sd_last_error = "sd_unavailable"
+        return
+
+    try:
+        with open(_station_log_file(station_id), "a") as f:
+            f.write(json.dumps(payload) + "\n")
+    except OSError as e:
+        _sd_unavailable_count += 1
+        _sd_last_error = str(e)
+        _append_ram_log({"kind": "sd_write_error", "error": str(e)})
+
+
+def _handle_measurement_line(line):
+    station_id, entry = _parse_uart_measurement_line(line)
+    _append_station_entry(station_id, entry)
+    log_station_to_sd(station_id, entry)
+
+
+def log_uart_line_to_sd(line):
+    if not _is_sd_available():
+        return
+    try:
+        with open(UART_TEXT_LOG_FILE, "a") as f:
+            f.write(line + "\n")
+    except OSError as e:
+        _append_ram_log({"kind": "uart_log_write_error", "error": str(e)})
+
+
+def _entry_from_json_line(line):
+    try:
+        payload = json.loads(line)
+    except Exception:
+        return None, None
+
+    if not isinstance(payload, dict):
+        return None, None
+
+    entry, epoch = _format_entry(payload)
+    if entry is None:
+        return None, None
+    return entry, epoch
+
+
+def _load_station_data_from_ram(station_id, range_key):
+    entries = STATION_DATA.get(station_id, [])
+    if not entries:
+        return []
+
+    latest_epoch = None
+    for entry in entries:
+        epoch = _timestamp_to_epoch(entry.get("timestamp", ""))
+        if epoch is None:
+            continue
+        if latest_epoch is None or epoch > latest_epoch:
+            latest_epoch = epoch
+
+    if latest_epoch is None:
+        return []
+
+    cutoff = latest_epoch - RANGE_SECONDS[range_key]
+    filtered = []
+    for entry in entries:
+        epoch = _timestamp_to_epoch(entry.get("timestamp", ""))
+        if epoch is not None and epoch >= cutoff:
+            filtered.append(entry)
+    return _downsample_entries(filtered)
+
+
+def _load_station_data_from_sd(station_id, range_key, max_points=MAX_API_POINTS):
+    if not _is_sd_available():
+        return []
+
+    file_path = _station_log_file(station_id)
+    window_seconds = RANGE_SECONDS[range_key]
+    bucket_width = max(1, window_seconds // max_points)
+    buckets = {}
+    latest_epoch = None
+    line_no = 0
+
+    try:
+        with open(file_path, "r") as f:
+            for line in f:
+                entry, epoch = _entry_from_json_line(line)
+                if entry is None or epoch is None:
+                    continue
+
+                latest_epoch = epoch
+                buckets[epoch // bucket_width] = entry
+                line_no += 1
+
+                if len(buckets) > max_points + 8:
+                    cutoff = epoch - window_seconds
+                    for key in list(buckets.keys()):
+                        if key * bucket_width < cutoff:
+                            del buckets[key]
+
+                if (line_no & 63) == 63:
+                    gc.collect()
+    except OSError:
+        return []
+
+    if not buckets or latest_epoch is None:
+        return []
+
+    cutoff = latest_epoch - window_seconds
+    rows = []
+    for key in sorted(buckets.keys()):
+        if key * bucket_width >= cutoff:
+            rows.append(buckets[key])
+    return rows[-max_points:]
+
+
+def _load_station_data(station_id, range_key, max_points=MAX_API_POINTS, allow_sd=True):
+    range_key = _normalize_range(range_key)
+    ram_rows = _load_station_data_from_ram(station_id, range_key)
+
+    # Prefer RAM for short ranges to avoid full SD scans (OOM on /api/data).
+    if ram_rows and (not allow_sd or range_key in ("1h", "3h")):
+        return ram_rows[-max_points:]
+
+    if not allow_sd:
+        return ram_rows[-max_points:] if ram_rows else []
+
+    sd_rows = _load_station_data_from_sd(station_id, range_key, max_points)
+    if not sd_rows:
+        return ram_rows[-max_points:] if ram_rows else []
+    if not ram_rows:
+        return sd_rows
+
+    latest_sd_ts = sd_rows[-1].get("timestamp", "")
+    extras = []
+    for row in ram_rows:
+        if row.get("timestamp", "") > latest_sd_ts:
+            extras.append(row)
+
+    if extras:
+        merged = sd_rows + extras
+        sd_rows = None
+        extras = None
+        return _downsample_entries(merged, max_points)
+    return sd_rows
+
+
+def _insert_recent_log_entry(entries, entry, max_entries):
+    timestamp = entry.get("timestamp", "")
+    inserted = False
+
+    for index in range(len(entries)):
+        if timestamp > entries[index].get("timestamp", ""):
+            entries.insert(index, entry)
+            inserted = True
+            break
+
+    if not inserted:
+        entries.append(entry)
+
+    if len(entries) > max_entries:
+        entries.pop()
+
+
+def _iter_sd_log_entries(station_id):
+    if not _is_sd_available():
+        return
+
+    try:
+        with open(_station_log_file(station_id), "r") as f:
+            for line in f:
+                entry, _ = _entry_from_json_line(line)
+                if entry is None:
+                    continue
+                if "station_id" not in entry:
+                    entry["station_id"] = station_id
+                yield entry
+    except OSError:
+        return
+
+
+def _load_recent_sd_logs(station_filter, offset, limit):
+    if not _is_sd_available():
+        return 0, []
+
+    station_ids = get_station_ids() if station_filter == "all" else [station_filter]
+    max_entries = offset + limit
+    total = 0
+    recent = []
+
+    for station_id in station_ids:
+        for entry in _iter_sd_log_entries(station_id):
+            total += 1
+            _insert_recent_log_entry(recent, entry, max_entries)
+
+    gc.collect()
+    return total, recent[offset:offset + limit]
+
+
+def _load_average_data(range_key, max_points=MAX_API_AVG_POINTS, allow_sd=True):
+    station_ids = get_station_ids()
+    if not station_ids:
+        return []
+
+    window_seconds = RANGE_SECONDS[_normalize_range(range_key)]
+    bucket_width = max(1, window_seconds // max_points)
+    buckets = {}
+
+    for station_id in station_ids:
+        rows = _load_station_data(
+            station_id, range_key, max_points=max_points, allow_sd=allow_sd
+        )
+        for row in rows:
+            epoch = _timestamp_to_epoch(row.get("timestamp", ""))
+            if epoch is None:
+                continue
+            key = epoch // bucket_width
+            bucket = buckets.get(key)
+            if bucket is None:
+                bucket = {"status": "OK", "timestamp": row["timestamp"]}
+                buckets[key] = bucket
+            elif row["timestamp"] > bucket["timestamp"]:
+                bucket["timestamp"] = row["timestamp"]
+
+            for field_name in ws_uart.SENSOR_FIELDS:
+                _add_average_field(bucket, field_name, row.get(field_name))
+            bucket["status"] = _worst_status(bucket["status"], row["status"])
+        rows = None
+        gc.collect()
+
+    result = []
+    for key in sorted(buckets.keys()):
+        bucket = buckets[key]
+        entry = _finalize_average_bucket(bucket)
+        entry["timestamp"] = bucket["timestamp"]
+        result.append(entry)
+
+    buckets = None
+    gc.collect()
+    return result[-max_points:]
+
+
+def _api_data_json_bytes(station, range_key, limit, rows):
+    chunks = [
+        b'{"station":',
+        json.dumps(station).encode(),
+        b',"range":',
+        json.dumps(range_key).encode(),
+        b',"limit":',
+        str(limit).encode(),
+        b',"count":',
+        str(len(rows)).encode(),
+        b',"data":[',
+    ]
+    for i, row in enumerate(rows):
+        if i:
+            chunks.append(b',')
+        chunks.append(json.dumps(row).encode())
+        rows[i] = None
+        if (i & 15) == 15:
+            gc.collect()
+    chunks.append(b']}')
+    body = b"".join(chunks)
+    chunks = None
+    return body
+
+
+def _stream_csv(rows):
+    yield (
+        "timestamp,si7021_temp,si7021_hum,bmp280_temp,bmp280_press,tsl2561_lux,"
+        "bme280_temp,bme280_press,bme280_hum,status\n"
+    )
+    for i, row in enumerate(rows):
+        yield "{},{},{},{},{},{},{},{},{},{}\n".format(
+            row["timestamp"],
+            row.get("si7021_temp", ""),
+            row.get("si7021_hum", ""),
+            row.get("bmp280_temp", ""),
+            row.get("bmp280_press", ""),
+            row.get("tsl2561_lux", ""),
+            row.get("bme280_temp", ""),
+            row.get("bme280_press", ""),
+            row.get("bme280_hum", ""),
+            row["status"],
+        )
+        rows[i] = None
+        if (i & 15) == 15:
+            gc.collect()
+
+
+def _station_ids_from_sd():
+    if not _is_sd_available():
+        return []
+
+    station_ids = []
+    try:
+        for name in os.listdir(SD_MOUNT):
+            if name.startswith("log_") and name.endswith(".json"):
+                station_id = _safe_station_id(name[4:-5])
+                if station_id:
+                    station_ids.append(station_id)
+    except OSError:
+        return []
+    return station_ids
+
+
+def get_station_ids():
+    station_ids = {}
+    for station_id in STATION_DATA.keys():
+        station_ids[station_id] = True
+    for station_id in _station_ids_from_sd():
+        station_ids[station_id] = True
+    return sorted(station_ids.keys())
+
+
+def _latest_entry_from_sd(station_id):
+    if not _is_sd_available():
+        return None
+
+    latest = None
+    try:
+        with open(_station_log_file(station_id), "r") as f:
+            for line in f:
+                entry, _ = _entry_from_json_line(line)
+                if entry is not None:
+                    latest = entry
+    except OSError:
+        return None
+    return latest
+
+
+def _latest_entry(station_id):
+    entries = STATION_DATA.get(station_id, [])
+    if entries:
+        return entries[-1]
+    return _latest_entry_from_sd(station_id)
+
+
+def connect_wifi(ssid, password, timeout_s=30):
+    wlan = network.WLAN(network.STA_IF)
+    wlan.active(True)
+    if not wlan.isconnected():
+        print("Laczenie z Wi-Fi...")
+        wlan.connect(ssid, password)
+        start = time.ticks_ms()
+        while not wlan.isconnected():
+            if time.ticks_diff(time.ticks_ms(), start) > timeout_s * 1000:
+                raise RuntimeError("Wi-Fi: timeout polaczenia")
+            time.sleep(0.2)
+    print("Polaczono! IP:", wlan.ifconfig()[0])
+    return wlan
+
+
+# Microdot app
+app = Microdot()
+
+
+@app.route("/")
+async def index(request):
+    gc.collect()
+    try:
+        return send_file(
+            "index.html",
+            content_type="text/html; charset=utf-8",
+            max_age=0,
+        )
+    except OSError as e:
+        print("Nie udalo sie otworzyc index.html:", e)
+        return ("<html><body><h1>Pico W</h1><p>Brak index.html</p></body></html>",
+                200, {"Content-Type": "text/html; charset=utf-8"})
+
+
+@app.route("/api/device")
+async def api_device(request):
+    gc.collect()
+    free = _note_mem()
+    return {
+        "mem_free": free,
+        "mem_alloc": gc.mem_alloc(),
+        "mem_free_min": _MEM_FREE_MIN,
+        "sd_available": _is_sd_available(),
+        "sd_write_ready": SD_WRITE_READY,
+        "sd_unavailable_count": _sd_unavailable_count,
+        "sd_last_error": _sd_last_error,
+        "ram_stations": len(STATION_DATA),
+        "ram_log_count": len(RAM_LOGS),
+    }
+
+
+@app.route("/api/stations")
+async def api_stations(request):
+    stations = get_station_ids()
+    return {
+        "stations": stations,
+        "count": len(stations),
+    }
+
+
+@app.route("/api/sensors")
+async def api_sensors(request):
+    return {
+        "fields": [
+            dict(field=name, **ws_uart.SENSOR_FIELD_INFO[name])
+            for name in ws_uart.SENSOR_FIELDS
+        ]
+    }
+
+
+@app.route("/api/latest")
+async def api_latest(request):
+    async with _get_api_heavy_lock():
+        _note_mem()
+        rows = []
+        for station_id in get_station_ids():
+            entry = _latest_entry(station_id)
+            if entry is None:
+                continue
+            rows.append({
+                "station_id": station_id,
+                "timestamp": entry["timestamp"],
+                "si7021_temp": entry["si7021_temp"],
+                "si7021_hum": entry["si7021_hum"],
+                "bmp280_temp": entry["bmp280_temp"],
+                "bmp280_press": entry["bmp280_press"],
+                "tsl2561_lux": entry["tsl2561_lux"],
+                "bme280_temp": entry["bme280_temp"],
+                "bme280_press": entry["bme280_press"],
+                "bme280_hum": entry["bme280_hum"],
+                "status": entry["status"],
+            })
+
+        rows.sort(key=lambda row: row["station_id"])
+        _note_mem()
+        return {
+            "count": len(rows),
+            "data": rows,
+        }
+
+
+@app.route("/api/data")
+async def api_data(request):
+    station = request.args.get("station", "avg")
+    range_key = _normalize_range(request.args.get("range", DEFAULT_RANGE))
+    output_format = request.args.get("format", "json").lower()
+    limit = _parse_limit(request.args.get("limit", ""), MAX_API_POINTS)
+
+    async with _get_api_heavy_lock():
+        gc.collect()
+        _note_mem()
+
+        def _load_rows(allow_sd, point_limit):
+            if station == "avg":
+                return _load_average_data(
+                    range_key, max_points=point_limit, allow_sd=allow_sd
+                )
+            sid = _safe_station_id(station)
+            if not sid:
+                return None
+            return _load_station_data(
+                sid, range_key, max_points=point_limit, allow_sd=allow_sd
+            )
+
+        try:
+            rows = _load_rows(True, limit)
+        except MemoryError:
+            gc.collect()
+            print("/api/data OOM during load, retry RAM-only")
+            rows = _load_rows(False, min(limit, 40))
+
+        if rows is None:
+            return {"error": "invalid station id"}, 400
+
+        if station != "avg":
+            station = _safe_station_id(station)
+
+        if len(rows) > limit:
+            rows = rows[-limit:]
+
+        gc.collect()
+        _note_mem()
+
+        if output_format == "csv":
+            def body():
+                for chunk in _stream_csv(rows):
+                    yield chunk
+
+            return Response(
+                body=body(),
+                headers={"Content-Type": "text/csv; charset=utf-8"},
+            )
+
+        try:
+            body = _api_data_json_bytes(station, range_key, limit, rows)
+        except MemoryError:
+            gc.collect()
+            rows = rows[-20:]
+            body = _api_data_json_bytes(station, range_key, limit, rows)
+
+        rows = None
+        gc.collect()
+        return Response(
+            body=body,
+            headers={"Content-Type": "application/json; charset=UTF-8"},
+        )
+
+
+@app.route("/api/trigger", methods=["POST"])
+async def api_trigger(request):
+    gc.collect()
+    if _get_uart_cmd_lock().locked():
+        return {"status": "busy", "error": "uart exchange in progress"}, 409
+
+    node_raw = request.args.get("node", "")
+    try:
+        if node_raw == "":
+            cmd = ws_uart.build_measure_cmd()
+        else:
+            node = int(node_raw)
+            if node < 0 or node > 3:
+                return {"status": "error", "error": "invalid node"}, 400
+            cmd = ws_uart.build_measure_cmd(node)
+
+        response = await uart_exchange(cmd)
+        response = str(response).strip()
+
+        if response == "ACK:MEASURE:QUEUED":
+            return {"status": "queued", "command": cmd, "response": response}
+        if response == "ERR:BUSY":
+            return {"status": "busy", "command": cmd, "response": response}, 409
+        if response == "ERR:UNKNOWN":
+            return {"status": "error", "command": cmd, "response": response}, 400
+
+        return {"status": "unexpected", "command": cmd, "response": response}, 502
+    except asyncio.TimeoutError:
+        return {"status": "timeout", "command": cmd if "cmd" in locals() else ""}, 504
+    except Exception as e:
+        return {"status": "error", "error": str(e)}, 500
+
+
+@app.route("/api/ping")
+async def api_ping(request):
+    gc.collect()
+    if _get_uart_cmd_lock().locked():
+        return {"status": "busy", "stm32": "busy"}, 409
+
+    try:
+        response = await uart_exchange(ws_uart.CMD_PING, timeout_s=2)
+        response = str(response).strip()
+        if response == "ACK:PING":
+            return {"status": "ok", "stm32": "online", "response": response}
+        return {"status": "unexpected", "response": response}, 502
+    except asyncio.TimeoutError:
+        return {"status": "timeout", "stm32": "offline"}, 504
+    except Exception as e:
+        return {"status": "error", "error": str(e)}, 500
+
+
+@app.route("/api/logs")
+async def api_logs(request):
+    station = request.args.get("station", "all")
+    limit = _parse_limit(request.args.get("limit", ""), MAX_LOG_VIEW_ROWS)
+    if limit > MAX_LOG_VIEW_ROWS:
+        limit = MAX_LOG_VIEW_ROWS
+    offset = _parse_non_negative_int(request.args.get("offset", ""), 0)
+
+    if station != "all":
+        station = _safe_station_id(station)
+        if not station:
+            return {"error": "invalid station id"}, 400
+
+    async with _get_api_heavy_lock():
+        _note_mem()
+        total, rows = _load_recent_sd_logs(station, offset, limit)
+        _note_mem()
+        return {
+            "station": station,
+            "offset": offset,
+            "limit": limit,
+            "count": len(rows),
+            "total": total,
+            "sd_available": _is_sd_available(),
+            "data": rows,
+        }
+
+
+@app.route("/shutdown")
+async def shutdown(request):
+    request.app.shutdown()
+    return "Serwer zostal zatrzymany..."
+
+
+@app.route("/logs")
+async def show_logs(request):
+    async with _get_api_heavy_lock():
+        limit = MAX_LOG_VIEW_ROWS
+        if _is_sd_available():
+            try:
+                recent = []
+                with open(LEGACY_LOG_FILE, "r") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            recent.append(json.loads(line))
+                        except Exception:
+                            continue
+                        if len(recent) > limit:
+                            recent.pop(0)
+                if recent:
+                    return recent
+            except OSError:
+                pass
+        return RAM_LOGS[-limit:]
+
+
+async def uart_reading_task():
+    buffer = bytearray()
+    while True:
+        try:
+            if uart.any():
+                chunk = uart.read()
+                if chunk:
+                    for byte in chunk:
+                        if byte == 10 or byte == 13:
+                            if buffer:
+                                try:
+                                    line = buffer.decode().strip()
+                                except Exception:
+                                    line = ""
+                                buffer = bytearray()
+
+                                if line:
+                                    if ws_uart.is_uart_control_line(line):
+                                        _deliver_uart_response(line)
+                                        continue
+
+                                    try:
+                                        _handle_measurement_line(line)
+                                    except ws_uart.NotMeasurementFrameError:
+                                        _append_ram_log({"kind": "uart_log", "line": line})
+                                        if ws_uart.is_uart_log_line(line):
+                                            log_uart_line_to_sd(line)
+                                    except Exception as parse_error:
+                                        _append_ram_log({
+                                            "kind": "uart_parse_error",
+                                            "error": str(parse_error),
+                                            "line": line,
+                                        })
+                                        print("UART parse error:", parse_error, "| line:", line)
+                        else:
+                            if len(buffer) < MAX_UART_LINE_BYTES:
+                                buffer.append(byte)
+                            else:
+                                buffer = bytearray()
+                                _append_ram_log({"kind": "uart_overflow"})
+        except Exception as e:
+            print("UART task error:", e)
+        await asyncio.sleep_ms(50)
+
+
+async def sd_monitor_task():
+    was_ready = SD_WRITE_READY
+    while True:
+        if SD_WRITE_READY or not SD_INIT_DISABLED:
+            _ensure_sd_ready()
+        if SD_WRITE_READY and not was_ready:
+            led.value(1)
+            print("LED ON: SD connected and writable.")
+        elif not SD_WRITE_READY and was_ready:
+            led.value(0)
+            print("LED OFF: SD unavailable.")
+        was_ready = SD_WRITE_READY
+        await asyncio.sleep_ms(1000)
+
+
+# Start
+ws_uart.self_check()
+_init_sd_at_startup()
+wlan = connect_wifi(SSID, PASSWORD)
+gc.collect()
+if SD_INIT_DISABLED:
+    print("Kontynuacja pracy bez karty SD.")
+elif not SD_WRITE_READY:
+    print("Karta SD zamontowana, ale test zapisu nie powiodl sie.")
+print("Uruchamiam serwer Microdot na porcie 80...")
+
+
+async def main():
+    asyncio.create_task(sd_monitor_task())
+    if SIMULATE:
+        try:
+            import simulate
+            print("Tryb symulacji wlaczony.")
+            asyncio.create_task(simulate.simulate_task(_handle_measurement_line, interval_s=60))
+        except Exception as e:
+            print("Nie udalo sie uruchomic symulacji:", e)
+            asyncio.create_task(uart_reading_task())
+    else:
+        asyncio.create_task(uart_reading_task())
+
+    server_task = asyncio.create_task(
+        app.start_server(host="0.0.0.0", port=80, debug=True))
+    await asyncio.sleep_ms(300)
+
+    if SD_WRITE_READY and not server_task.done():
+        led.value(1)
+        print("LED ON: serwer i zapis SD gotowe.")
+    else:
+        led.value(0)
+
+    try:
+        await server_task
+    finally:
+        led.value(0)
+        print("LED OFF: serwer zatrzymany.")
+
+
+asyncio.run(main())
+
+

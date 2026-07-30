@@ -233,7 +233,7 @@ class SDCard:
         if (self.spi.read(1, 0xFF)[0] & 0x1F) != 0x05:
             self.cs(1)
             self.spi.write(b"\xff")
-            return
+            raise OSError(5)  # EIO
 
         # wait for write to finish
         while self.spi.read(1, 0xFF)[0] == 0:
