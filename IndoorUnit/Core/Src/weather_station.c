@@ -11,6 +11,7 @@
 #include "weather_station_ui.h"
 #include "debug_log.h"
 #include "ws_protocol.h"
+#include "power_mgr.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -1142,6 +1143,31 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
     return;
   }
 
+  if (PowerMgr_IsRadioAsleep() != 0U) {
+    uint8_t need_radio = 0U;
+
+    if ((ctx->app_state == WS_APP_ERROR_RECOVERY) ||
+        (ctx->app_state == WS_APP_WAIT_TX_IRQ) ||
+        (ctx->app_state == WS_APP_WAIT_RX_DATA) ||
+        (ctx->cycle_pending != 0U) ||
+        (ctx->parallel_cycle != 0U)) {
+      need_radio = 1U;
+    } else {
+      for (uint8_t i = 0U; i < ctx->node_count; i++) {
+        if (ctx->nodes[i].measurement_pending != 0U) {
+          need_radio = 1U;
+          break;
+        }
+      }
+    }
+
+    if (need_radio == 0U) {
+      return;
+    }
+
+    PowerMgr_WakeRadio(cfg->nrf);
+  }
+
   if (ctx->app_state == WS_APP_ERROR_RECOVERY) {
     ws_power_cycle_radio(cfg);
     ctx->parallel_cycle = 0U;
@@ -1328,4 +1354,55 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
     (void)ws_schedule_retry_or_recover(ctx);
     return;
   }
+}
+
+/**
+ * @brief Returns 1 when link may idle-sleep (UI screensaver gated by caller)
+ */
+uint8_t WS_CanSleep(const WS_Manager_t *ctx)
+{
+  uint8_t i;
+
+  if (ctx == NULL)
+  {
+    return 0U;
+  }
+
+  if (ctx->comm_watchdog_tripped != 0U)
+  {
+    return 0U;
+  }
+
+  if (ctx->app_state != WS_APP_IDLE)
+  {
+    return 0U;
+  }
+
+  if ((ctx->cycle_pending != 0U) || (ctx->parallel_cycle != 0U))
+  {
+    return 0U;
+  }
+
+  if (ctx->nrf_irq_flag != 0U)
+  {
+    return 0U;
+  }
+
+  for (i = 0U; i < ctx->node_count; i++)
+  {
+    const WS_NodeState_t *node = &ctx->nodes[i];
+
+    if (node->measurement_pending != 0U)
+    {
+      return 0U;
+    }
+
+    if ((node->state == WS_NODE_TX_IN_PROGRESS) ||
+        (node->state == WS_NODE_WAIT_RESPONSE))
+    {
+      return 0U;
+    }
+  }
+
+  return 1U;
 }

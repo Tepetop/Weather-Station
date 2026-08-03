@@ -7,6 +7,7 @@ import asyncio
 import gc
 from microdot import Microdot, Response, send_file
 from sdcard import SDCard
+import aggregation
 import ws_uart
 
 # Wi-Fi configuration
@@ -22,7 +23,7 @@ UART_BAUDRATE = 115200
 UART_TX_PIN = 0
 UART_RX_PIN = 1
 MAX_UART_LINE_BYTES = 240
-UART_EXCHANGE_TIMEOUT_S = 3
+UART_EXCHANGE_TIMEOUT_S = 5
 
 # API and storage settings
 RANGE_SECONDS = {
@@ -33,10 +34,34 @@ RANGE_SECONDS = {
 }
 DEFAULT_RANGE = "1h"
 MAX_API_POINTS = 120
-MAX_API_AVG_POINTS = 90
 MAX_LOG_VIEW_ROWS = 60
 RAM_LIMIT_PER_STATION = 60
 RAM_LOG_LIMIT = 20
+AGGREGATE_SECONDS = {"10m": 600, "1h": 3600}
+RANGE_RESOLUTION = {"1h": "10m", "3h": "10m", "1d": "1h", "1w": "1h"}
+AGGREGATE_KEEP_DAYS = {"10m": 2, "1h": 8}
+FIELD_DISPLAY_STEPS = {
+    "si7021_temp": 0.5,
+    "si7021_hum": 1,
+    "bmp280_temp": 0.5,
+    "bmp280_press": 0.5,
+    "tsl2561_lux": 10,
+    "bme280_temp": 0.5,
+    "bme280_press": 0.5,
+    "bme280_hum": 1,
+}
+QUANTITY_FIELDS = {
+    "temperature": ("si7021_temp", "bmp280_temp", "bme280_temp"),
+    "humidity": ("si7021_hum", "bme280_hum"),
+    "pressure": ("bmp280_press", "bme280_press"),
+    "illuminance": ("tsl2561_lux",),
+}
+QUANTITY_DISPLAY_STEPS = {
+    "temperature": 0.5,
+    "humidity": 1,
+    "pressure": 0.5,
+    "illuminance": 10,
+}
 
 # Hardware
 led = machine.Pin("LED", machine.Pin.OUT)
@@ -69,6 +94,8 @@ SD_WRITE_READY = False
 SD_INIT_DISABLED = False
 
 STATION_DATA = {}
+AGGREGATE_STATE = {}
+_aggregate_cleanup_days = {}
 _uart_response_line = None
 _uart_cmd_lock = None
 _api_heavy_lock = None
@@ -111,6 +138,17 @@ def _safe_station_id(raw_station_id):
 
 def _station_log_file(station_id):
     return SD_MOUNT + "/log_" + station_id + ".json"
+
+
+def _aggregate_file(resolution, station_id, day_key):
+    return (
+        SD_MOUNT + "/series_" + resolution + "_" + station_id + "_"
+        + day_key + ".json"
+    )
+
+
+def _aggregate_prefix(resolution, station_id):
+    return "series_" + resolution + "_" + station_id + "_"
 
 
 def _is_sd_available():
@@ -198,47 +236,6 @@ def _normalize_status(raw_status):
     return "WARN"
 
 
-def _status_rank(status):
-    normalized = _normalize_status(status)
-    if normalized.startswith("ERR:"):
-        return 2
-    if normalized == "WARN":
-        return 1
-    return 0
-
-
-def _add_average_field(bucket, field_name, value):
-    if value is None:
-        return
-    sum_key = field_name + "_sum"
-    count_key = field_name + "_count"
-    bucket[sum_key] = bucket.get(sum_key, 0.0) + float(value)
-    bucket[count_key] = bucket.get(count_key, 0) + 1
-
-
-def _finalize_average_bucket(bucket):
-    result = {"status": bucket.get("status", "OK")}
-    for field_name in ws_uart.SENSOR_FIELDS:
-        count = bucket.get(field_name + "_count", 0)
-        if count > 0:
-            total = bucket.get(field_name + "_sum", 0.0)
-            if field_name == "tsl2561_lux":
-                result[field_name] = int(round(total / count))
-            elif field_name in ("bmp280_press", "bme280_press"):
-                result[field_name] = round(total / count, 2)
-            else:
-                result[field_name] = round(total / count, 1)
-        else:
-            result[field_name] = None
-    return result
-
-
-def _worst_status(left, right):
-    if _status_rank(right) > _status_rank(left):
-        return right
-    return left
-
-
 def _timestamp_to_epoch(timestamp):
     if not isinstance(timestamp, str) or len(timestamp) != 19:
         return None
@@ -263,20 +260,15 @@ def _timestamp_to_epoch(timestamp):
         return None
 
 
-def _downsample_entries(entries, max_points=MAX_API_POINTS):
-    total = len(entries)
-    if total <= max_points:
-        return entries
+def _epoch_to_timestamp(epoch):
+    value = time.localtime(int(epoch))
+    return "{:04d}-{:02d}-{:02d}T{:02d}:{:02d}:{:02d}".format(
+        value[0], value[1], value[2], value[3], value[4], value[5]
+    )
 
-    stride = (total + max_points - 1) // max_points
-    sampled = []
-    for i in range(total):
-        if i % stride == 0:
-            sampled.append(entries[i])
 
-    if sampled and sampled[-1] != entries[-1]:
-        sampled.append(entries[-1])
-    return sampled
+def _timestamp_day_key(timestamp):
+    return timestamp[0:10].replace("-", "")
 
 
 def _format_sensor_value(field_name, raw_value):
@@ -433,6 +425,18 @@ def _ensure_sd_ready():
     print("SD connected and writable.")
 
 
+def remount_sd():
+    """Manual re-init after failed startup mount (clears SD_INIT_DISABLED)."""
+    global SD_INIT_DISABLED
+
+    print("Reczna reinicjalizacja czytnika SD...")
+    _mark_sd_unavailable("manual remount")
+    SD_INIT_DISABLED = False
+    ok = _init_sd_at_startup()
+    led.value(1 if ok else 0)
+    return ok
+
+
 def _append_station_entry(station_id, entry):
     entries = STATION_DATA.get(station_id)
     if entries is None:
@@ -465,10 +469,135 @@ def log_station_to_sd(station_id, entry):
         _append_ram_log({"kind": "sd_write_error", "error": str(e)})
 
 
+def _aggregate_file_names(resolution, station_id):
+    if not _is_sd_available():
+        return []
+    prefix = _aggregate_prefix(resolution, station_id)
+    try:
+        return sorted(
+            name
+            for name in os.listdir(SD_MOUNT)
+            if name.startswith(prefix) and name.endswith(".json")
+        )
+    except OSError:
+        return []
+
+
+def _cleanup_aggregate_files(resolution, station_id, current_day):
+    cleanup_key = resolution + ":" + station_id
+    if _aggregate_cleanup_days.get(cleanup_key) == current_day:
+        return
+    _aggregate_cleanup_days[cleanup_key] = current_day
+
+    names = _aggregate_file_names(resolution, station_id)
+    keep = AGGREGATE_KEEP_DAYS[resolution]
+    for name in names[:-keep]:
+        try:
+            os.remove(SD_MOUNT + "/" + name)
+        except OSError as e:
+            _append_ram_log({
+                "kind": "aggregate_cleanup_error",
+                "error": str(e),
+            })
+
+
+def _append_aggregate_record(resolution, station_id, record):
+    if not _is_sd_available():
+        return False
+    day_key = _timestamp_day_key(record["timestamp"])
+    try:
+        with open(_aggregate_file(resolution, station_id, day_key), "a") as f:
+            f.write(json.dumps(record) + "\n")
+        _cleanup_aggregate_files(resolution, station_id, day_key)
+        return True
+    except OSError as e:
+        _append_ram_log({
+            "kind": "aggregate_write_error",
+            "error": str(e),
+        })
+        return False
+
+
+def _iter_aggregate_records(resolution, station_id):
+    names = _aggregate_file_names(resolution, station_id)
+    keep = AGGREGATE_KEEP_DAYS[resolution]
+    for name in names[-keep:]:
+        try:
+            with open(SD_MOUNT + "/" + name, "r") as f:
+                for line in f:
+                    try:
+                        record = json.loads(line)
+                    except Exception:
+                        continue
+                    if isinstance(record, dict) and "_bucket" in record:
+                        yield record
+        except OSError:
+            continue
+
+
+def _restore_hour_bucket(station_id, start_epoch):
+    bucket = aggregation.new_bucket(start_epoch)
+    for record in _iter_aggregate_records("10m", station_id):
+        if aggregation.bucket_start(record.get("_bucket", 0), 3600) == start_epoch:
+            aggregation.merge_record(bucket, record, ws_uart.SENSOR_FIELDS)
+    return bucket
+
+
+def _update_hour_aggregate(station_id, record):
+    state = AGGREGATE_STATE.setdefault(station_id, {})
+    start_epoch = aggregation.bucket_start(record["_bucket"], 3600)
+    bucket = state.get("1h")
+    if bucket is None:
+        bucket = _restore_hour_bucket(station_id, start_epoch)
+        state["1h"] = bucket
+    elif start_epoch > bucket["_bucket"]:
+        finished = aggregation.finalize_bucket(
+            bucket,
+            _epoch_to_timestamp(bucket["_bucket"]),
+            ws_uart.SENSOR_FIELDS,
+        )
+        _append_aggregate_record("1h", station_id, finished)
+        bucket = aggregation.new_bucket(start_epoch)
+        state["1h"] = bucket
+    elif start_epoch < bucket["_bucket"]:
+        return
+    aggregation.merge_record(bucket, record, ws_uart.SENSOR_FIELDS)
+
+
+def _update_aggregates(station_id, entry):
+    epoch = _timestamp_to_epoch(entry.get("timestamp", ""))
+    if epoch is None:
+        return
+
+    state = AGGREGATE_STATE.setdefault(station_id, {})
+    start_epoch = aggregation.bucket_start(epoch, AGGREGATE_SECONDS["10m"])
+    bucket = state.get("10m")
+    if bucket is None:
+        bucket = aggregation.new_bucket(start_epoch)
+        state["10m"] = bucket
+    elif start_epoch > bucket["_bucket"]:
+        finished = aggregation.finalize_bucket(
+            bucket,
+            _epoch_to_timestamp(bucket["_bucket"]),
+            ws_uart.SENSOR_FIELDS,
+        )
+        _update_hour_aggregate(station_id, finished)
+        _append_aggregate_record("10m", station_id, finished)
+        bucket = aggregation.new_bucket(start_epoch)
+        state["10m"] = bucket
+    elif start_epoch < bucket["_bucket"]:
+        return
+
+    aggregation.add_sample(
+        bucket, entry, ws_uart.SENSOR_FIELDS, entry.get("status", "WARN")
+    )
+
+
 def _handle_measurement_line(line):
     station_id, entry = _parse_uart_measurement_line(line)
     _append_station_entry(station_id, entry)
     log_station_to_sd(station_id, entry)
+    _update_aggregates(station_id, entry)
 
 
 def log_uart_line_to_sd(line):
@@ -496,104 +625,39 @@ def _entry_from_json_line(line):
     return entry, epoch
 
 
-def _load_station_data_from_ram(station_id, range_key):
-    entries = STATION_DATA.get(station_id, [])
-    if not entries:
-        return []
-
+def _load_aggregate_data(station_id, range_key, max_points=MAX_API_POINTS):
+    resolution = RANGE_RESOLUTION[range_key]
+    window_seconds = RANGE_SECONDS[range_key]
+    rows = []
     latest_epoch = None
-    for entry in entries:
-        epoch = _timestamp_to_epoch(entry.get("timestamp", ""))
-        if epoch is None:
+
+    for record in _iter_aggregate_records(resolution, station_id):
+        epoch = int(record.get("_bucket", 0))
+        if epoch < 1:
             continue
-        if latest_epoch is None or epoch > latest_epoch:
-            latest_epoch = epoch
+        latest_epoch = epoch if latest_epoch is None else max(latest_epoch, epoch)
+        rows.append((
+            epoch,
+            aggregation.public_record(
+                record, ws_uart.SENSOR_FIELDS, FIELD_DISPLAY_STEPS
+            ),
+        ))
+        cutoff = latest_epoch - window_seconds
+        while rows and rows[0][0] < cutoff:
+            rows.pop(0)
 
     if latest_epoch is None:
         return []
 
-    cutoff = latest_epoch - RANGE_SECONDS[range_key]
-    filtered = []
-    for entry in entries:
-        epoch = _timestamp_to_epoch(entry.get("timestamp", ""))
-        if epoch is not None and epoch >= cutoff:
-            filtered.append(entry)
-    return _downsample_entries(filtered)
-
-
-def _load_station_data_from_sd(station_id, range_key, max_points=MAX_API_POINTS):
-    if not _is_sd_available():
-        return []
-
-    file_path = _station_log_file(station_id)
-    window_seconds = RANGE_SECONDS[range_key]
-    bucket_width = max(1, window_seconds // max_points)
-    buckets = {}
-    latest_epoch = None
-    line_no = 0
-
-    try:
-        with open(file_path, "r") as f:
-            for line in f:
-                entry, epoch = _entry_from_json_line(line)
-                if entry is None or epoch is None:
-                    continue
-
-                latest_epoch = epoch
-                buckets[epoch // bucket_width] = entry
-                line_no += 1
-
-                if len(buckets) > max_points + 8:
-                    cutoff = epoch - window_seconds
-                    for key in list(buckets.keys()):
-                        if key * bucket_width < cutoff:
-                            del buckets[key]
-
-                if (line_no & 63) == 63:
-                    gc.collect()
-    except OSError:
-        return []
-
-    if not buckets or latest_epoch is None:
-        return []
-
     cutoff = latest_epoch - window_seconds
-    rows = []
-    for key in sorted(buckets.keys()):
-        if key * bucket_width >= cutoff:
-            rows.append(buckets[key])
-    return rows[-max_points:]
-
-
-def _load_station_data(station_id, range_key, max_points=MAX_API_POINTS, allow_sd=True):
-    range_key = _normalize_range(range_key)
-    ram_rows = _load_station_data_from_ram(station_id, range_key)
-
-    # Prefer RAM for short ranges to avoid full SD scans (OOM on /api/data).
-    if ram_rows and (not allow_sd or range_key in ("1h", "3h")):
-        return ram_rows[-max_points:]
-
-    if not allow_sd:
-        return ram_rows[-max_points:] if ram_rows else []
-
-    sd_rows = _load_station_data_from_sd(station_id, range_key, max_points)
-    if not sd_rows:
-        return ram_rows[-max_points:] if ram_rows else []
-    if not ram_rows:
-        return sd_rows
-
-    latest_sd_ts = sd_rows[-1].get("timestamp", "")
-    extras = []
-    for row in ram_rows:
-        if row.get("timestamp", "") > latest_sd_ts:
-            extras.append(row)
-
-    if extras:
-        merged = sd_rows + extras
-        sd_rows = None
-        extras = None
-        return _downsample_entries(merged, max_points)
-    return sd_rows
+    rows = [item for item in rows if item[0] >= cutoff]
+    if len(rows) > max_points:
+        stride = (len(rows) + max_points - 1) // max_points
+        sampled = rows[::stride]
+        if sampled[-1] != rows[-1]:
+            sampled.append(rows[-1])
+        rows = sampled
+    return [item[1] for item in rows]
 
 
 def _insert_recent_log_entry(entries, entry, max_entries):
@@ -648,55 +712,14 @@ def _load_recent_sd_logs(station_filter, offset, limit):
     return total, recent[offset:offset + limit]
 
 
-def _load_average_data(range_key, max_points=MAX_API_AVG_POINTS, allow_sd=True):
-    station_ids = get_station_ids()
-    if not station_ids:
-        return []
-
-    window_seconds = RANGE_SECONDS[_normalize_range(range_key)]
-    bucket_width = max(1, window_seconds // max_points)
-    buckets = {}
-
-    for station_id in station_ids:
-        rows = _load_station_data(
-            station_id, range_key, max_points=max_points, allow_sd=allow_sd
-        )
-        for row in rows:
-            epoch = _timestamp_to_epoch(row.get("timestamp", ""))
-            if epoch is None:
-                continue
-            key = epoch // bucket_width
-            bucket = buckets.get(key)
-            if bucket is None:
-                bucket = {"status": "OK", "timestamp": row["timestamp"]}
-                buckets[key] = bucket
-            elif row["timestamp"] > bucket["timestamp"]:
-                bucket["timestamp"] = row["timestamp"]
-
-            for field_name in ws_uart.SENSOR_FIELDS:
-                _add_average_field(bucket, field_name, row.get(field_name))
-            bucket["status"] = _worst_status(bucket["status"], row["status"])
-        rows = None
-        gc.collect()
-
-    result = []
-    for key in sorted(buckets.keys()):
-        bucket = buckets[key]
-        entry = _finalize_average_bucket(bucket)
-        entry["timestamp"] = bucket["timestamp"]
-        result.append(entry)
-
-    buckets = None
-    gc.collect()
-    return result[-max_points:]
-
-
 def _api_data_json_bytes(station, range_key, limit, rows):
     chunks = [
         b'{"station":',
         json.dumps(station).encode(),
         b',"range":',
         json.dumps(range_key).encode(),
+        b',"resolution":',
+        json.dumps(RANGE_RESOLUTION[range_key]).encode(),
         b',"limit":',
         str(limit).encode(),
         b',"count":',
@@ -888,41 +911,56 @@ async def api_latest(request):
         }
 
 
+@app.route("/api/current")
+async def api_current(request):
+    station = _safe_station_id(request.args.get("station", ""))
+    if not station:
+        return {"error": "invalid station id"}, 400
+
+    entries = STATION_DATA.get(station, [])[-10:]
+    if not entries:
+        return {"error": "no recent data for station"}, 404
+
+    values = aggregation.average_recent(entries, QUANTITY_FIELDS)
+    return {
+        "station": station,
+        "timestamp": entries[-1].get("timestamp", ""),
+        "sample_count": len(entries),
+        "status": aggregation.worst_status(entries),
+        "temperature": aggregation.quantize(
+            values["temperature"], QUANTITY_DISPLAY_STEPS["temperature"]
+        ),
+        "humidity": aggregation.quantize(
+            values["humidity"], QUANTITY_DISPLAY_STEPS["humidity"]
+        ),
+        "pressure": aggregation.quantize(
+            values["pressure"], QUANTITY_DISPLAY_STEPS["pressure"]
+        ),
+        "illuminance": aggregation.quantize(
+            values["illuminance"], QUANTITY_DISPLAY_STEPS["illuminance"]
+        ),
+    }
+
+
 @app.route("/api/data")
 async def api_data(request):
-    station = request.args.get("station", "avg")
+    station = _safe_station_id(request.args.get("station", ""))
     range_key = _normalize_range(request.args.get("range", DEFAULT_RANGE))
     output_format = request.args.get("format", "json").lower()
     limit = _parse_limit(request.args.get("limit", ""), MAX_API_POINTS)
+    if not station:
+        return {"error": "invalid station id"}, 400
 
     async with _get_api_heavy_lock():
         gc.collect()
         _note_mem()
 
-        def _load_rows(allow_sd, point_limit):
-            if station == "avg":
-                return _load_average_data(
-                    range_key, max_points=point_limit, allow_sd=allow_sd
-                )
-            sid = _safe_station_id(station)
-            if not sid:
-                return None
-            return _load_station_data(
-                sid, range_key, max_points=point_limit, allow_sd=allow_sd
-            )
-
         try:
-            rows = _load_rows(True, limit)
+            rows = _load_aggregate_data(station, range_key, limit)
         except MemoryError:
             gc.collect()
-            print("/api/data OOM during load, retry RAM-only")
-            rows = _load_rows(False, min(limit, 40))
-
-        if rows is None:
-            return {"error": "invalid station id"}, 400
-
-        if station != "avg":
-            station = _safe_station_id(station)
+            print("/api/data OOM during aggregate load")
+            rows = []
 
         if len(rows) > limit:
             rows = rows[-limit:]
@@ -1032,6 +1070,22 @@ async def api_logs(request):
             "sd_available": _is_sd_available(),
             "data": rows,
         }
+
+
+@app.route("/api/sd/remount", methods=["POST"])
+async def api_sd_remount(request):
+    async with _get_api_heavy_lock():
+        gc.collect()
+        ok = remount_sd()
+        payload = {
+            "status": "ok" if ok else "failed",
+            "sd_available": _is_sd_available(),
+            "sd_write_ready": SD_WRITE_READY,
+            "sd_init_disabled": SD_INIT_DISABLED,
+        }
+        if ok:
+            return payload
+        return payload, 503
 
 
 @app.route("/shutdown")

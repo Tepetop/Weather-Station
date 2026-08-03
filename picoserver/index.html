@@ -355,6 +355,43 @@
             gap: 12px;
         }
 
+        .current-stations {
+            display: grid;
+            gap: 14px;
+        }
+
+        .current-station {
+            padding: 16px;
+            display: grid;
+            gap: 14px;
+        }
+
+        .current-station header {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .current-station header strong {
+            font-size: 18px;
+        }
+
+        .current-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+            gap: 12px;
+        }
+
+        .current-card {
+            padding: 20px;
+            display: grid;
+            justify-items: center;
+            gap: 8px;
+            text-align: center;
+        }
+
         .station-card {
             padding: 14px;
             display: grid;
@@ -456,12 +493,13 @@
         </section>
 
         <nav class="tabs card reveal">
-            <button class="tab-btn active" data-tab="charts" type="button">Wykresy</button>
+            <button class="tab-btn" data-tab="charts" type="button">Wykresy</button>
+            <button class="tab-btn active" data-tab="current" type="button">Aktualne dane</button>
             <button class="tab-btn" data-tab="stations" type="button">Stacje pomiarowe</button>
             <button class="tab-btn" data-tab="logs" type="button">Logi</button>
         </nav>
 
-        <section class="tab-panel" data-tab-panel="charts">
+        <section class="tab-panel" data-tab-panel="charts" hidden>
             <div class="controls card reveal">
                 <div class="controls-grid">
                     <div class="control-field">
@@ -491,6 +529,7 @@
                         Auto refresh each 60s
                     </label>
                     <a id="csvBtn" class="btn-link" href="#">Download CSV</a>
+                    <span id="seriesResolution" class="mono">Rozdzielczość: 10 min</span>
                     <span id="triggerInfo" class="mono"></span>
                 </div>
             </div>
@@ -601,6 +640,15 @@
             </article>
         </section>
 
+        <section class="tab-panel" data-tab-panel="current">
+            <div class="controls card reveal">
+                <div id="currentMeta" class="mono">Średnia z maksymalnie 10 ostatnich pomiarów dla każdej stacji.</div>
+            </div>
+            <div id="currentStations" class="current-stations">
+                <div class="panel card mono">Brak dostępnych stacji.</div>
+            </div>
+        </section>
+
         <section class="tab-panel" data-tab-panel="stations" hidden>
             <div class="panel card reveal">
                 <h2>Stacje pomiarowe</h2>
@@ -623,6 +671,7 @@
                         <label>Log actions</label>
                         <div class="button-row">
                             <button id="logRefreshBtn" class="button-primary">Refresh logs</button>
+                            <button id="sdRemountBtn" type="button" class="button-primary">Remount SD</button>
                         </div>
                     </div>
                     <div class="control-field" style="grid-column: span 2;">
@@ -672,11 +721,12 @@
         const LOGS_PAGE_SIZE = 20;
 
         const state = {
-            station: "avg",
+            station: "",
+            stations: [],
             range: "1h",
             timer: null,
             charts: {},
-            activeTab: "charts",
+            activeTab: "current",
             sensorMeta: [],
             logsStation: "all",
             logsOffset: 0,
@@ -685,14 +735,21 @@
         };
 
         const metrics = [
-            { suffix: "si-temp", chartId: "chart-si-temp", key: "si7021_temp", color: "#2fd680", fallbackLabel: "Si7021 Temperature [C]", fallbackUnit: "C" },
-            { suffix: "si-hum", chartId: "chart-si-hum", key: "si7021_hum", color: "#40d5ff", fallbackLabel: "Si7021 Humidity [%]", fallbackUnit: "%" },
-            { suffix: "bmp-temp", chartId: "chart-bmp-temp", key: "bmp280_temp", color: "#ff9a4c", fallbackLabel: "BMP280 Temperature [C]", fallbackUnit: "C" },
-            { suffix: "bmp-press", chartId: "chart-bmp-press", key: "bmp280_press", color: "#f7de55", fallbackLabel: "BMP280 Pressure [hPa]", fallbackUnit: "hPa" },
-            { suffix: "bme-temp", chartId: "chart-bme-temp", key: "bme280_temp", color: "#ff6f91", fallbackLabel: "BME280 Temperature [C]", fallbackUnit: "C" },
-            { suffix: "bme-press", chartId: "chart-bme-press", key: "bme280_press", color: "#c7f464", fallbackLabel: "BME280 Pressure [hPa]", fallbackUnit: "hPa" },
-            { suffix: "bme-hum", chartId: "chart-bme-hum", key: "bme280_hum", color: "#7d8cff", fallbackLabel: "BME280 Humidity [%]", fallbackUnit: "%" },
-            { suffix: "lux", chartId: "chart-lux", key: "tsl2561_lux", color: "#e4f9ff", fallbackLabel: "TSL2561 Light [lux]", fallbackUnit: "lux" }
+            { suffix: "si-temp", chartId: "chart-si-temp", key: "si7021_temp", step: 0.5, color: "#2fd680", fallbackLabel: "Si7021 Temperature [C]", fallbackUnit: "C" },
+            { suffix: "si-hum", chartId: "chart-si-hum", key: "si7021_hum", step: 1, color: "#40d5ff", fallbackLabel: "Si7021 Humidity [%]", fallbackUnit: "%" },
+            { suffix: "bmp-temp", chartId: "chart-bmp-temp", key: "bmp280_temp", step: 0.5, color: "#ff9a4c", fallbackLabel: "BMP280 Temperature [C]", fallbackUnit: "C" },
+            { suffix: "bmp-press", chartId: "chart-bmp-press", key: "bmp280_press", step: 0.5, color: "#f7de55", fallbackLabel: "BMP280 Pressure [hPa]", fallbackUnit: "hPa" },
+            { suffix: "bme-temp", chartId: "chart-bme-temp", key: "bme280_temp", step: 0.5, color: "#ff6f91", fallbackLabel: "BME280 Temperature [C]", fallbackUnit: "C" },
+            { suffix: "bme-press", chartId: "chart-bme-press", key: "bme280_press", step: 0.5, color: "#c7f464", fallbackLabel: "BME280 Pressure [hPa]", fallbackUnit: "hPa" },
+            { suffix: "bme-hum", chartId: "chart-bme-hum", key: "bme280_hum", step: 1, color: "#7d8cff", fallbackLabel: "BME280 Humidity [%]", fallbackUnit: "%" },
+            { suffix: "lux", chartId: "chart-lux", key: "tsl2561_lux", step: 10, color: "#e4f9ff", fallbackLabel: "TSL2561 Light [lux]", fallbackUnit: "lux" }
+        ];
+
+        const currentMetrics = [
+            { key: "temperature", label: "Temperatura", unit: "\u00b0C", step: 0.5 },
+            { key: "humidity", label: "Wilgotno\u015b\u0107", unit: "%", step: 1 },
+            { key: "pressure", label: "Ci\u015bnienie", unit: "hPa", step: 0.5 },
+            { key: "illuminance", label: "Nat\u0119\u017cenie \u015bwiat\u0142a", unit: "lx", step: 10 }
         ];
 
         const FALLBACK_SENSOR_FIELDS = [
@@ -726,8 +783,9 @@
             return ts.replace("T", " ");
         }
 
-        function formatValue(value) {
-            return value === null || value === undefined ? "-" : String(value);
+        function formatValue(value, step) {
+            if (value === null || value === undefined) return "-";
+            return step < 1 ? Number(value).toFixed(1) : String(value);
         }
 
         async function fetchJson(url, options) {
@@ -738,7 +796,7 @@
             return await response.json();
         }
 
-        function createChart(canvasId, color) {
+        function createChart(canvasId, color, step) {
             const ctx = document.getElementById(canvasId).getContext("2d");
             return new Chart(ctx, {
                 type: "line",
@@ -765,7 +823,7 @@
                             grid: { color: "rgba(173, 224, 240, 0.14)" }
                         },
                         y: {
-                            ticks: { color: "#9eb8c3" },
+                            ticks: { color: "#9eb8c3", stepSize: step },
                             grid: { color: "rgba(173, 224, 240, 0.14)" }
                         }
                     },
@@ -783,7 +841,7 @@
 
         function initCharts() {
             metrics.forEach((metric) => {
-                state.charts[metric.chartId] = createChart(metric.chartId, metric.color);
+                state.charts[metric.chartId] = createChart(metric.chartId, metric.color, metric.step);
             });
         }
 
@@ -827,11 +885,6 @@
             select.innerHTML = "";
             logSelect.innerHTML = "";
 
-            const avgOption = document.createElement("option");
-            avgOption.value = "avg";
-            avgOption.textContent = "AVG (all stations)";
-            select.appendChild(avgOption);
-
             const allLogsOption = document.createElement("option");
             allLogsOption.value = "all";
             allLogsOption.textContent = "All SD logs";
@@ -850,10 +903,10 @@
                 logSelect.appendChild(logOption);
             });
 
-            if (["avg"].concat(stations).includes(previous)) {
+            if (stations.includes(previous)) {
                 state.station = previous;
             } else {
-                state.station = "avg";
+                state.station = stations.length ? stations[0] : "";
             }
             select.value = state.station;
 
@@ -863,15 +916,28 @@
                 state.logsStation = "all";
             }
             logSelect.value = state.logsStation;
+            state.stations = stations;
             updateCsvLink();
         }
 
         async function loadSeries() {
+            if (!state.station) {
+                metrics.forEach((metric) => {
+                    const chart = state.charts[metric.chartId];
+                    chart.data.labels = [];
+                    chart.data.datasets[0].data = [];
+                    chart.update();
+                    document.getElementById("value-" + metric.suffix).textContent = "-";
+                });
+                return;
+            }
             const url = "/api/data?station=" + encodeURIComponent(state.station)
                 + "&range=" + encodeURIComponent(state.range)
                 + "&limit=" + SERIES_LIMIT;
             const payload = await fetchJson(url);
             const rows = Array.isArray(payload.data) ? payload.data : [];
+            document.getElementById("seriesResolution").textContent =
+                "Rozdzielczość: " + (payload.resolution === "1h" ? "1 h" : "10 min");
 
             const labels = rows.map((row) => formatTs(row.timestamp));
             const lastRow = rows.length ? rows[rows.length - 1] : null;
@@ -886,8 +952,63 @@
                 chart.update();
 
                 document.getElementById("value-" + metric.suffix).textContent =
-                    formatValue(lastRow ? lastRow[metric.key] : null);
+                    formatValue(lastRow ? lastRow[metric.key] : null, metric.step);
             });
+        }
+
+        function renderCurrentStation(payload) {
+            const cards = currentMetrics.map((metric) => (
+                '<article class="current-card card">'
+                + '<span class="value-box-label">' + metric.label + '</span>'
+                + '<div class="value-box-reading">'
+                + '<span class="value-box-number">' + formatValue(payload[metric.key], metric.step) + '</span>'
+                + '<span class="value-box-unit">' + metric.unit + '</span>'
+                + '</div>'
+                + '</article>'
+            )).join("");
+
+            const meta = "pr\u00f3bek: " + payload.sample_count
+                + " | " + displayTimestamp(payload.timestamp)
+                + " | status: " + payload.status;
+
+            return '<article class="current-station card">'
+                + '<header>'
+                + '<strong>Stacja ' + payload.station + '</strong>'
+                + '<span class="mono">' + meta + '</span>'
+                + '</header>'
+                + '<div class="current-grid">' + cards + '</div>'
+                + '</article>';
+        }
+
+        async function loadCurrentData() {
+            const meta = document.getElementById("currentMeta");
+            const container = document.getElementById("currentStations");
+            const stations = Array.isArray(state.stations) ? state.stations : [];
+
+            if (!stations.length) {
+                container.innerHTML = '<div class="panel card mono">Brak dostępnych stacji.</div>';
+                meta.textContent = "Brak dostępnych stacji.";
+                return;
+            }
+
+            meta.textContent = "Średnia z maksymalnie 10 ostatnich pomiarów dla każdej stacji.";
+            const blocks = [];
+            for (const stationId of stations) {
+                try {
+                    const payload = await fetchJson(
+                        "/api/current?station=" + encodeURIComponent(stationId)
+                    );
+                    blocks.push(renderCurrentStation(payload));
+                } catch (error) {
+                    blocks.push(
+                        '<article class="current-station card">'
+                        + '<header><strong>Stacja ' + stationId + '</strong></header>'
+                        + '<div class="mono">Brak ostatnich pomiarów dla tej stacji.</div>'
+                        + '</article>'
+                    );
+                }
+            }
+            container.innerHTML = blocks.join("");
         }
 
         function renderStatusStrip(rows) {
@@ -1008,6 +1129,29 @@
             updateLogsMeta(payload);
         }
 
+        async function remountSd() {
+            const meta = document.getElementById("logMeta");
+            const button = document.getElementById("sdRemountBtn");
+            button.disabled = true;
+            meta.textContent = "Remounting SD card...";
+
+            try {
+                const response = await fetch("/api/sd/remount", { method: "POST" });
+                const payload = await response.json();
+                if (payload.status === "ok" && payload.sd_write_ready) {
+                    meta.textContent = "SD remounted and writable.";
+                    state.logsOffset = 0;
+                    await loadLogs();
+                } else {
+                    meta.textContent = "SD remount failed. Card still unavailable.";
+                }
+            } catch (error) {
+                meta.textContent = "SD remount request failed.";
+            } finally {
+                button.disabled = false;
+            }
+        }
+
         async function loadLatestStationRows() {
             const payload = await fetchJson("/api/latest");
             const rows = Array.isArray(payload.data) ? payload.data : [];
@@ -1104,6 +1248,8 @@
         async function loadActiveTabData() {
             if (state.activeTab === "charts") {
                 await loadSeries();
+            } else if (state.activeTab === "current") {
+                await loadCurrentData();
             } else if (state.activeTab === "stations") {
                 await loadLatestStationRows();
             } else if (state.activeTab === "logs") {
@@ -1159,6 +1305,9 @@
             document.getElementById("logRefreshBtn").addEventListener("click", async () => {
                 state.logsOffset = 0;
                 await withRefreshLock(loadLogs);
+            });
+            document.getElementById("sdRemountBtn").addEventListener("click", async () => {
+                await withRefreshLock(remountSd);
             });
             document.getElementById("logFirstBtn").addEventListener("click", async () => {
                 state.logsOffset = 0;
