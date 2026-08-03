@@ -86,8 +86,9 @@ cs = machine.Pin(17, machine.Pin.OUT)
 SD_MOUNT = "/sd"
 LEGACY_LOG_FILE = SD_MOUNT + "/log.json"
 UART_TEXT_LOG_FILE = SD_MOUNT + "/uart_log.txt"
-SD_INIT_BAUDRATES = (1320000, 1000000, 400000, 100000)
+SD_INIT_BAUDRATES = (400000, 1000000, 1320000, 100000)
 SD_INIT_MAX_ATTEMPTS = 3
+SD_DISABLED_RETRY_TICKS = 30  # sd_monitor period is 1s → ~30s
 RAM_LOGS = []
 sd = None
 SD_WRITE_READY = False
@@ -102,6 +103,7 @@ _api_heavy_lock = None
 _MEM_FREE_MIN = None
 _sd_unavailable_count = 0
 _sd_last_error = None
+_sd_disabled_ticks = 0
 
 
 def _get_uart_cmd_lock():
@@ -410,9 +412,10 @@ def _ensure_sd_ready():
         return
 
     if SD_WRITE_READY:
-        if not _is_sd_available():
-            _mark_sd_unavailable("card removed")
-        return
+        if _is_sd_available():
+            return
+        _mark_sd_unavailable("card removed")
+        # Fall through and try to remount immediately.
 
     card = mount_sd()
     if card is None:
@@ -427,11 +430,12 @@ def _ensure_sd_ready():
 
 def remount_sd():
     """Manual re-init after failed startup mount (clears SD_INIT_DISABLED)."""
-    global SD_INIT_DISABLED
+    global SD_INIT_DISABLED, _sd_disabled_ticks
 
     print("Reczna reinicjalizacja czytnika SD...")
     _mark_sd_unavailable("manual remount")
     SD_INIT_DISABLED = False
+    _sd_disabled_ticks = 0
     ok = _init_sd_at_startup()
     led.value(1 if ok else 0)
     return ok
@@ -455,7 +459,9 @@ def log_station_to_sd(station_id, entry):
     for field_name in ws_uart.SENSOR_FIELDS:
         payload[field_name] = entry.get(field_name)
 
-    if not _is_sd_available():
+    if not SD_WRITE_READY or not _is_sd_available():
+        if SD_WRITE_READY:
+            _mark_sd_unavailable("sd_unavailable")
         _sd_unavailable_count += 1
         _sd_last_error = "sd_unavailable"
         return
@@ -467,6 +473,8 @@ def log_station_to_sd(station_id, entry):
         _sd_unavailable_count += 1
         _sd_last_error = str(e)
         _append_ram_log({"kind": "sd_write_error", "error": str(e)})
+        # Card/FAT often needs full re-init after a failed write.
+        _mark_sd_unavailable("write error: " + str(e))
 
 
 def _aggregate_file_names(resolution, station_id):
@@ -502,7 +510,9 @@ def _cleanup_aggregate_files(resolution, station_id, current_day):
 
 
 def _append_aggregate_record(resolution, station_id, record):
-    if not _is_sd_available():
+    if not SD_WRITE_READY or not _is_sd_available():
+        if SD_WRITE_READY:
+            _mark_sd_unavailable("sd_unavailable")
         return False
     day_key = _timestamp_day_key(record["timestamp"])
     try:
@@ -515,6 +525,7 @@ def _append_aggregate_record(resolution, station_id, record):
             "kind": "aggregate_write_error",
             "error": str(e),
         })
+        _mark_sd_unavailable("aggregate write error: " + str(e))
         return False
 
 
@@ -601,13 +612,16 @@ def _handle_measurement_line(line):
 
 
 def log_uart_line_to_sd(line):
-    if not _is_sd_available():
+    if not SD_WRITE_READY or not _is_sd_available():
+        if SD_WRITE_READY:
+            _mark_sd_unavailable("sd_unavailable")
         return
     try:
         with open(UART_TEXT_LOG_FILE, "a") as f:
             f.write(line + "\n")
     except OSError as e:
         _append_ram_log({"kind": "uart_log_write_error", "error": str(e)})
+        _mark_sd_unavailable("uart log write error: " + str(e))
 
 
 def _entry_from_json_line(line):
@@ -1165,10 +1179,25 @@ async def uart_reading_task():
 
 
 async def sd_monitor_task():
+    global SD_INIT_DISABLED, SD_WRITE_READY, sd, _sd_disabled_ticks
+
     was_ready = SD_WRITE_READY
     while True:
-        if SD_WRITE_READY or not SD_INIT_DISABLED:
+        if SD_INIT_DISABLED and not SD_WRITE_READY:
+            _sd_disabled_ticks += 1
+            if _sd_disabled_ticks >= SD_DISABLED_RETRY_TICKS:
+                _sd_disabled_ticks = 0
+                print("Ponowna proba montowania SD (po blokadzie init)...")
+                card = mount_sd()
+                if card is not None:
+                    sd = card
+                    SD_WRITE_READY = True
+                    SD_INIT_DISABLED = False
+                    print("SD connected and writable.")
+        else:
+            _sd_disabled_ticks = 0
             _ensure_sd_ready()
+
         if SD_WRITE_READY and not was_ready:
             led.value(1)
             print("LED ON: SD connected and writable.")

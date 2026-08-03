@@ -14,7 +14,7 @@ MAX_UART_LINE_BYTES = 240
 
 SD_MOUNT = "/sd"
 UART_TEXT_LOG_FILE = SD_MOUNT + "/uart_log.txt"
-SD_INIT_BAUDRATES = (1320000, 1000000, 400000, 100000)
+SD_INIT_BAUDRATES = (400000, 1000000, 1320000, 100000)
 
 led = machine.Pin("LED", machine.Pin.OUT)
 led.value(0)
@@ -171,9 +171,10 @@ def _mark_sd_disconnected(reason):
 
 def _ensure_sd_ready():
     if sd_connected:
-        if not _is_sd_available():
-            _mark_sd_disconnected("card removed")
-        return
+        if _is_sd_available():
+            return
+        _mark_sd_disconnected("card removed")
+        # Fall through and try to remount immediately.
 
     if not _mount_sd():
         return
