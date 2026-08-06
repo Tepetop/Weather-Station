@@ -52,11 +52,13 @@ typedef struct {
   uint8_t dirty;
 } WS_UI_RtcSetState_t;
 
-/** @brief Global chart data instances */
+/** @brief Global chart data instances (disabled while Pico dashboard owns history) */
+#if WS_UI_CHARTS_ENABLED
 PCD8544_ChartData_t WS_TemperatureChart;
 PCD8544_ChartData_t WS_HumidityChart;
 PCD8544_ChartData_t WS_PressureChart;
 PCD8544_ChartData_t WS_LuxChart;
+#endif
 
 /** @brief Global UI context */
 WS_UIContext_t WS_UI = {0};
@@ -552,14 +554,41 @@ void WS_UI_Init(WS_UIContext_t *ui, WS_Manager_t *ws_ctx, WS_RuntimeConfig_t *ws
   ui->rtc_handle = rtc_handle;
   ui->text_buffer = text_buffer;
   ui->text_buffer_size = text_buffer_size;
+  ui->selected_node_index = 0U;
   ui->view_state = WS_VIEW_DEFAULT_MEASUREMENT;
   ui->last_activity_tick = HAL_GetTick();
+}
+
+/**
+ * @brief Cycles selected outdoor station on the default measurement view.
+ * @param[in] direction +1 next station, -1 previous station.
+ */
+static void ws_ui_cycle_selected_station(int8_t direction) {
+  if ((WS_UI.ws_ctx == NULL) || (WS_UI.ws_ctx->node_count == 0U)) {
+    return;
+  }
+
+  uint8_t count = WS_UI.ws_ctx->node_count;
+  if (WS_UI.selected_node_index >= count) {
+    WS_UI.selected_node_index = 0U;
+  }
+
+  if (direction > 0) {
+    WS_UI.selected_node_index = (uint8_t)((WS_UI.selected_node_index + 1U) % count);
+  } else if (direction < 0) {
+    WS_UI.selected_node_index = (WS_UI.selected_node_index == 0U)
+                                    ? (uint8_t)(count - 1U)
+                                    : (uint8_t)(WS_UI.selected_node_index - 1U);
+  }
+
+  WS_UI.chart_data_dirty = 1U;
 }
 
 /**
  * @brief Initializes chart metadata for all measurement chart buffers.
  */
 void WS_UI_InitCharts(void) {
+#if WS_UI_CHARTS_ENABLED
   PCD8544_InitChartData(&WS_TemperatureChart);
   WS_TemperatureChart.decimalPlaces = 1;
   WS_TemperatureChart.chartType = PCD8544_CHART_DOT_LINE;
@@ -575,6 +604,7 @@ void WS_UI_InitCharts(void) {
   PCD8544_InitChartData(&WS_LuxChart);
   WS_LuxChart.decimalPlaces = 0;
   WS_LuxChart.chartType = PCD8544_CHART_DOT_LINE;
+#endif
 }
 
 /**
@@ -584,6 +614,7 @@ void WS_UI_InitCharts(void) {
  * @param[in] minute Sample minute for chart X axis.
  */
 void WS_UI_AddMeasurementToCharts(const WS_NodeReadings_t *data, uint8_t hour, uint8_t minute) {
+#if WS_UI_CHARTS_ENABLED
   if (data == NULL) {
     return;
   }
@@ -601,12 +632,17 @@ void WS_UI_AddMeasurementToCharts(const WS_NodeReadings_t *data, uint8_t hour, u
   PCD8544_AddChartPoint(&WS_HumidityChart, humVal, hour, minute);
   PCD8544_AddChartPoint(&WS_PressureChart, pressVal, hour, minute);
   PCD8544_AddChartPoint(&WS_LuxChart, luxVal, hour, minute);
+#else
+  (void)data;
+  (void)hour;
+  (void)minute;
+#endif
 
   WS_UI.chart_data_dirty = 1U;
 }
 
 /**
- * @brief Draws default measurement screen with current values and clock.
+ * @brief Draws default measurement screen for the selected outdoor station.
  */
 void WS_UI_MeasurementDisplay(void) {
   if ((WS_UI.lcd == NULL) || (WS_UI.ws_ctx == NULL) || (WS_UI.menu_ctx == NULL)) {
@@ -626,8 +662,16 @@ void WS_UI_MeasurementDisplay(void) {
   }
   WS_UI.chart_data_dirty = 0U;
 
-  WS_NodeReadings_t measurement;
-  uint8_t hasMeasurement = WS_GetLatestMeasurement(WS_UI.ws_ctx, &measurement) ? 1U : 0U;
+  uint8_t node_count = WS_UI.ws_ctx->node_count;
+  if ((node_count == 0U) || (WS_UI.selected_node_index >= node_count)) {
+    WS_UI.selected_node_index = 0U;
+  }
+
+  const WS_NodeState_t *node =
+      (node_count > 0U) ? &WS_UI.ws_ctx->nodes[WS_UI.selected_node_index] : NULL;
+  uint8_t hasMeasurement =
+      ((node != NULL) && (node->data.count > 0U)) ? 1U : 0U;
+  const WS_NodeReadings_t *measurement = hasMeasurement ? &node->data : NULL;
   char value_text[16];
   float reading_value = 0.0f;
 
@@ -636,16 +680,18 @@ void WS_UI_MeasurementDisplay(void) {
 
   PCD8544_SetCursor(WS_UI.lcd, 0, 0);
   if (WS_UI.rtc_now != NULL) {
-    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "%02u:%02u:%02u",
+    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "S%u %02u:%02u:%02u",
+             (unsigned int)(WS_UI.selected_node_index + 1U),
              WS_UI.rtc_now->hours, WS_UI.rtc_now->minutes, WS_UI.rtc_now->seconds);
   } else {
-    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "--:--:--");
+    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "S%u --:--:--",
+             (unsigned int)(WS_UI.selected_node_index + 1U));
   }
   PCD8544_WriteString(WS_UI.lcd, WS_UI.text_buffer);
 
   PCD8544_SetCursor(WS_UI.lcd, 0, 1);
   if (hasMeasurement != 0U) {
-    float avg_temp = ws_avg_temperature(&measurement);
+    float avg_temp = ws_avg_temperature(measurement);
     ws_ui_format_fixed(value_text, sizeof(value_text), avg_temp, 2U);
     snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "T:%sC", value_text);
   } else {
@@ -654,7 +700,7 @@ void WS_UI_MeasurementDisplay(void) {
   PCD8544_WriteString(WS_UI.lcd, WS_UI.text_buffer);
 
   PCD8544_SetCursor(WS_UI.lcd, 0, 2);
-  if ((hasMeasurement != 0U) && ws_get_humidity(&measurement, &reading_value)) {
+  if ((hasMeasurement != 0U) && ws_get_humidity(measurement, &reading_value)) {
     ws_ui_format_fixed(value_text, sizeof(value_text), reading_value, 2U);
     snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "H:%s%%", value_text);
   } else {
@@ -663,7 +709,7 @@ void WS_UI_MeasurementDisplay(void) {
   PCD8544_WriteString(WS_UI.lcd, WS_UI.text_buffer);
 
   PCD8544_SetCursor(WS_UI.lcd, 0, 3);
-  if ((hasMeasurement != 0U) && ws_get_pressure(&measurement, &reading_value)) {
+  if ((hasMeasurement != 0U) && ws_get_pressure(measurement, &reading_value)) {
     ws_ui_format_fixed(value_text, sizeof(value_text), reading_value, 2U);
     snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "P:%shPa", value_text);
   } else {
@@ -672,7 +718,7 @@ void WS_UI_MeasurementDisplay(void) {
   PCD8544_WriteString(WS_UI.lcd, WS_UI.text_buffer);
 
   PCD8544_SetCursor(WS_UI.lcd, 0, 4);
-  if ((hasMeasurement != 0U) && WS_Reading_Get(&measurement, WS_CH_TSL2561_LUX, &reading_value)) {
+  if ((hasMeasurement != 0U) && WS_Reading_Get(measurement, WS_CH_TSL2561_LUX, &reading_value)) {
     ws_ui_format_fixed(value_text, sizeof(value_text), reading_value, 2U);
     snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "L:%slux", value_text);
   } else {
@@ -687,6 +733,7 @@ void WS_UI_MeasurementDisplay(void) {
  * @brief Activates and renders temperature chart view.
  */
 void WS_UI_ChartTemperature(void) {
+#if WS_UI_CHARTS_ENABLED
   if ((WS_UI.menu_ctx == NULL) || (WS_UI.lcd == NULL)) {
     return;
   }
@@ -697,12 +744,14 @@ void WS_UI_ChartTemperature(void) {
   PCD8544_ClearBuffer(WS_UI.lcd);
   PCD8544_DrawChart(WS_UI.lcd, &WS_TemperatureChart);
   PCD8544_UpdateScreen(WS_UI.lcd);
+#endif
 }
 
 /**
  * @brief Activates and renders humidity chart view.
  */
 void WS_UI_ChartHumidity(void) {
+#if WS_UI_CHARTS_ENABLED
   if ((WS_UI.menu_ctx == NULL) || (WS_UI.lcd == NULL)) {
     return;
   }
@@ -713,12 +762,14 @@ void WS_UI_ChartHumidity(void) {
   PCD8544_ClearBuffer(WS_UI.lcd);
   PCD8544_DrawChart(WS_UI.lcd, &WS_HumidityChart);
   PCD8544_UpdateScreen(WS_UI.lcd);
+#endif
 }
 
 /**
  * @brief Activates and renders pressure chart view.
  */
 void WS_UI_ChartPressure(void) {
+#if WS_UI_CHARTS_ENABLED
   if ((WS_UI.menu_ctx == NULL) || (WS_UI.lcd == NULL)) {
     return;
   }
@@ -729,12 +780,14 @@ void WS_UI_ChartPressure(void) {
   PCD8544_ClearBuffer(WS_UI.lcd);
   PCD8544_DrawChart(WS_UI.lcd, &WS_PressureChart);
   PCD8544_UpdateScreen(WS_UI.lcd);
+#endif
 }
 
 /**
  * @brief Activates and renders light chart view.
  */
 void WS_UI_ChartLux(void) {
+#if WS_UI_CHARTS_ENABLED
   if ((WS_UI.menu_ctx == NULL) || (WS_UI.lcd == NULL)) {
     return;
   }
@@ -745,12 +798,14 @@ void WS_UI_ChartLux(void) {
   PCD8544_ClearBuffer(WS_UI.lcd);
   PCD8544_DrawChart(WS_UI.lcd, &WS_LuxChart);
   PCD8544_UpdateScreen(WS_UI.lcd);
+#endif
 }
 
 /**
  * @brief Refreshes currently selected chart when new points are available.
  */
 void WS_UI_ChartViewTask(void) {
+#if WS_UI_CHARTS_ENABLED
   if ((WS_UI.menu_ctx == NULL) || (WS_UI.lcd == NULL)) {
     return;
   }
@@ -780,6 +835,7 @@ void WS_UI_ChartViewTask(void) {
   }
 
   PCD8544_UpdateScreen(WS_UI.lcd);
+#endif
 }
 
 /**
@@ -1030,6 +1086,20 @@ void WS_UI_ViewTask(void) {
     case WS_VIEW_DEFAULT_MEASUREMENT:
       if ((WS_UI.encoder->ButtonIRQ_Flag != 0U) || (WS_UI.encoder->IRQ_Flag != 0U)) {
         WS_UI.last_activity_tick = now;
+      }
+
+      /* Encoder cycles stations while live measurements are shown */
+      if ((WS_UI.menu_ctx->state.InDefaultMeasurementsView != 0U) &&
+          (WS_UI.menu_ctx->state.actionPending != 0U)) {
+        if (WS_UI.menu_ctx->state.currentAction == MENU_ACTION_NEXT) {
+          ws_ui_cycle_selected_station(1);
+          WS_UI.menu_ctx->state.actionPending = 0U;
+          WS_UI.menu_ctx->state.currentAction = MENU_ACTION_IDLE;
+        } else if (WS_UI.menu_ctx->state.currentAction == MENU_ACTION_PREV) {
+          ws_ui_cycle_selected_station(-1);
+          WS_UI.menu_ctx->state.actionPending = 0U;
+          WS_UI.menu_ctx->state.currentAction = MENU_ACTION_IDLE;
+        }
       }
 
       Menu_Task(WS_UI.lcd, WS_UI.menu_ctx);

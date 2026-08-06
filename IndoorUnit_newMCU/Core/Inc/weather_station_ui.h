@@ -18,6 +18,15 @@
 #include "weather_station.h"
 
 /**
+ * @brief Enable on-device measurement charts (menu + buffers).
+ * @details Keep disabled while history is shown on the Pico dashboard —
+ *          chart series occupy significant BSS on STM32F103.
+ */
+#ifndef WS_UI_CHARTS_ENABLED
+#define WS_UI_CHARTS_ENABLED 0
+#endif
+
+/**
  * @brief View state machine enumeration
  * @details Tracks the active view/screen of the weather station UI
  */
@@ -45,16 +54,19 @@ typedef struct {
   DS3231_t *rtc_handle;            /**< RTC device handle for write operations */
   char *text_buffer;               /**< Scratch buffer for text formatting */
   size_t text_buffer_size;         /**< Size of text buffer */
-  volatile uint8_t chart_data_dirty; /**< Flag: new chart data available, redraw needed */
+  volatile uint8_t chart_data_dirty; /**< Flag: new data available, redraw needed */
+  uint8_t selected_node_index;     /**< Station index shown on default measurement view */
   WS_ViewState_t view_state;       /**< Current view state machine state */
   uint32_t last_activity_tick;     /**< Timestamp of last button press for screen saver */
 } WS_UIContext_t;
 
+#if WS_UI_CHARTS_ENABLED
 /** @brief Chart instances for all measurement types */
 extern PCD8544_ChartData_t WS_TemperatureChart;
 extern PCD8544_ChartData_t WS_HumidityChart;
 extern PCD8544_ChartData_t WS_PressureChart;
 extern PCD8544_ChartData_t WS_LuxChart;
+#endif
 
 /** @brief Global UI context */
 extern WS_UIContext_t WS_UI;

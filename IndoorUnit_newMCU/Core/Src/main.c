@@ -181,7 +181,7 @@ int main(void)
   // Display initial menu and then show default measurement screen
   Menu_RefreshDisplay(&LCD, &menuContext);
   
-  /* Initialize charts */
+  /* Initialize charts (no-op when WS_UI_CHARTS_ENABLED == 0) */
   WS_UI_InitCharts();
 
   /* ---------------------------------------------------------------
