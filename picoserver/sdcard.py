@@ -235,9 +235,13 @@ class SDCard:
             self.spi.write(b"\xff")
             raise OSError(5)  # EIO
 
-        # wait for write to finish
+        # wait for write to finish (card holds MISO low while busy)
+        start = time.ticks_ms()
         while self.spi.read(1, 0xFF)[0] == 0:
-            pass
+            if time.ticks_diff(time.ticks_ms(), start) > 1000:
+                self.cs(1)
+                self.spi.write(b"\xff")
+                raise OSError(5)  # EIO
 
         self.cs(1)
         self.spi.write(b"\xff")
@@ -247,8 +251,12 @@ class SDCard:
         self.spi.read(1, token)
         self.spi.write(b"\xff")
         # wait for write to finish
+        start = time.ticks_ms()
         while self.spi.read(1, 0xFF)[0] == 0x00:
-            pass
+            if time.ticks_diff(time.ticks_ms(), start) > 1000:
+                self.cs(1)
+                self.spi.write(b"\xff")
+                raise OSError(5)  # EIO
 
         self.cs(1)
         self.spi.write(b"\xff")
