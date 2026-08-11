@@ -19,6 +19,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "dma.h"
+#include "fatfs.h"
 #include "i2c.h"
 #include "spi.h"
 #include "tim.h"
@@ -45,6 +46,8 @@
 #include "debug_log.h"
 #include "uart_cmd.h"
 #include "power_mgr.h"
+#include "sd_spi.h"
+#include "sd_logger.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -68,6 +71,7 @@
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
+void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 
 void EncoderButtonPress(void);
@@ -99,7 +103,6 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-
   HAL_Init();
 
   /* USER CODE BEGIN Init */
@@ -116,12 +119,19 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_DMA_Init();
-  MX_SPI1_Init();
   MX_I2C2_Init();
-  MX_TIM1_Init();
+  MX_SPI1_Init();
   MX_SPI2_Init();
+  MX_TIM1_Init();
   MX_USART1_UART_Init();
+  MX_WWDG_Init();
+  MX_FATFS_Init();
   /* USER CODE BEGIN 2 */
+  /* SPI1 shared by LCD + SD: keep both CS idle-high before talking to either. */
+  HAL_GPIO_WritePin(LCD_CE_GPIO_Port, LCD_CE_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(SD_CS_GPIO_Port, SD_CS_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(NRF_CS_GPIO_Port, NRF_CS_Pin, GPIO_PIN_SET);
+
   bool rtcManualSetRequested = RTC_IsManualSetRequestedAtBoot();
 
   /*            Initialize encoder        */
@@ -172,6 +182,10 @@ int main(void)
   DS3231_SetAlarm2(&rtc, &RTCalarm2);
   DS3231_EnableAlarm1Interrupt(&rtc);
   DS3231_EnableAlarm2Interrupt(&rtc);
+
+  /* SD mount is best-effort — missing card must not block the station. */
+  SD_SPI_Bind(&hspi1);
+  (void)SD_Logger_Init();
 
 
   /* Initialize menu system with predefined configuration */
@@ -327,7 +341,7 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL8;
+  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL9;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();

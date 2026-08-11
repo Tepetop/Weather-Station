@@ -12,6 +12,7 @@
 #include "debug_log.h"
 #include "ws_protocol.h"
 #include "power_mgr.h"
+#include "sd_logger.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -430,6 +431,7 @@ static void ws_process_ready_nodes(WS_Manager_t *ctx, const WS_RuntimeConfig_t *
     }
 
     ws_send_measurement_uart(ctx, cfg, i);
+    (void)SD_Logger_AppendMeasurement(i, &node->data, cfg->rtc_now);
     if (WS_UI.rtc_now != NULL) {
       WS_UI_AddMeasurementToCharts(&node->data, WS_UI.rtc_now->hours, WS_UI.rtc_now->minutes);
     }

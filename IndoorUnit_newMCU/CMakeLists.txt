@@ -59,6 +59,8 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/debug_log.c
     Core/Src/uart_cmd.c
     Core/Src/power_mgr.c
+    Core/Src/sd_spi.c
+    Core/Src/sd_logger.c
 )
 
 # Add include paths
