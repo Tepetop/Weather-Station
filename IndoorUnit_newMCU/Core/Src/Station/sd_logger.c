@@ -1,12 +1,16 @@
 /**
  * @file sd_logger.c
  * @brief JSON Lines SD logger matching picoserver log_<station>.json format
+ * @details Mount is best-effort. I/O errors unmount the volume and retry
+ *          after SD_LOGGER_RETRY_PERIOD_MS. Requires LFN (`_USE_LFN`) because
+ *          `log_Sn.json` is not a legal 8.3 name.
  */
 
 #include "sd_logger.h"
 
 #include "debug_log.h"
 #include "fatfs.h"
+#include "sd_spi.h"
 #include "wwdg.h"
 
 #include <stdio.h>
@@ -44,6 +48,9 @@ static const char *const SD_FIELD_NAMES[] = {
 
 #define SD_FIELD_COUNT (sizeof(SD_FIELD_CHANNELS) / sizeof(SD_FIELD_CHANNELS[0]))
 
+/**
+ * @brief Kick WWDG at most every 2 ms during blocking FatFs calls.
+ */
 static void sd_logger_wwdg_kick(void) {
   uint32_t now;
 
@@ -60,12 +67,24 @@ static void sd_logger_wwdg_kick(void) {
   }
 }
 
-static void sd_logger_mark_unavailable(const char *reason) {
+/**
+ * @brief Mark the volume unavailable and log a FatFs/driver code.
+ * @param reason UART prefix ending with `=` or similar (value is appended).
+ * @param code   FRESULT or SD_SPI_ERR_* value.
+ */
+static void sd_logger_mark_unavailable(const char *reason, int32_t code) {
   sd_ready = 0U;
   sd_next_retry_tick = HAL_GetTick() + SD_LOGGER_RETRY_PERIOD_MS;
-  Debug_Log(reason);
+  Debug_LogValue(reason, code);
 }
 
+/**
+ * @brief Format a float as a fixed-point decimal string without libc `%f`.
+ * @param dst      Destination buffer.
+ * @param dst_size Capacity in bytes.
+ * @param value    Value to print.
+ * @param decimals Digits after the decimal point (0 = integer).
+ */
 static void sd_format_fixed(char *dst, size_t dst_size, float value, uint8_t decimals) {
   int32_t scale = 1;
   float scaled_f;
@@ -98,6 +117,12 @@ static void sd_format_fixed(char *dst, size_t dst_size, float value, uint8_t dec
   }
 }
 
+/**
+ * @brief Format sensor_status as picoserver `OK` / `ERR:SI7021_BMP280`.
+ * @param dst           Destination buffer.
+ * @param dst_size      Capacity in bytes.
+ * @param sensor_status Bitmask of WS_SENSOR_ERR_*.
+ */
 static void sd_format_status(char *dst, size_t dst_size, uint8_t sensor_status) {
   uint8_t known = sensor_status &
       ((uint8_t)WS_SENSOR_ERR_SI7021 | (uint8_t)WS_SENSOR_ERR_BMP280 |
@@ -138,20 +163,39 @@ static void sd_format_status(char *dst, size_t dst_size, uint8_t sensor_status) 
   }
 }
 
+/**
+ * @brief Link-check, mount immediately, and log card identity/capacity.
+ * @retval 0 Mounted.
+ * @retval 1 Link, SPI, or FatFs mount failed.
+ */
 static uint8_t sd_try_mount(void) {
   FRESULT fr;
+  DWORD sectors = 0U;
+
+  Debug_Log("LOG:SD:INIT_START");
+
+  if (retUSER != 0U) {
+    sd_logger_mark_unavailable("LOG:SD:LINK_FAIL ret=", (int32_t)retUSER);
+    return 1U;
+  }
 
   sd_logger_wwdg_kick();
   fr = f_mount(&USERFatFS, USERPath, 1);
   sd_logger_wwdg_kick();
 
   if (fr != FR_OK) {
-    sd_logger_mark_unavailable("LOG:SD:MOUNT_FAIL");
+    Debug_LogValue("LOG:SD:MOUNT_FAIL fr=", (int32_t)fr);
+    sd_logger_mark_unavailable("LOG:SD:DRV_ERR=", (int32_t)SD_SPI_GetLastError());
     return 1U;
   }
 
   sd_ready = 1U;
-  Debug_Log("LOG:SD:MOUNT_OK");
+  Debug_LogValue("LOG:SD:TYPE=", (int32_t)SD_SPI_GetCardType());
+  if (SD_SPI_disk_ioctl(SD_SPI_PDRV, GET_SECTOR_COUNT, &sectors) == RES_OK) {
+    Debug_LogValue("LOG:SD:SECTORS=", (int32_t)sectors);
+    Debug_LogValue("LOG:SD:SIZE_KB=", (int32_t)(sectors / 2U));
+  }
+  Debug_Log("LOG:SD:INIT_OK");
   return 0U;
 }
 
@@ -163,6 +207,11 @@ uint8_t SD_Logger_IsReady(void) {
   return sd_ready;
 }
 
+/**
+ * @brief Remount after the retry period if the last mount/I/O failed.
+ * @retval 1 Volume ready.
+ * @retval 0 Still unavailable.
+ */
 static uint8_t sd_ensure_ready(void) {
   uint32_t now;
 
@@ -269,24 +318,32 @@ uint8_t SD_Logger_AppendMeasurement(uint8_t station_idx,
   /* FatFs R0.11: OPEN_ALWAYS + seek end ≈ append. */
   fr = f_open(&file, path, FA_OPEN_ALWAYS | FA_WRITE);
   if (fr != FR_OK) {
-    sd_logger_mark_unavailable("LOG:SD:OPEN_FAIL");
+    sd_logger_mark_unavailable("LOG:SD:OPEN_FAIL fr=", (int32_t)fr);
     return 0U;
   }
   fr = f_lseek(&file, f_size(&file));
   if (fr != FR_OK) {
     (void)f_close(&file);
-    sd_logger_mark_unavailable("LOG:SD:SEEK_FAIL");
+    sd_logger_mark_unavailable("LOG:SD:SEEK_FAIL fr=", (int32_t)fr);
     return 0U;
   }
 
   sd_logger_wwdg_kick();
   fr = f_write(&file, sd_line, (UINT)len, &written);
   sd_logger_wwdg_kick();
-  (void)f_close(&file);
-
-  if ((fr != FR_OK) || (written != (UINT)len)) {
-    sd_logger_mark_unavailable("LOG:SD:WRITE_FAIL");
-    return 0U;
+  {
+    FRESULT fr_close = f_close(&file);
+    if ((fr != FR_OK) || (written != (UINT)len)) {
+      sd_logger_mark_unavailable("LOG:SD:WRITE_FAIL fr=", (int32_t)fr);
+      if ((fr == FR_OK) && (written != (UINT)len)) {
+        Debug_LogValue("LOG:SD:WRITE_FAIL n=", (int32_t)written);
+      }
+      return 0U;
+    }
+    if (fr_close != FR_OK) {
+      sd_logger_mark_unavailable("LOG:SD:CLOSE_FAIL fr=", (int32_t)fr_close);
+      return 0U;
+    }
   }
 
   return 0U;

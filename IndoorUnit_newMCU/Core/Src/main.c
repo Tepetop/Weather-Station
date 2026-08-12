@@ -124,13 +124,12 @@ int main(void)
   MX_SPI2_Init();
   MX_TIM1_Init();
   MX_USART1_UART_Init();
-  MX_WWDG_Init();
   MX_FATFS_Init();
   /* USER CODE BEGIN 2 */
-  /* SPI1 shared by LCD + SD: keep both CS idle-high before talking to either. */
-  HAL_GPIO_WritePin(LCD_CE_GPIO_Port, LCD_CE_Pin, GPIO_PIN_SET);
-  HAL_GPIO_WritePin(SD_CS_GPIO_Port, SD_CS_Pin, GPIO_PIN_SET);
-  HAL_GPIO_WritePin(NRF_CS_GPIO_Port, NRF_CS_Pin, GPIO_PIN_SET);
+  /* Do NOT call MX_WWDG_Init() here (Cube may regenerate it above): WWDG must
+   * start only after long boot init, with Prescaler=8 / Window=126 / Counter=127. */
+  /* SPI1 shared by LCD + SD: keep CS idle-high before talking to either. */
+
 
   bool rtcManualSetRequested = RTC_IsManualSetRequestedAtBoot();
 
@@ -183,8 +182,11 @@ int main(void)
   DS3231_EnableAlarm1Interrupt(&rtc);
   DS3231_EnableAlarm2Interrupt(&rtc);
 
+  /* UART + RTC are up: start debug log before SD so init messages are visible. */
+  Debug_Init();
+
   /* SD mount is best-effort — missing card must not block the station. */
-  SD_SPI_Bind(&hspi1);
+  (void)SD_SPI_Bind(&hspi1);
   (void)SD_Logger_Init();
 
 
@@ -253,9 +255,6 @@ int main(void)
 
   /* Initialize UI context for weather station display functions */
   WS_UI_Init(&WS_UI, &wsCtx, &wsRuntime, &LCD, &menuContext, &encoder, &rtcNow, g_nrf_message, sizeof(g_nrf_message), &rtc);
-
-  /* Initialize debug logging system */
-  Debug_Init();
 
   UartCmd_Init(&huart1, &wsCtx);
 
