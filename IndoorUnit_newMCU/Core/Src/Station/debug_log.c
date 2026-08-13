@@ -305,8 +305,8 @@ void Debug_Heartbeat(void) {}
  * @brief Log the boot banner and reset cause
  */
 void Debug_LogBoot(void) {
-  Debug_Log("LOG:WEATHER STATION BOOT");
-  Debug_Log("LOG:Debug logging enabled");
+  Debug_Log("WEATHER STATION BOOT");
+  Debug_Log("Debug logging enabled");
   debug_log_reset_cause();
 }
 

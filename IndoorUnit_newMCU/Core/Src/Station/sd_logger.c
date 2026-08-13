@@ -153,10 +153,10 @@ static uint8_t sd_try_mount(void) {
   FRESULT fr;
   DWORD sectors = 0U;
 
-  Debug_Log("LOG:SD:INIT_START");
+  Debug_Log("SD:INIT_START");
 
   if (retUSER != 0U) {
-    sd_logger_mark_unavailable("LOG:SD:LINK_FAIL ret=", (int32_t)retUSER);
+    sd_logger_mark_unavailable("SD:LINK_FAIL ret=", (int32_t)retUSER);
     return 1U;
   }
 
@@ -165,18 +165,18 @@ static uint8_t sd_try_mount(void) {
   WWDG_TryRefresh();
 
   if (fr != FR_OK) {
-    Debug_LogValue("LOG:SD:MOUNT_FAIL fr=", (int32_t)fr);
-    sd_logger_mark_unavailable("LOG:SD:DRV_ERR=", (int32_t)USER_SPI_get_last_error());
+    Debug_LogValue("SD:MOUNT_FAIL fr=", (int32_t)fr);
+    sd_logger_mark_unavailable("SD:DRV_ERR=", (int32_t)USER_SPI_get_last_error());
     return 1U;
   }
 
   sd_ready = 1U;
-  Debug_LogValue("LOG:SD:TYPE=", (int32_t)USER_SPI_get_card_type());
+  Debug_LogValue("SD:TYPE=", (int32_t)USER_SPI_get_card_type());
   if (disk_ioctl(USER_SPI_PDRV, GET_SECTOR_COUNT, &sectors) == RES_OK) {
-    Debug_LogValue("LOG:SD:SECTORS=", (int32_t)sectors);
-    Debug_LogValue("LOG:SD:SIZE_KB=", (int32_t)(sectors / 2U));
+    Debug_LogValue("SD:SECTORS=", (int32_t)sectors);
+    Debug_LogValue("SD:SIZE_KB=", (int32_t)(sectors / 2U));
   }
-  Debug_Log("LOG:SD:INIT_OK");
+  Debug_Log("SD:INIT_OK");
   return 0U;
 }
 
@@ -298,13 +298,13 @@ uint8_t SD_Logger_AppendMeasurement(uint8_t station_idx,
   /* FatFs R0.11: OPEN_ALWAYS + seek end ≈ append. */
   fr = f_open(&sd_file, path, FA_OPEN_ALWAYS | FA_WRITE);
   if (fr != FR_OK) {
-    sd_logger_mark_unavailable("LOG:SD:OPEN_FAIL fr=", (int32_t)fr);
+    sd_logger_mark_unavailable("SD:OPEN_FAIL fr=", (int32_t)fr);
     return 0U;
   }
   fr = f_lseek(&sd_file, f_size(&sd_file));
   if (fr != FR_OK) {
     (void)f_close(&sd_file);
-    sd_logger_mark_unavailable("LOG:SD:SEEK_FAIL fr=", (int32_t)fr);
+    sd_logger_mark_unavailable("SD:SEEK_FAIL fr=", (int32_t)fr);
     return 0U;
   }
 
@@ -314,14 +314,14 @@ uint8_t SD_Logger_AppendMeasurement(uint8_t station_idx,
   {
     FRESULT fr_close = f_close(&sd_file);
     if ((fr != FR_OK) || (written != (UINT)len)) {
-      sd_logger_mark_unavailable("LOG:SD:WRITE_FAIL fr=", (int32_t)fr);
+      sd_logger_mark_unavailable("SD:WRITE_FAIL fr=", (int32_t)fr);
       if ((fr == FR_OK) && (written != (UINT)len)) {
-        Debug_LogValue("LOG:SD:WRITE_FAIL n=", (int32_t)written);
+        Debug_LogValue("SD:WRITE_FAIL n=", (int32_t)written);
       }
       return 0U;
     }
     if (fr_close != FR_OK) {
-      sd_logger_mark_unavailable("LOG:SD:CLOSE_FAIL fr=", (int32_t)fr_close);
+      sd_logger_mark_unavailable("SD:CLOSE_FAIL fr=", (int32_t)fr_close);
       return 0U;
     }
   }
