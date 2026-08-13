@@ -84,9 +84,10 @@ void MX_GPIO_Init(void)
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /*Configure GPIO pin : RTC_SQW_Pin */
+  /* DS3231 INT/SQW is open-drain, active-low on alarm — EXTI must be falling. */
   GPIO_InitStruct.Pin = RTC_SQW_Pin;
-  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_FALLING;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(RTC_SQW_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : ENC_BUTTON_Pin */

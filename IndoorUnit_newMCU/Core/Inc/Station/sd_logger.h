@@ -1,7 +1,7 @@
 /**
  * @file sd_logger.h
  * @brief Append measurement JSON Lines to SD (picoserver-compatible)
- * @details Requires MX_FATFS_Init(), SD_SPI_Bind(), then SD_Logger_Init().
+ * @details Requires MX_SPI1_Init(), MX_FATFS_Init(), then SD_Logger_Init().
  *          Missing or failed media is non-fatal: the station keeps running
  *          and retries the mount every 30 s.
  */
@@ -19,7 +19,7 @@ extern "C" {
 #endif
 
 /**
- * @brief Mount the FatFs USER volume after MX_FATFS_Init() and SD_SPI_Bind().
+ * @brief Mount the FatFs USER volume after SPI1 and FatFs initialization.
  * @retval 0 Volume mounted.
  * @retval non-zero Link, SPI, or mount failed (system continues without SD).
  * @note Logs INIT_START, FRESULT, driver error, card type, capacity, INIT_OK

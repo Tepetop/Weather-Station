@@ -59,7 +59,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/Station/debug_log.c
     Core/Src/Station/uart_cmd.c
     Core/Src/Station/power_mgr.c
-    Core/Src/Station/sd_spi.c
+    FATFS/Target/user_diskio_spi.c
     Core/Src/Station/sd_logger.c
 )
 

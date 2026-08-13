@@ -46,7 +46,6 @@
 #include "debug_log.h"
 #include "uart_cmd.h"
 #include "power_mgr.h"
-#include "sd_spi.h"
 #include "sd_logger.h"
 /* USER CODE END Includes */
 
@@ -186,7 +185,6 @@ int main(void)
   Debug_Init();
 
   /* SD mount is best-effort — missing card must not block the station. */
-  (void)SD_SPI_Bind(&hspi1);
   (void)SD_Logger_Init();
 
 

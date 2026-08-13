@@ -305,7 +305,9 @@ static void ws_send_measure_command(WS_Manager_t *ctx, const WS_RuntimeConfig_t 
     return;
   }
 
-  ctx->cycle_id++;
+  /* Increment cycle ID, wrapping at 1440 (24 hours) */
+  if(ctx->cycle_id == 1440? ctx->cycle_id = 0 : ctx->cycle_id++);
+
   target_mask = (uint8_t)(1U << ctx->active_node);
   if (!WS_Cmd_EncodeMeasureTo(ctx->cycle_id, target_mask, cmd, cfg->cmd_size)) {
     return;
@@ -343,7 +345,9 @@ static void ws_start_parallel_cycle(WS_Manager_t *ctx, const WS_RuntimeConfig_t 
   }
 
   ctx->cycle_pending = 0U;
-  ctx->cycle_id++;
+  /* Increment cycle ID, wrapping at 1440 (24 hours) */
+  if(ctx->cycle_id == 1440? ctx->cycle_id = 0 : ctx->cycle_id++);
+
   ctx->expected_mask = WS_Cycle_ExpectedMask(ctx->node_count);
   ctx->received_mask = 0U;
   ctx->parallel_cycle = 1U;

@@ -24,7 +24,7 @@
 
 #include <string.h>
 #include "ff_gen_drv.h"
-#include "sd_spi.h"
+#include "user_diskio_spi.h"
 
 /* Disk status */
 static volatile DSTATUS Stat = STA_NOINIT;
@@ -67,7 +67,7 @@ DSTATUS USER_initialize (
 )
 {
   /* USER CODE BEGIN INIT */
-    Stat = SD_SPI_disk_initialize(pdrv);
+    Stat = USER_SPI_initialize(pdrv);
     return Stat;
   /* USER CODE END INIT */
 }
@@ -82,7 +82,7 @@ DSTATUS USER_status (
 )
 {
   /* USER CODE BEGIN STATUS */
-    Stat = SD_SPI_disk_status(pdrv);
+    Stat = USER_SPI_status(pdrv);
     return Stat;
   /* USER CODE END STATUS */
 }
@@ -103,7 +103,7 @@ DRESULT USER_read (
 )
 {
   /* USER CODE BEGIN READ */
-    return SD_SPI_disk_read(pdrv, buff, sector, count);
+    return USER_SPI_read(pdrv, buff, sector, count);
   /* USER CODE END READ */
 }
 
@@ -124,7 +124,7 @@ DRESULT USER_write (
 )
 {
   /* USER CODE BEGIN WRITE */
-    return SD_SPI_disk_write(pdrv, buff, sector, count);
+    return USER_SPI_write(pdrv, buff, sector, count);
   /* USER CODE END WRITE */
 }
 #endif /* _USE_WRITE == 1 */
@@ -144,7 +144,7 @@ DRESULT USER_ioctl (
 )
 {
   /* USER CODE BEGIN IOCTL */
-    return SD_SPI_disk_ioctl(pdrv, cmd, buff);
+    return USER_SPI_ioctl(pdrv, cmd, buff);
   /* USER CODE END IOCTL */
 }
 #endif /* _USE_IOCTL == 1 */

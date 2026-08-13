@@ -91,12 +91,20 @@ DSTATUS disk_initialize (
 	BYTE pdrv				/* Physical drive nmuber to identify the drive */
 )
 {
-  DSTATUS stat = RES_OK;
+  DSTATUS stat;
   
   if(disk.is_initialized[pdrv] == 0)
-  { 
-    disk.is_initialized[pdrv] = 1;
+  {
     stat = disk.drv[pdrv]->disk_initialize(disk.lun[pdrv]);
+    disk.is_initialized[pdrv] = ((stat & STA_NOINIT) == 0U) ? 1U : 0U;
+  }
+  else
+  {
+    stat = disk.drv[pdrv]->disk_status(disk.lun[pdrv]);
+    if((stat & STA_NOINIT) != 0U)
+    {
+      disk.is_initialized[pdrv] = 0U;
+    }
   }
   return stat;
 }
@@ -119,6 +127,10 @@ DRESULT disk_read (
   DRESULT res;
  
   res = disk.drv[pdrv]->disk_read(disk.lun[pdrv], buff, sector, count);
+  if((res == RES_ERROR) || (res == RES_NOTRDY))
+  {
+    disk.is_initialized[pdrv] = 0U;
+  }
   return res;
 }
 
@@ -141,6 +153,10 @@ DRESULT disk_write (
   DRESULT res;
   
   res = disk.drv[pdrv]->disk_write(disk.lun[pdrv], buff, sector, count);
+  if((res == RES_ERROR) || (res == RES_NOTRDY))
+  {
+    disk.is_initialized[pdrv] = 0U;
+  }
   return res;
 }
 #endif /* _USE_WRITE == 1 */
@@ -162,6 +178,10 @@ DRESULT disk_ioctl (
   DRESULT res;
 
   res = disk.drv[pdrv]->disk_ioctl(disk.lun[pdrv], cmd, buff);
+  if((res == RES_ERROR) || (res == RES_NOTRDY))
+  {
+    disk.is_initialized[pdrv] = 0U;
+  }
   return res;
 }
 #endif /* _USE_IOCTL == 1 */

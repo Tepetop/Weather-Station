@@ -72,5 +72,20 @@ void HAL_WWDG_MspInit(WWDG_HandleTypeDef* wwdgHandle)
 
 /* USER CODE BEGIN 1 */
 
+void WWDG_TryRefresh(void)
+{
+  uint32_t counter;
+
+  if ((hwwdg.Instance == NULL) ||
+      ((hwwdg.Instance->CR & WWDG_CR_WDGA) == 0U)) {
+    return;
+  }
+
+  counter = hwwdg.Instance->CR & WWDG_CR_T;
+  if ((counter < hwwdg.Init.Window) && (counter >= WWDG_CR_T_6)) {
+    (void)HAL_WWDG_Refresh(&hwwdg);
+  }
+}
+
 /* USER CODE END 1 */
 

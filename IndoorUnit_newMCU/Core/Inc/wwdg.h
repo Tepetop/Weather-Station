@@ -42,6 +42,13 @@ void MX_WWDG_Init(void);
 
 /* USER CODE BEGIN Prototypes */
 
+/**
+ * @brief Refresh WWDG only after its refresh window has opened.
+ *
+ * Safe to call frequently and before MX_WWDG_Init().
+ */
+void WWDG_TryRefresh(void);
+
 /* USER CODE END Prototypes */
 
 #ifdef __cplusplus

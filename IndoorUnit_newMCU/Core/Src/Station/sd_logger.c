@@ -10,7 +10,7 @@
 
 #include "debug_log.h"
 #include "fatfs.h"
-#include "sd_spi.h"
+#include "user_diskio_spi.h"
 #include "wwdg.h"
 
 #include <stdio.h>
@@ -21,8 +21,8 @@
 
 static uint8_t sd_ready = 0U;
 static uint32_t sd_next_retry_tick = 0U;
-static uint32_t sd_wwdg_last_kick_tick = 0U;
 static char sd_line[SD_LOGGER_LINE_MAX];
+static FIL sd_file;
 
 static const uint8_t SD_FIELD_CHANNELS[] = {
     (uint8_t)WS_CH_SI7021_TEMP,
@@ -49,28 +49,9 @@ static const char *const SD_FIELD_NAMES[] = {
 #define SD_FIELD_COUNT (sizeof(SD_FIELD_CHANNELS) / sizeof(SD_FIELD_CHANNELS[0]))
 
 /**
- * @brief Kick WWDG at most every 2 ms during blocking FatFs calls.
- */
-static void sd_logger_wwdg_kick(void) {
-  uint32_t now;
-
-  if (hwwdg.Instance == NULL) {
-    return;
-  }
-
-  now = HAL_GetTick();
-  if ((now - sd_wwdg_last_kick_tick) < 2U) {
-    return;
-  }
-  if (HAL_WWDG_Refresh(&hwwdg) == HAL_OK) {
-    sd_wwdg_last_kick_tick = now;
-  }
-}
-
-/**
  * @brief Mark the volume unavailable and log a FatFs/driver code.
  * @param reason UART prefix ending with `=` or similar (value is appended).
- * @param code   FRESULT or SD_SPI_ERR_* value.
+ * @param code   FRESULT or USER_SPI_Error value.
  */
 static void sd_logger_mark_unavailable(const char *reason, int32_t code) {
   sd_ready = 0U;
@@ -179,19 +160,19 @@ static uint8_t sd_try_mount(void) {
     return 1U;
   }
 
-  sd_logger_wwdg_kick();
+  WWDG_TryRefresh();
   fr = f_mount(&USERFatFS, USERPath, 1);
-  sd_logger_wwdg_kick();
+  WWDG_TryRefresh();
 
   if (fr != FR_OK) {
     Debug_LogValue("LOG:SD:MOUNT_FAIL fr=", (int32_t)fr);
-    sd_logger_mark_unavailable("LOG:SD:DRV_ERR=", (int32_t)SD_SPI_GetLastError());
+    sd_logger_mark_unavailable("LOG:SD:DRV_ERR=", (int32_t)USER_SPI_get_last_error());
     return 1U;
   }
 
   sd_ready = 1U;
-  Debug_LogValue("LOG:SD:TYPE=", (int32_t)SD_SPI_GetCardType());
-  if (SD_SPI_disk_ioctl(SD_SPI_PDRV, GET_SECTOR_COUNT, &sectors) == RES_OK) {
+  Debug_LogValue("LOG:SD:TYPE=", (int32_t)USER_SPI_get_card_type());
+  if (disk_ioctl(USER_SPI_PDRV, GET_SECTOR_COUNT, &sectors) == RES_OK) {
     Debug_LogValue("LOG:SD:SECTORS=", (int32_t)sectors);
     Debug_LogValue("LOG:SD:SIZE_KB=", (int32_t)(sectors / 2U));
   }
@@ -234,7 +215,6 @@ uint8_t SD_Logger_AppendMeasurement(uint8_t station_idx,
   char path[20];
   char status[40];
   char value_text[16];
-  FIL file;
   FRESULT fr;
   UINT written = 0U;
   int len = 0;
@@ -314,25 +294,25 @@ uint8_t SD_Logger_AppendMeasurement(uint8_t station_idx,
 
   (void)snprintf(path, sizeof(path), "%slog_S%u.json", USERPath, (unsigned int)station_idx);
 
-  sd_logger_wwdg_kick();
+  WWDG_TryRefresh();
   /* FatFs R0.11: OPEN_ALWAYS + seek end ≈ append. */
-  fr = f_open(&file, path, FA_OPEN_ALWAYS | FA_WRITE);
+  fr = f_open(&sd_file, path, FA_OPEN_ALWAYS | FA_WRITE);
   if (fr != FR_OK) {
     sd_logger_mark_unavailable("LOG:SD:OPEN_FAIL fr=", (int32_t)fr);
     return 0U;
   }
-  fr = f_lseek(&file, f_size(&file));
+  fr = f_lseek(&sd_file, f_size(&sd_file));
   if (fr != FR_OK) {
-    (void)f_close(&file);
+    (void)f_close(&sd_file);
     sd_logger_mark_unavailable("LOG:SD:SEEK_FAIL fr=", (int32_t)fr);
     return 0U;
   }
 
-  sd_logger_wwdg_kick();
-  fr = f_write(&file, sd_line, (UINT)len, &written);
-  sd_logger_wwdg_kick();
+  WWDG_TryRefresh();
+  fr = f_write(&sd_file, sd_line, (UINT)len, &written);
+  WWDG_TryRefresh();
   {
-    FRESULT fr_close = f_close(&file);
+    FRESULT fr_close = f_close(&sd_file);
     if ((fr != FR_OK) || (written != (UINT)len)) {
       sd_logger_mark_unavailable("LOG:SD:WRITE_FAIL fr=", (int32_t)fr);
       if ((fr == FR_OK) && (written != (UINT)len)) {
