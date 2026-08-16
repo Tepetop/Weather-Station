@@ -678,51 +678,56 @@ void WS_UI_MeasurementDisplay(void) {
   PCD8544_ClearScreen(WS_UI.lcd);
   PCD8544_SetFont(WS_UI.lcd, &Font_6x8);
 
-  PCD8544_SetCursor(WS_UI.lcd, 0, 0);
+  /*  Draw number of current outdoor station */
+PCD8544_SetCursor(WS_UI.lcd, 0, 0);
+snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "Stacja [%u/%u]", WS_UI.selected_node_index + 1U, node_count);
+PCD8544_WriteString(WS_UI.lcd, WS_UI.text_buffer);
+
+  /*  Draw current time */
+  PCD8544_SetCursor(WS_UI.lcd, 0, 1);
   if (WS_UI.rtc_now != NULL) {
-    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "S%u %02u:%02u:%02u",
-             (unsigned int)(WS_UI.selected_node_index + 1U),
-             WS_UI.rtc_now->hours, WS_UI.rtc_now->minutes, WS_UI.rtc_now->seconds);
+    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "%02u.%02u %02u:%02u:%02u",
+      WS_UI.rtc_now->date, WS_UI.rtc_now->month, WS_UI.rtc_now->hours, WS_UI.rtc_now->minutes, WS_UI.rtc_now->seconds);
   } else {
-    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "S%u --:--:--",
-             (unsigned int)(WS_UI.selected_node_index + 1U));
+    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "--.-- --:--:--");
   }
   PCD8544_WriteString(WS_UI.lcd, WS_UI.text_buffer);
 
-  PCD8544_SetCursor(WS_UI.lcd, 0, 1);
+  /* Draw measuremets*/
+  PCD8544_SetCursor(WS_UI.lcd, 0, 2);
   if (hasMeasurement != 0U) {
     float avg_temp = ws_avg_temperature(measurement);
     ws_ui_format_fixed(value_text, sizeof(value_text), avg_temp, 2U);
-    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "T:%sC", value_text);
+    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "T:%s[C]", value_text);
   } else {
-    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "T:--.--C");
-  }
-  PCD8544_WriteString(WS_UI.lcd, WS_UI.text_buffer);
-
-  PCD8544_SetCursor(WS_UI.lcd, 0, 2);
-  if ((hasMeasurement != 0U) && ws_get_humidity(measurement, &reading_value)) {
-    ws_ui_format_fixed(value_text, sizeof(value_text), reading_value, 2U);
-    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "H:%s%%", value_text);
-  } else {
-    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "H:--.--%%");
+    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "T:--.--[C]");
   }
   PCD8544_WriteString(WS_UI.lcd, WS_UI.text_buffer);
 
   PCD8544_SetCursor(WS_UI.lcd, 0, 3);
-  if ((hasMeasurement != 0U) && ws_get_pressure(measurement, &reading_value)) {
+  if ((hasMeasurement != 0U) && ws_get_humidity(measurement, &reading_value)) {
     ws_ui_format_fixed(value_text, sizeof(value_text), reading_value, 2U);
-    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "P:%shPa", value_text);
+    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "H:%s[%%]", value_text);
   } else {
-    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "P:--.--hPa");
+    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "H:--.--[%%]");
   }
   PCD8544_WriteString(WS_UI.lcd, WS_UI.text_buffer);
 
   PCD8544_SetCursor(WS_UI.lcd, 0, 4);
+  if ((hasMeasurement != 0U) && ws_get_pressure(measurement, &reading_value)) {
+    ws_ui_format_fixed(value_text, sizeof(value_text), reading_value, 2U);
+    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "P:%s[hPa]", value_text);
+  } else {
+    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "P:--.--[hPa]");
+  }
+  PCD8544_WriteString(WS_UI.lcd, WS_UI.text_buffer);
+
+  PCD8544_SetCursor(WS_UI.lcd, 0, 5);
   if ((hasMeasurement != 0U) && WS_Reading_Get(measurement, WS_CH_TSL2561_LUX, &reading_value)) {
     ws_ui_format_fixed(value_text, sizeof(value_text), reading_value, 2U);
-    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "L:%slux", value_text);
+    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "L:%s[lux]", value_text);
   } else {
-    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "L:--.--lux");
+    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "L:--.--[lux]");
   }
   PCD8544_WriteString(WS_UI.lcd, WS_UI.text_buffer);
 
