@@ -698,9 +698,9 @@ PCD8544_WriteString(WS_UI.lcd, WS_UI.text_buffer);
   if (hasMeasurement != 0U) {
     float avg_temp = ws_avg_temperature(measurement);
     ws_ui_format_fixed(value_text, sizeof(value_text), avg_temp, 2U);
-    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "T:%s[C]", value_text);
+    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "T:%s[@C]", value_text);
   } else {
-    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "T:--.--[C]");
+    snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "T:--.--[@C]");
   }
   PCD8544_WriteString(WS_UI.lcd, WS_UI.text_buffer);
 
