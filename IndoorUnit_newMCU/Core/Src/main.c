@@ -19,6 +19,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 #include "dma.h"
+#include "fatfs.h"
 #include "i2c.h"
 #include "spi.h"
 #include "tim.h"
@@ -45,6 +46,7 @@
 #include "debug_log.h"
 #include "uart_cmd.h"
 #include "power_mgr.h"
+#include "sd_logger.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -68,6 +70,7 @@
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
+void SystemClock_Config(void);
 /* USER CODE BEGIN PFP */
 
 void EncoderButtonPress(void);
@@ -99,7 +102,6 @@ int main(void)
   /* MCU Configuration--------------------------------------------------------*/
 
   /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-
   HAL_Init();
 
   /* USER CODE BEGIN Init */
@@ -116,12 +118,18 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_DMA_Init();
-  MX_SPI1_Init();
   MX_I2C2_Init();
-  MX_TIM1_Init();
+  MX_SPI1_Init();
   MX_SPI2_Init();
+  MX_TIM1_Init();
   MX_USART1_UART_Init();
+  MX_FATFS_Init();
   /* USER CODE BEGIN 2 */
+  /* Do NOT call MX_WWDG_Init() here (Cube may regenerate it above): WWDG must
+   * start only after long boot init, with Prescaler=8 / Window=126 / Counter=127. */
+  /* SPI1 shared by LCD + SD: keep CS idle-high before talking to either. */
+
+
   bool rtcManualSetRequested = RTC_IsManualSetRequestedAtBoot();
 
   /*            Initialize encoder        */
@@ -172,6 +180,12 @@ int main(void)
   DS3231_SetAlarm2(&rtc, &RTCalarm2);
   DS3231_EnableAlarm1Interrupt(&rtc);
   DS3231_EnableAlarm2Interrupt(&rtc);
+
+  /* UART + RTC are up: start debug log before SD so init messages are visible. */
+  Debug_Init();
+
+  /* SD mount is best-effort — missing card must not block the station. */
+  (void)SD_Logger_Init();
 
 
   /* Initialize menu system with predefined configuration */
@@ -239,9 +253,6 @@ int main(void)
 
   /* Initialize UI context for weather station display functions */
   WS_UI_Init(&WS_UI, &wsCtx, &wsRuntime, &LCD, &menuContext, &encoder, &rtcNow, g_nrf_message, sizeof(g_nrf_message), &rtc);
-
-  /* Initialize debug logging system */
-  Debug_Init();
 
   UartCmd_Init(&huart1, &wsCtx);
 
@@ -327,7 +338,7 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL8;
+  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL9;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();

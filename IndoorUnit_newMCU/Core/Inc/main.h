@@ -59,18 +59,20 @@ void SystemClock_Config(void);
 /* Private defines -----------------------------------------------------------*/
 #define USER_LED_Pin GPIO_PIN_13
 #define USER_LED_GPIO_Port GPIOC
+#define LCD_BLK_Pin GPIO_PIN_14
+#define LCD_BLK_GPIO_Port GPIOC
 #define LCD_DC_Pin GPIO_PIN_2
 #define LCD_DC_GPIO_Port GPIOA
 #define LCD_CE_Pin GPIO_PIN_3
 #define LCD_CE_GPIO_Port GPIOA
 #define LCD_RST_Pin GPIO_PIN_4
 #define LCD_RST_GPIO_Port GPIOA
-#define LCD_CLK_Pin GPIO_PIN_5
-#define LCD_CLK_GPIO_Port GPIOA
-#define LCD_BLK_Pin GPIO_PIN_6
-#define LCD_BLK_GPIO_Port GPIOA
-#define LCD_MOSI_Pin GPIO_PIN_7
-#define LCD_MOSI_GPIO_Port GPIOA
+#define SPI1_CLK_Pin GPIO_PIN_5
+#define SPI1_CLK_GPIO_Port GPIOA
+#define SPI1_MOSI_Pin GPIO_PIN_7
+#define SPI1_MOSI_GPIO_Port GPIOA
+#define SD_CS_Pin GPIO_PIN_0
+#define SD_CS_GPIO_Port GPIOB
 #define RTC_SQW_Pin GPIO_PIN_1
 #define RTC_SQW_GPIO_Port GPIOB
 #define RTC_SQW_EXTI_IRQn EXTI1_IRQn
@@ -100,6 +102,8 @@ void SystemClock_Config(void);
 #define NRF_CE_GPIO_Port GPIOA
 
 /* USER CODE BEGIN Private defines */
+
+#define SD_SPI_HANDLE hspi1
 
 /* USER CODE END Private defines */
 

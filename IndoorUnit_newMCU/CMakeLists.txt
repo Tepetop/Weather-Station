@@ -45,7 +45,7 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
-    Core/Src/ws_protocol.c
+    Core/Src/Station/ws_protocol.c
     Core/Src/Sensors/PCD_LCD/PCD8544.c
     Core/Src/Sensors/PCD_LCD/PCD8544_Menu.c
     Core/Src/Sensors/PCD_LCD/PCD8544_fonts.c
@@ -54,17 +54,20 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Core/Src/Sensors/encoder.c
     Core/Src/Sensors/button_debounce.c
     Core/Src/Sensors/NRF24L01.c
-    Core/Src/weather_station.c
-    Core/Src/weather_station_ui.c
-    Core/Src/debug_log.c
-    Core/Src/uart_cmd.c
-    Core/Src/power_mgr.c
+    Core/Src/Station/weather_station.c
+    Core/Src/Station/weather_station_ui.c
+    Core/Src/Station/debug_log.c
+    Core/Src/Station/uart_cmd.c
+    Core/Src/Station/power_mgr.c
+    FATFS/Target/user_diskio_spi.c
+    Core/Src/Station/sd_logger.c
 )
 
 # Add include paths
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
     Core/Inc
+    Core/Inc/Station
     Core/Inc/STM32
     Core/Inc/Sensors
     Core/Inc/Sensors/PCD_LCD
