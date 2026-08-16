@@ -1016,9 +1016,21 @@ void WS_UI_ViewTask(void) {
 
   if ((WS_UI.menu_ctx->state.InScreenSaver != 0U) && (WS_UI.encoder->ButtonIRQ_Flag != 0U)) {
     WS_UI.encoder->ButtonIRQ_Flag = 0U;
+    if (WS_UI.encoder->IRQ_Flag != 0U) {
+      WS_UI.encoder->IRQ_Flag = 0U;
+      (void)Encoder_Update(WS_UI.encoder);
+      Encoder_ResetPulseCount(WS_UI.encoder);
+    }
+    WS_UI.menu_ctx->state.actionPending = 0U;
+    WS_UI.menu_ctx->state.currentAction = MENU_ACTION_IDLE;
     WS_UI.last_activity_tick = now;
     WS_UI.menu_ctx->state.InScreenSaver = 0U;
     PCD8544_SetBacklight(WS_UI.lcd);
+    if ((WS_UI.rtc_handle != NULL) && (WS_UI.rtc_now != NULL)) {
+      (void)DS3231_GetDateTime(WS_UI.rtc_handle, WS_UI.rtc_now);
+      (void)DS3231_EnableAlarm1Interrupt(WS_UI.rtc_handle);
+    }
+    WS_UI.chart_data_dirty = 1U;
   }
 
   if ((WS_UI.menu_ctx->state.InScreenSaver == 0U) &&
@@ -1026,6 +1038,18 @@ void WS_UI_ViewTask(void) {
     WS_UI.menu_ctx->state.InScreenSaver = 1U;
     ws_activate_default_measurement_view();
     PCD8544_ResetBacklight(WS_UI.lcd);
+    if (WS_UI.rtc_handle != NULL) {
+      (void)DS3231_DisableAlarm1Interrupt(WS_UI.rtc_handle);
+    }
+  }
+
+  if (WS_UI.menu_ctx->state.InScreenSaver != 0U) {
+    if (WS_UI.encoder->IRQ_Flag != 0U) {
+      WS_UI.encoder->IRQ_Flag = 0U;
+      (void)Encoder_Update(WS_UI.encoder);
+      Encoder_ResetPulseCount(WS_UI.encoder);
+    }
+    return;
   }
 
   switch (WS_UI.view_state) {
