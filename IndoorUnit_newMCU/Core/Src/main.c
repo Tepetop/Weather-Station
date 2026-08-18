@@ -310,6 +310,7 @@ int main(void)
 
     if ((menuContext.state.InScreenSaver != 0U) &&
         (encoder.ButtonIRQ_Flag == 0U) &&
+        (encoderSW.InterruptFlag == 0U) &&
         (encoder.IRQ_Flag == 0U) &&
         (WS_CanSleep(&wsCtx) != 0U))
     {
