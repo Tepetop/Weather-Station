@@ -42,6 +42,15 @@ uint8_t SD_Logger_AppendMeasurement(uint8_t station_idx,
                                     const DS3231_DateTime *rtc_now);
 
 /**
+ * @brief Append one already-formatted debug line to `status_log`.
+ * @param line UART `LOG:` bytes (including newline).
+ * @param len  Byte count.
+ * @retval 0 Success, SD unavailable, or skipped (re-entrant / empty).
+ * @note Does not remount. No-op until `SD_Logger_Init()` has succeeded.
+ */
+uint8_t SD_Logger_AppendStatus(const char *line, uint16_t len);
+
+/**
  * @brief Report whether the volume is mounted and the last I/O succeeded.
  * @retval 1 Ready to append.
  * @retval 0 Unmounted, missing, or last operation failed.

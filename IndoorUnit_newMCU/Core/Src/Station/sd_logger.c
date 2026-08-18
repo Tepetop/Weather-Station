@@ -20,6 +20,7 @@
 #define SD_LOGGER_RETRY_PERIOD_MS 30000U
 
 static uint8_t sd_ready = 0U;
+static uint8_t sd_io_busy = 0U;
 static uint32_t sd_next_retry_tick = 0U;
 static char sd_line[SD_LOGGER_LINE_MAX];
 static FIL sd_file;
@@ -189,6 +190,72 @@ uint8_t SD_Logger_IsReady(void) {
 }
 
 /**
+ * @brief Open-always, seek end, write `len` bytes, close.
+ * @retval 0 Success or I/O failure (volume marked unavailable).
+ */
+static uint8_t sd_append_bytes(const char *path, const void *data, UINT len) {
+  FRESULT fr;
+  UINT written = 0U;
+
+  if ((path == NULL) || (data == NULL) || (len == 0U)) {
+    return 0U;
+  }
+
+  if (sd_io_busy != 0U) {
+    return 0U;
+  }
+  sd_io_busy = 1U;
+
+  WWDG_TryRefresh();
+  /* FatFs R0.11: OPEN_ALWAYS + seek end ≈ append. */
+  fr = f_open(&sd_file, path, FA_OPEN_ALWAYS | FA_WRITE);
+  if (fr != FR_OK) {
+    sd_io_busy = 0U;
+    sd_logger_mark_unavailable("SD:OPEN_FAIL fr=", (int32_t)fr);
+    return 0U;
+  }
+  fr = f_lseek(&sd_file, f_size(&sd_file));
+  if (fr != FR_OK) {
+    (void)f_close(&sd_file);
+    sd_io_busy = 0U;
+    sd_logger_mark_unavailable("SD:SEEK_FAIL fr=", (int32_t)fr);
+    return 0U;
+  }
+
+  WWDG_TryRefresh();
+  fr = f_write(&sd_file, data, len, &written);
+  WWDG_TryRefresh();
+  {
+    FRESULT fr_close = f_close(&sd_file);
+    sd_io_busy = 0U;
+    if ((fr != FR_OK) || (written != len)) {
+      sd_logger_mark_unavailable("SD:WRITE_FAIL fr=", (int32_t)fr);
+      if ((fr == FR_OK) && (written != len)) {
+        Debug_LogValue("SD:WRITE_FAIL n=", (int32_t)written);
+      }
+      return 0U;
+    }
+    if (fr_close != FR_OK) {
+      sd_logger_mark_unavailable("SD:CLOSE_FAIL fr=", (int32_t)fr_close);
+      return 0U;
+    }
+  }
+
+  return 0U;
+}
+
+uint8_t SD_Logger_AppendStatus(const char *line, uint16_t len) {
+  char path[20];
+
+  if ((sd_ready == 0U) || (sd_io_busy != 0U) || (line == NULL) || (len == 0U)) {
+    return 0U;
+  }
+
+  (void)snprintf(path, sizeof(path), "%sstatus_log", USERPath);
+  return sd_append_bytes(path, line, (UINT)len);
+}
+
+/**
  * @brief Remount after the retry period if the last mount/I/O failed.
  * @retval 1 Volume ready.
  * @retval 0 Still unavailable.
@@ -215,8 +282,6 @@ uint8_t SD_Logger_AppendMeasurement(uint8_t station_idx,
   char path[20];
   char status[40];
   char value_text[16];
-  FRESULT fr;
-  UINT written = 0U;
   int len = 0;
   uint8_t year = 0U;
   uint8_t month = 0U;
@@ -293,38 +358,5 @@ uint8_t SD_Logger_AppendMeasurement(uint8_t station_idx,
   }
 
   (void)snprintf(path, sizeof(path), "%slog_S%u.json", USERPath, (unsigned int)station_idx);
-
-  WWDG_TryRefresh();
-  /* FatFs R0.11: OPEN_ALWAYS + seek end ≈ append. */
-  fr = f_open(&sd_file, path, FA_OPEN_ALWAYS | FA_WRITE);
-  if (fr != FR_OK) {
-    sd_logger_mark_unavailable("SD:OPEN_FAIL fr=", (int32_t)fr);
-    return 0U;
-  }
-  fr = f_lseek(&sd_file, f_size(&sd_file));
-  if (fr != FR_OK) {
-    (void)f_close(&sd_file);
-    sd_logger_mark_unavailable("SD:SEEK_FAIL fr=", (int32_t)fr);
-    return 0U;
-  }
-
-  WWDG_TryRefresh();
-  fr = f_write(&sd_file, sd_line, (UINT)len, &written);
-  WWDG_TryRefresh();
-  {
-    FRESULT fr_close = f_close(&sd_file);
-    if ((fr != FR_OK) || (written != (UINT)len)) {
-      sd_logger_mark_unavailable("SD:WRITE_FAIL fr=", (int32_t)fr);
-      if ((fr == FR_OK) && (written != (UINT)len)) {
-        Debug_LogValue("SD:WRITE_FAIL n=", (int32_t)written);
-      }
-      return 0U;
-    }
-    if (fr_close != FR_OK) {
-      sd_logger_mark_unavailable("SD:CLOSE_FAIL fr=", (int32_t)fr_close);
-      return 0U;
-    }
-  }
-
-  return 0U;
+  return sd_append_bytes(path, sd_line, (UINT)len);
 }

@@ -12,6 +12,7 @@
 
 #include "usart.h"
 #include "ds3231.h"
+#include "sd_logger.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -45,6 +46,16 @@ static void debug_send(const char *str, uint16_t len) {
 }
 
 /**
+ * @brief Send a formatted line on UART and append it to SD `status_log`.
+ * @param[in] str Bytes to emit
+ * @param[in] len Number of bytes
+ */
+static void debug_emit(const char *str, uint16_t len) {
+  debug_send(str, len);
+  (void)SD_Logger_AppendStatus(str, len);
+}
+
+/**
  * @brief Format and send a message with a date/time prefix
  * @param[in] msg NULL-terminated payload after the timestamp
  * @details Drops the line if `snprintf` fails or the result does not fit
@@ -56,7 +67,7 @@ static void debug_print_timestamped(const char *msg) {
                      rtcNow.year, rtcNow.month, rtcNow.date,
                      rtcNow.hours, rtcNow.minutes, rtcNow.seconds, msg);
   if (len > 0 && len < (int)sizeof(debug_buffer)) {
-    debug_send(debug_buffer, (uint16_t)len);
+    debug_emit(debug_buffer, (uint16_t)len);
   }
 }
 
@@ -146,7 +157,7 @@ void Debug_LogValue(const char *msg, int32_t value) {
                      rtcNow.hours, rtcNow.minutes, rtcNow.seconds,
                      msg, (long)value);
   if (len > 0 && len < (int)sizeof(debug_buffer)) {
-    debug_send(debug_buffer, (uint16_t)len);
+    debug_emit(debug_buffer, (uint16_t)len);
   }
 }
 
@@ -163,7 +174,7 @@ void Debug_LogHex(const char *msg, uint32_t value) {
                      rtcNow.hours, rtcNow.minutes, rtcNow.seconds,
                      msg, (unsigned long)value);
   if (len > 0 && len < (int)sizeof(debug_buffer)) {
-    debug_send(debug_buffer, (uint16_t)len);
+    debug_emit(debug_buffer, (uint16_t)len);
   }
 }
 
@@ -253,7 +264,7 @@ void Debug_LogMenuAction(const char *action_name) {
                      rtcNow.year, rtcNow.month, rtcNow.date,
                      rtcNow.hours, rtcNow.minutes, rtcNow.seconds, action_name);
   if (len > 0 && len < (int)sizeof(debug_buffer)) {
-    debug_send(debug_buffer, (uint16_t)len);
+    debug_emit(debug_buffer, (uint16_t)len);
   }
 }
 #else
@@ -273,7 +284,7 @@ void Debug_LogViewTransition(uint8_t from_state, uint8_t to_state) {
                      rtcNow.hours, rtcNow.minutes, rtcNow.seconds,
                      from_state, to_state);
   if (len > 0 && len < (int)sizeof(debug_buffer)) {
-    debug_send(debug_buffer, (uint16_t)len);
+    debug_emit(debug_buffer, (uint16_t)len);
   }
 }
 #else

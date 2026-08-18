@@ -8,6 +8,7 @@
 
 #include "power_mgr.h"
 
+#include "debug_log.h"
 #include "wwdg.h"
 
 /** 1 if NRF was powered down by `PowerMgr_EnterIdleStop()`. */
@@ -38,6 +39,7 @@ void PowerMgr_EnterIdleStop(NRF24_Handle_t *nrf)
 
   if (radio_asleep == 0U)
   {
+    Debug_Log("PWR:ENTER");
     (void)NRF24_PowerDown(nrf);
     radio_asleep = 1U;
   }
@@ -65,6 +67,7 @@ void PowerMgr_WakeRadio(NRF24_Handle_t *nrf)
 
   (void)NRF24_PowerUp(nrf);
   radio_asleep = 0U;
+  Debug_Log("PWR:EXIT");
 }
 
 /**
