@@ -49,7 +49,7 @@ void PowerMgr_EnterIdleStop(NRF24_Handle_t *nrf)
 
   SystemClock_Config();
   HAL_ResumeTick();
-  (void)HAL_WWDG_Refresh(&hwwdg);
+  WWDG_WaitRefresh();
 }
 
 /**

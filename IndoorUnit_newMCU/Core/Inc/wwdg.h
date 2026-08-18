@@ -49,6 +49,14 @@ void MX_WWDG_Init(void);
  */
 void WWDG_TryRefresh(void);
 
+/**
+ * @brief Block until the refresh window is open, then reload the counter.
+ *
+ * Use after STOP: PCLK is slow (HSI) during clock restore, so the counter
+ * can still sit at 127. Writing CR then is a window violation and resets.
+ */
+void WWDG_WaitRefresh(void);
+
 /* USER CODE END Prototypes */
 
 #ifdef __cplusplus

@@ -299,7 +299,7 @@ int main(void)
     uint32_t wwdg_now_tick = HAL_GetTick();
     if ((wsCtx.comm_watchdog_tripped == 0U) && ((wwdg_now_tick - wwdg_last_refresh_tick) >= WWDG_REFRESH_PERIOD_MS)) 
     {
-      HAL_WWDG_Refresh(&hwwdg);
+      WWDG_TryRefresh();
       wwdg_last_refresh_tick = wwdg_now_tick;
     }
 
