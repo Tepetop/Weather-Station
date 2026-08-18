@@ -406,10 +406,10 @@ static void ws_finalize_parallel_cycle(WS_Manager_t *ctx, const WS_RuntimeConfig
   }
 
   if (timed_out != 0U) {
-    Debug_Log("LOG:NRF:CYCLE_TIMEOUT");
+    Debug_Log("NRF:CYCLE_TIMEOUT");
     Debug_LogHex("NRF:CYCLE_RECV=", ctx->received_mask);
   } else {
-    Debug_Log("LOG:NRF:CYCLE_COMPLETE");
+    Debug_Log("NRF:CYCLE_COMPLETE");
   }
 
   ws_set_led(cfg, GPIO_PIN_RESET);
@@ -1078,7 +1078,7 @@ HAL_StatusTypeDef WS_InitRadioAndStart(WS_Manager_t *ctx, const WS_RuntimeConfig
     uint8_t feature = 0U;
     if ((NRF24_ReadReg(cfg->nrf, NRF24_REG_FEATURE, &feature) == HAL_OK) &&
         ((feature & NRF24_FEATURE_EN_DYN_ACK) == 0U)) {
-      Debug_Log("LOG:NRF:FEATURE_NO_DYN_ACK");
+      Debug_Log("NRF:FEATURE_NO_DYN_ACK");
     }
   }
 
@@ -1145,7 +1145,7 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
   if ((cfg->comm_watchdog_timeout_ms != 0U) &&
       ((now_tick - ctx->last_successful_rx_tick) > cfg->comm_watchdog_timeout_ms)) {
     ctx->comm_watchdog_tripped = 1U;
-    Debug_Log("LOG:NRF:COMM_WATCHDOG_TRIPPED");
+    Debug_Log("NRF:COMM_WATCHDOG_TRIPPED");
     return;
   }
 
@@ -1179,9 +1179,9 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
     ctx->parallel_cycle = 0U;
     ctx->cycle_tx_done = 0U;
     if (WS_InitRadioAndStart(ctx, cfg) == HAL_OK) {
-      Debug_Log("LOG:NRF:RECOVERY_OK");
+      Debug_Log("NRF:RECOVERY_OK");
     } else {
-      Debug_Log("LOG:NRF:RECOVERY_FAIL");
+      Debug_Log("NRF:RECOVERY_FAIL");
     }
     if (ctx->cycle_pending != 0U) {
       ctx->app_state = WS_APP_IDLE;
@@ -1238,9 +1238,11 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
     ws_handle_irq(ctx, cfg);
   }
 
-  /* Deliver any DATA_READY payloads (parallel or unicast) before further state work. */
+  /* Deliver payloads, then leave DATA_READY. Staying there forever blocks
+   * WS_CanSleep (IDLE only) and skips cycle_pending until the next request. */
   ws_process_ready_nodes(ctx, cfg);
   if (ctx->app_state == WS_APP_DATA_READY) {
+    ctx->app_state = WS_APP_IDLE;
     return;
   }
 
