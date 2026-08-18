@@ -48,8 +48,9 @@ void PowerMgr_EnterIdleStop(NRF24_Handle_t *nrf)
   HAL_PWR_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
 
   SystemClock_Config();
-  HAL_ResumeTick();
+  /* Keep SysTick disabled until the WWDG has been serviced. */
   WWDG_WaitRefresh();
+  HAL_ResumeTick();
 }
 
 /**

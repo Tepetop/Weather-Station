@@ -89,26 +89,21 @@ void WWDG_TryRefresh(void)
 
 void WWDG_WaitRefresh(void)
 {
-  uint32_t spins = 0U;
-
   if ((hwwdg.Instance == NULL) ||
       ((hwwdg.Instance->CR & WWDG_CR_WDGA) == 0U)) {
     return;
   }
 
-  /* ponytail: bounded poll of T; one WWDG tick is ~0.9 ms at 36 MHz PCLK.
-   * Ceiling ~tens of ms if PCLK is still HSI after STOP. */
-  while (spins < 2000000U) {
-    uint32_t counter = hwwdg.Instance->CR & WWDG_CR_T;
+  /* After STOP the counter is normally still 127. Wait for the upper
+   * window boundary to open, then refresh immediately. Do not return from
+   * the wake path without servicing WWDG: that would turn a wake-up into a
+   * delayed reset. */
+  while ((hwwdg.Instance->CR & WWDG_CR_T) >= hwwdg.Init.Window) {
+    /* Poll the hardware counter; SysTick is intentionally still suspended. */
+  }
 
-    if (counter < WWDG_CR_T_6) {
-      return;
-    }
-    if (counter < hwwdg.Init.Window) {
-      (void)HAL_WWDG_Refresh(&hwwdg);
-      return;
-    }
-    spins++;
+  if ((hwwdg.Instance->CR & WWDG_CR_T) >= WWDG_CR_T_6) {
+    (void)HAL_WWDG_Refresh(&hwwdg);
   }
 }
 
