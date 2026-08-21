@@ -42,4 +42,11 @@ HAL_StatusTypeDef OutdoorStation_Init(void);
  */
 void OutdoorStation_Process(void);
 
+/**
+ * @brief   True when the MCU may enter STOP while nRF24 stays in RX
+ * @retval  1  Idle, radio listening, no pending IRQ/command/TX
+ * @retval  0  Stay awake (busy, or NRF missing so reinit can run)
+ */
+uint8_t OutdoorStation_CanSleep(void);
+
 #endif /* OUTDOORSTATION_H */

@@ -15,7 +15,6 @@
 #include "measurement_unit_config.h"
 #include "gpio.h"
 #include "i2c.h"
-#include "iwdg.h"
 #include "spi.h"
 #include "usart.h"
 #include "ws_protocol.h"
@@ -100,7 +99,6 @@ HAL_StatusTypeDef OutdoorStation_RunMeasurementCycle(Measurement_Data_t *data,
   while (measCtx.state != MEAS_SLEEP && measCtx.state != MEAS_ERROR)
   {
     Measurement_Process(&measCtx);
-    HAL_IWDG_Refresh(&hiwdg);
 
     if ((HAL_GetTick() - start_tick) > timeout_ms)
     {
@@ -170,7 +168,6 @@ HAL_StatusTypeDef OutdoorStation_Init(void)
     while (measCtx.state != MEAS_SLEEP && measCtx.state != MEAS_ERROR && (HAL_GetTick() - initStart) < 3000U)
     {
       Measurement_Process(&measCtx);
-      HAL_IWDG_Refresh(&hiwdg);
     }
   }
 /*  Check if sensors initialized successfully */
@@ -199,6 +196,40 @@ HAL_StatusTypeDef OutdoorStation_Init(void)
   }
 
   return HAL_OK;
+}
+
+/**
+ * @brief   True when the MCU may enter STOP while nRF24 stays in RX
+ * @retval  1  Idle, radio listening, no pending IRQ/command/TX
+ * @retval  0  Stay awake (busy, or NRF missing so reinit can run)
+ * @details Missing radio keeps the CPU running so `OutdoorStation_TryReinitNrf()`
+ *          can retry on `HAL_GetTick()`. IRQ pin low is treated as pending work
+ *          even if EXTI was missed.
+ */
+uint8_t OutdoorStation_CanSleep(void)
+{
+  if (nrf_available == 0U)
+  {
+    return 0U;
+  }
+
+  if (outLink.state != OUT_LINK_IDLE)
+  {
+    return 0U;
+  }
+
+  if ((outLink.irq_flag != 0U) || (outLink.cmd_received != 0U) ||
+      (outLink.tx_in_progress != 0U) || (outLink.tx_done != 0U))
+  {
+    return 0U;
+  }
+
+  if (HAL_GPIO_ReadPin(NRF_IRQ_GPIO_Port, NRF_IRQ_Pin) == GPIO_PIN_RESET)
+  {
+    return 0U;
+  }
+
+  return 1U;
 }
 
 /**
