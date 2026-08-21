@@ -46,11 +46,11 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user sources here
     Core/Src/Station/ws_protocol.c
-    Core/Src/Sensor/bme280.c
-    Core/Src/Sensor/bmp280.c
-    Core/Src/Sensor/si7021.c
-    Core/Src/Sensor/TSL2561.c
-    Core/Src/Sensor/NRF24L01.c
+    Core/Src/Sensors/bme280.c
+    Core/Src/Sensors/bmp280.c
+    Core/Src/Sensors/si7021.c
+    Core/Src/Sensors/TSL2561.c
+    Core/Src/Sensors/NRF24L01.c
     Core/Src/Station/measurement.c
     Core/Src/Station/outdoor_station.c
     Core/Src/Station/debug_log.c
@@ -60,7 +60,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
     Core/Inc
-    Core/Inc/Sensor
+    Core/Inc/Sensors
     Core/Inc/Station
 )
 
