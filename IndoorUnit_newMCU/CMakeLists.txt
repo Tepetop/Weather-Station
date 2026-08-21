@@ -68,7 +68,6 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
     # Add user defined include paths
     Core/Inc
     Core/Inc/Station
-    Core/Inc/STM32
     Core/Inc/Sensors
     Core/Inc/Sensors/PCD_LCD
 )
