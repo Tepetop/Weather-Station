@@ -65,12 +65,13 @@ static void ws_set_led(const WS_RuntimeConfig_t *cfg, GPIO_PinState state) {
  * ========================================================================== */
 
 /**
- * @brief Applies the active node's TX address and Pipe 0 (ACK) address
+ * @brief Applies the active node's command TX and PTX ACK address
  * @param[in,out] ctx Weather station manager context
  * @param[in] cfg Runtime configuration containing nRF24 handle
- * @details Sets TX_ADDR and RX_ADDR_P0 (for auto-ACK) to the active node's
- *          transmit address. RX data pipes (1-4) are statically configured
- *          during radio init and do not need to be changed per node.
+ * @details TX_ADDR and RX_ADDR_P0 must match when this radio operates as PTX
+ *          with auto-ACK. Outdoor replies use separate static RX pipes 1-4
+ *          and their `rx_addr`; assigning one of those addresses to Pipe 0
+ *          would duplicate a reply pipe and make pipe-to-node mapping ambiguous.
  */
 static void ws_apply_active_node_address(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg) {
   const WS_NodeState_t *node = WS_GetActiveNodeConst(ctx);
@@ -1249,7 +1250,7 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
   WS_TxEvent_t tx_event = WS_ConsumeTxEvent(ctx, now_tick);
 
   if (tx_event == WS_TX_EVENT_OK) {
-    /* Broadcast TX overwrote TX_ADDR/Pipe0; restore active-node address for RX ACKs. */
+    /* Broadcast changed TX_ADDR only; restore the PTX/ACK pair for the next command. */
     ws_apply_active_node_address(ctx, cfg);
     ws_start_receive(ctx, cfg);
     if (ctx->parallel_cycle != 0U) {

@@ -55,42 +55,42 @@ static void debug_print_timestamped(const char *msg) {
 static void debug_log_reset_cause(void) {
   uint8_t cause_count = 0U;
 
-  Debug_LogHex("LOG:RESET:CSR=", RCC->CSR);
+  Debug_LogHex("RESET:CSR=", RCC->CSR);
 
   if (__HAL_RCC_GET_FLAG(RCC_FLAG_WWDGRST) != RESET) {
-    Debug_Log("LOG:RESET:CAUSE=WWDG");
+    Debug_Log("RESET:CAUSE=WWDG");
     cause_count++;
   }
 
   if (__HAL_RCC_GET_FLAG(RCC_FLAG_IWDGRST) != RESET) {
-    Debug_Log("LOG:RESET:CAUSE=IWDG");
+    Debug_Log("RESET:CAUSE=IWDG");
     cause_count++;
   }
 
   if (__HAL_RCC_GET_FLAG(RCC_FLAG_SFTRST) != RESET) {
-    Debug_Log("LOG:RESET:CAUSE=SOFT");
+    Debug_Log("RESET:CAUSE=SOFT");
     cause_count++;
   }
 
   if (__HAL_RCC_GET_FLAG(RCC_FLAG_PORRST) != RESET) {
-    Debug_Log("LOG:RESET:CAUSE=POR_PDR");
+    Debug_Log("RESET:CAUSE=POR_PDR");
     cause_count++;
   }
 
   if (__HAL_RCC_GET_FLAG(RCC_FLAG_PINRST) != RESET) {
-    Debug_Log("LOG:RESET:CAUSE=PIN");
+    Debug_Log("RESET:CAUSE=PIN");
     cause_count++;
   }
 
   if (__HAL_RCC_GET_FLAG(RCC_FLAG_LPWRRST) != RESET) {
-    Debug_Log("LOG:RESET:CAUSE=LPWR");
+    Debug_Log("RESET:CAUSE=LPWR");
     cause_count++;
   }
 
   if (cause_count == 0U) {
-    Debug_Log("LOG:RESET:CAUSE=UNKNOWN");
+    Debug_Log("RESET:CAUSE=UNKNOWN");
   } else if (cause_count > 1U) {
-    Debug_LogValue("LOG:RESET:CAUSE_COUNT=", cause_count);
+    Debug_LogValue("RESET:CAUSE_COUNT=", cause_count);
   }
 
   __HAL_RCC_CLEAR_RESET_FLAGS();
@@ -147,12 +147,12 @@ void Debug_LogHex(const char *msg, uint32_t value) {
 
 #ifdef DEBUG_LOG_NRF_EVENTS
 void Debug_LogNrfInit(uint8_t success) {
-  Debug_Log(success ? "LOG:NRF:INIT_OK" : "LOG:NRF:INIT_FAIL");
+  Debug_Log(success ? "NRF:INIT_OK" : "NRF:INIT_FAIL");
 }
 
 void Debug_LogNrfInitRetry(uint8_t attempt, uint8_t max) {
   int len = snprintf(debug_buffer, sizeof(debug_buffer),
-                     "LOG:NRF:INIT_RETRY %u/%u", attempt, max);
+                     "NRF:INIT_RETRY %u/%u", attempt, max);
   if (len > 0 && len < (int)sizeof(debug_buffer)) {
     debug_buffer[len] = '\0';
     Debug_Log(debug_buffer);
@@ -160,31 +160,31 @@ void Debug_LogNrfInitRetry(uint8_t attempt, uint8_t max) {
 }
 
 void Debug_LogNrfUnavailable(void) {
-  Debug_Log("LOG:NRF:UNAVAILABLE");
+  Debug_Log("NRF:UNAVAILABLE");
 }
 
 void Debug_LogNrfReinitAttempt(void) {
-  Debug_Log("LOG:NRF:REINIT_ATTEMPT");
+  Debug_Log("NRF:REINIT_ATTEMPT");
 }
 
 void Debug_LogNrfReinitOk(void) {
-  Debug_Log("LOG:NRF:REINIT_OK");
+  Debug_Log("NRF:REINIT_OK");
 }
 
 void Debug_LogNrfListening(void) {
-  Debug_Log("LOG:NRF:LISTENING");
+  Debug_Log("NRF:LISTENING");
 }
 
 void Debug_LogNrfRxCmd(void) {
-  Debug_Log("LOG:NRF:RX_CMD_MEASURE");
+  Debug_Log("NRF:RX_CMD_MEASURE");
 }
 
 void Debug_LogNrfTxResult(uint8_t success) {
-  Debug_Log(success ? "LOG:NRF:TX_OK (ACK received)" : "LOG:NRF:TX_FAIL (MAX_RT)");
+  Debug_Log(success ? "NRF:TX_OK (ACK received)" : "NRF:TX_FAIL (MAX_RT)");
 }
 
 void Debug_LogNrfTimeout(void) {
-  Debug_Log("LOG:NRF:TX_TIMEOUT");
+  Debug_Log("NRF:TX_TIMEOUT");
 }
 #else
 void Debug_LogNrfInit(uint8_t success) { (void)success; }
@@ -204,16 +204,16 @@ void Debug_LogNrfTimeout(void) {}
 #ifdef DEBUG_LOG_INIT_EVENTS
 void Debug_LogSystemReady(uint8_t sensor_error_code) {
   if (sensor_error_code == 0U) {
-    Debug_Log("LOG:INIT:SYSTEM_OK");
+    Debug_Log("INIT:SYSTEM_OK");
   } else {
-    Debug_LogHex(" ", sensor_error_code);
+    Debug_LogHex("INIT:SYSTEM_ERROR=0x", sensor_error_code);
   }
 }
 
 void Debug_LogSensorError(uint8_t error_flag, const char *name) {
   if (name == NULL) return;
   int len = snprintf(debug_buffer, sizeof(debug_buffer),
-                     "LOG:INIT:SENSOR_FAIL %s (0x%02X)", name, error_flag);
+                     "INIT:SENSOR_FAIL %s (0x%02X)", name, error_flag);
   if (len > 0 && len < (int)sizeof(debug_buffer)) {
     debug_buffer[len] = '\0';
     Debug_Log(debug_buffer);
@@ -221,7 +221,7 @@ void Debug_LogSensorError(uint8_t error_flag, const char *name) {
 }
 
 void Debug_LogI2cDevice(uint8_t addr) {
-  Debug_LogHex("LOG:INIT:I2C_DEVICE=0x", addr);
+  Debug_LogHex("INIT:I2C_DEVICE=0x", addr);
 }
 #else
 void Debug_LogSystemReady(uint8_t sensor_error_code) { (void)sensor_error_code; }
@@ -234,16 +234,16 @@ void Debug_LogI2cDevice(uint8_t addr) { (void)addr; }
 
 #ifdef DEBUG_LOG_MEAS_EVENTS
 void Debug_LogMeasCmd(void) {
-  Debug_Log("LOG:MEAS:CMD_RECEIVED");
+  Debug_Log("MEAS:CMD_RECEIVED");
 }
 
 void Debug_LogMeasDone(void) {
-  Debug_Log("LOG:MEAS:DONE");
+  Debug_Log("MEAS:DONE");
 }
 
 void Debug_LogMeasRetry(uint8_t attempt, uint8_t max) {
   int len = snprintf(debug_buffer, sizeof(debug_buffer),
-                     "LOG:MEAS:RETRY %u/%u", attempt, max);
+                     "MEAS:RETRY %u/%u", attempt, max);
   if (len > 0 && len < (int)sizeof(debug_buffer)) {
     debug_buffer[len] = '\0';
     Debug_Log(debug_buffer);
@@ -251,15 +251,15 @@ void Debug_LogMeasRetry(uint8_t attempt, uint8_t max) {
 }
 
 void Debug_LogMeasNoSensors(void) {
-  Debug_Log("LOG:MEAS:NO_SENSORS");
+  Debug_Log("MEAS:NO_SENSORS");
 }
 
 void Debug_LogMeasMaxRetries(void) {
-  Debug_Log("LOG:MEAS:MAX_RETRIES");
+  Debug_Log("MEAS:MAX_RETRIES");
 }
 
 void Debug_LogMeasTimeout(void) {
-  Debug_Log("LOG:MEAS:TIMEOUT");
+  Debug_Log("MEAS:TIMEOUT");
 }
 #else
 void Debug_LogMeasCmd(void) {}
@@ -275,11 +275,11 @@ void Debug_LogMeasTimeout(void) {}
 
 #ifdef DEBUG_LOG_LINK_EVENTS
 void Debug_LogRecovery(void) {
-  Debug_Log("LOG:LINK:RECOVERY_DONE");
+  Debug_Log("LINK:RECOVERY_DONE");
 }
 
 void Debug_LogElapsedMs(uint32_t ms) {
-  Debug_LogValue("LOG:LINK:ELAPSED_MS=", (int32_t)ms);
+  Debug_LogValue("LINK:ELAPSED_MS=", (int32_t)ms);
 }
 #else
 void Debug_LogRecovery(void) {}
@@ -292,7 +292,7 @@ void Debug_Heartbeat(void) {
   if ((now - last_heartbeat_tick) >= DEBUG_HEARTBEAT_INTERVAL_MS) {
     last_heartbeat_tick = now;
     heartbeat_count++;
-    Debug_LogValue("LOG:HEARTBEAT #", heartbeat_count);
+    Debug_LogValue("HEARTBEAT #", heartbeat_count);
   }
 }
 #else
@@ -300,8 +300,8 @@ void Debug_Heartbeat(void) {}
 #endif
 
 void Debug_LogBoot(void) {
-  Debug_Log("LOG:OUTDOOR UNIT BOOT");
-  Debug_Log("LOG:Debug logging enabled");
+  Debug_Log("OUTDOOR UNIT BOOT");
+  Debug_Log("Debug logging enabled");
   debug_log_reset_cause();
 }
 

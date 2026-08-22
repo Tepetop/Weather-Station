@@ -15,7 +15,6 @@
 #include "measurement_unit_config.h"
 #include "gpio.h"
 #include "i2c.h"
-#include "iwdg.h"
 #include "spi.h"
 #include "usart.h"
 #include "ws_protocol.h"
@@ -100,7 +99,6 @@ HAL_StatusTypeDef OutdoorStation_RunMeasurementCycle(Measurement_Data_t *data,
   while (measCtx.state != MEAS_SLEEP && measCtx.state != MEAS_ERROR)
   {
     Measurement_Process(&measCtx);
-    HAL_IWDG_Refresh(&hiwdg);
 
     if ((HAL_GetTick() - start_tick) > timeout_ms)
     {
@@ -170,7 +168,6 @@ HAL_StatusTypeDef OutdoorStation_Init(void)
     while (measCtx.state != MEAS_SLEEP && measCtx.state != MEAS_ERROR && (HAL_GetTick() - initStart) < 3000U)
     {
       Measurement_Process(&measCtx);
-      HAL_IWDG_Refresh(&hiwdg);
     }
   }
 /*  Check if sensors initialized successfully */
@@ -180,7 +177,7 @@ HAL_StatusTypeDef OutdoorStation_Init(void)
   }
 
   Debug_LogSystemReady(measCtx.sensorErrorCode);
-  Debug_LogValue("LOG:INIT:NODE_ID=", (int32_t)NODE_ID);
+  Debug_LogValue("INIT:NODE_ID=", (int32_t)NODE_ID);
   if (measCtx.sensorErrorCode & ERROR_TSL2561)
   {
     Debug_LogSensorError(ERROR_TSL2561, "TSL2561");
@@ -199,6 +196,40 @@ HAL_StatusTypeDef OutdoorStation_Init(void)
   }
 
   return HAL_OK;
+}
+
+/**
+ * @brief   True when the MCU may enter STOP while nRF24 stays in RX
+ * @retval  1  Idle, radio listening, no pending IRQ/command/TX
+ * @retval  0  Stay awake (busy, or NRF missing so reinit can run)
+ * @details Missing radio keeps the CPU running so `OutdoorStation_TryReinitNrf()`
+ *          can retry on `HAL_GetTick()`. IRQ pin low is treated as pending work
+ *          even if EXTI was missed.
+ */
+uint8_t OutdoorStation_CanSleep(void)
+{
+  if (nrf_available == 0U)
+  {
+    return 0U;
+  }
+
+  if (outLink.state != OUT_LINK_IDLE)
+  {
+    return 0U;
+  }
+
+  if ((outLink.irq_flag != 0U) || (outLink.cmd_received != 0U) ||
+      (outLink.tx_in_progress != 0U) || (outLink.tx_done != 0U))
+  {
+    return 0U;
+  }
+
+  if (HAL_GPIO_ReadPin(NRF_IRQ_GPIO_Port, NRF_IRQ_Pin) == GPIO_PIN_RESET)
+  {
+    return 0U;
+  }
+
+  return 1U;
 }
 
 /**
@@ -383,7 +414,7 @@ void OutdoorStation_Process(void)
         }
 
         Debug_LogNrfTimeout();
-        Debug_LogHex("LOG:NRF:TX_STATUS=", st);
+        Debug_LogHex("NRF:TX_STATUS=", st);
 #if USE_TIMER_PROFILING
         Debug_LogElapsedMs(HAL_GetTick() - outLink.tx_start_tick);
 #endif
@@ -631,7 +662,7 @@ static void OutdoorStation_HandleIRQ(void)
 
     if (pipe != NRF_PIPE_CMD)
     {
-      Debug_LogValue("LOG:NRF:RX_DROP_PIPE=", (int32_t)pipe);
+      Debug_LogValue("NRF:RX_DROP_PIPE=", (int32_t)pipe);
       continue;
     }
 
@@ -639,7 +670,7 @@ static void OutdoorStation_HandleIRQ(void)
     uint8_t target_mask = WS_CMD_TARGET_ALL;
     if (!WS_Cmd_DecodeMeasureEx(rx_data, NRF_CMD_SIZE, &cycle_id, &target_mask))
     {
-      Debug_Log("LOG:NRF:RX_DROP_DECODE");
+      Debug_Log("NRF:RX_DROP_DECODE");
     }
     else
     {
@@ -647,11 +678,11 @@ static void OutdoorStation_HandleIRQ(void)
       Debug_LogNrfRxCmd();
       if ((target_mask != WS_CMD_TARGET_ALL) && ((target_mask & node_bit) == 0U))
       {
-        Debug_Log("LOG:NRF:RX_DROP_MASK");
+        Debug_Log("NRF:RX_DROP_MASK");
       }
       else if (WS_Cmd_IsDuplicateCycle(cycle_id, outLink.last_cycle_id, outLink.have_last_cycle_id))
       {
-        Debug_Log("LOG:NRF:RX_DROP_DUP");
+        Debug_Log("NRF:RX_DROP_DUP");
       }
       else
       {

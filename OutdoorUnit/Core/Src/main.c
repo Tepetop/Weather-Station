@@ -20,7 +20,6 @@
 #include "main.h"
 #include "dma.h"
 #include "i2c.h"
-#include "iwdg.h"
 #include "spi.h"
 #include "usart.h"
 #include "gpio.h"
@@ -28,6 +27,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "outdoor_station.h"
+#include "power_mgr.h"
 #include "debug_log.h"
 #include "measurement.h"
 #include "measurement_unit_config.h"
@@ -88,11 +88,6 @@ int main(void)
 
   /* USER CODE BEGIN Init */
 
-#if defined(DEBUG)
-  /* Keep IWDG stopped while CPU is halted by debugger (breakpoints/step). */
-  __HAL_DBGMCU_FREEZE_IWDG();
-#endif
-
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -108,7 +103,6 @@ int main(void)
   MX_I2C2_Init();
   MX_USART1_UART_Init();
   MX_SPI1_Init();
-  MX_IWDG_Init();
   /* USER CODE BEGIN 2 */
 
   Debug_Init();
@@ -128,7 +122,11 @@ int main(void)
     /* USER CODE BEGIN 3 */
 
     OutdoorStation_Process();
-    HAL_IWDG_Refresh(&hiwdg);
+
+    if (OutdoorStation_CanSleep() != 0U)
+    {
+      PowerMgr_EnterIdleStop();
+    }
 
 #ifdef DEBUG_LOG_HEARTBEAT
     Debug_Heartbeat();
@@ -150,13 +148,13 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_LSI;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+  RCC_OscInitStruct.HSEPredivValue = RCC_HSE_PREDIV_DIV1;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
-  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
-  RCC_OscInitStruct.LSIState = RCC_LSI_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI_DIV2;
-  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL16;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL9;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
