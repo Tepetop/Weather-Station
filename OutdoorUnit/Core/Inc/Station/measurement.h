@@ -10,17 +10,17 @@
 #define MEASUREMENT_H
 
 #include "main.h"
-#if 0
-#include "si7021.h"
-#include "TSL2561.h"
-#include "bmp280.h"
+#include "ws_protocol.h"
+#include "measurement_unit_config.h"
+
+#if NODE_ID == 1
+    #include "si7021.h"
+    #include "TSL2561.h"
+    #include "bmp280.h"
 #else
-#include "bme280.h"
+    #include "bme280.h"
 #endif
 
-#include "stm32_hal_legacy.h"
-#include "stm32f1xx_hal_def.h"
-#include "ws_protocol.h"
 
 /* ============================================================================
  * Configuration
