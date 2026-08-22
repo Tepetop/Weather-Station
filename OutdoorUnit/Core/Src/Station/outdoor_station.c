@@ -177,7 +177,7 @@ HAL_StatusTypeDef OutdoorStation_Init(void)
   }
 
   Debug_LogSystemReady(measCtx.sensorErrorCode);
-  Debug_LogValue("LOG:INIT:NODE_ID=", (int32_t)NODE_ID);
+  Debug_LogValue("INIT:NODE_ID=", (int32_t)NODE_ID);
   if (measCtx.sensorErrorCode & ERROR_TSL2561)
   {
     Debug_LogSensorError(ERROR_TSL2561, "TSL2561");
@@ -414,7 +414,7 @@ void OutdoorStation_Process(void)
         }
 
         Debug_LogNrfTimeout();
-        Debug_LogHex("LOG:NRF:TX_STATUS=", st);
+        Debug_LogHex("NRF:TX_STATUS=", st);
 #if USE_TIMER_PROFILING
         Debug_LogElapsedMs(HAL_GetTick() - outLink.tx_start_tick);
 #endif
@@ -662,7 +662,7 @@ static void OutdoorStation_HandleIRQ(void)
 
     if (pipe != NRF_PIPE_CMD)
     {
-      Debug_LogValue("LOG:NRF:RX_DROP_PIPE=", (int32_t)pipe);
+      Debug_LogValue("NRF:RX_DROP_PIPE=", (int32_t)pipe);
       continue;
     }
 
@@ -670,7 +670,7 @@ static void OutdoorStation_HandleIRQ(void)
     uint8_t target_mask = WS_CMD_TARGET_ALL;
     if (!WS_Cmd_DecodeMeasureEx(rx_data, NRF_CMD_SIZE, &cycle_id, &target_mask))
     {
-      Debug_Log("LOG:NRF:RX_DROP_DECODE");
+      Debug_Log("NRF:RX_DROP_DECODE");
     }
     else
     {
@@ -678,11 +678,11 @@ static void OutdoorStation_HandleIRQ(void)
       Debug_LogNrfRxCmd();
       if ((target_mask != WS_CMD_TARGET_ALL) && ((target_mask & node_bit) == 0U))
       {
-        Debug_Log("LOG:NRF:RX_DROP_MASK");
+        Debug_Log("NRF:RX_DROP_MASK");
       }
       else if (WS_Cmd_IsDuplicateCycle(cycle_id, outLink.last_cycle_id, outLink.have_last_cycle_id))
       {
-        Debug_Log("LOG:NRF:RX_DROP_DUP");
+        Debug_Log("NRF:RX_DROP_DUP");
       }
       else
       {
