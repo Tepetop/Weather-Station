@@ -20,4 +20,6 @@
  */
 void PowerMgr_EnterIdleStop(void);
 
+void PowerMgr_EnterSTOPMode(uint32_t Regulator, uint8_t STOPEntry);
+
 #endif /* POWER_MGR_H */
