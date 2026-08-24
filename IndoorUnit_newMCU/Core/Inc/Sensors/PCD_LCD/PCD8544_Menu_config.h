@@ -58,10 +58,10 @@ Menu_t Ustawienia = {"Ustawienia", 				NULL,  			  	&StronaDomyslna, 	&StacjePom
 		Menu_t powrotWykres = {"Powrot", 		NULL, 	  		    &luxWykres, 		NULL, 				&Wykresy, 	 		Menu_EscapeWraper};
 	*/
 
-	Menu_t StacjePomiarowe = {"Stacje pom.",	&StacjaCentralna,   NULL, 				&statusPomiarow, 	&Ustawienia, 		NULL};
-		Menu_t statusPomiarow = {"Status", 		&wykonajPomiar,     NULL, 				NULL, 				&StacjePomiarowe, 	WS_UI_StationsStatus};
-		Menu_t wykonajPomiar = {"Wykonaj pom.",	&powrotPomiar,  	&statusPomiarow,  	NULL, 				&StacjePomiarowe, 	WS_UI_TakeMeasurement};
-		Menu_t powrotPomiar = {"Powrot", 		NULL, 			  	&wykonajPomiar, 	NULL, 				&StacjePomiarowe, 	Menu_EscapeWraper};
+	Menu_t StacjePomiarowe = {"Stacje pom.",	&StacjaCentralna,   NULL, 				&wykonajPomiar, 	&Ustawienia, 		NULL};
+		Menu_t wykonajPomiar = {"Wykonaj pom.",	&statusPomiarow,  	NULL,  	NULL, 				&StacjePomiarowe, 	WS_UI_TakeMeasurement};
+		Menu_t statusPomiarow = {"Status", 		&powrotPomiar,     &wykonajPomiar, 				NULL, 				&StacjePomiarowe, 	WS_UI_StationsStatus};
+		Menu_t powrotPomiar = {"Powrot", 		NULL, 			  	&statusPomiarow, 	NULL, 				&StacjePomiarowe, 	Menu_EscapeWraper};
 
 	Menu_t StacjaCentralna = {"Stacja centr",	&PowrotUstawienia, &StacjePomiarowe,  	&statusCentralna, 	&Ustawienia, 		NULL};
 		Menu_t statusCentralna = {"Status",   	&ustawieniaRTC,   NULL,  				NULL, 				&StacjaCentralna, 	WS_UI_CentralStatus};

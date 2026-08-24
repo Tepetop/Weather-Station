@@ -41,14 +41,16 @@ static void debug_print_timestamped(const char *msg) {
   uint32_t hours;
   uint32_t minutes;
   uint32_t seconds;
+  /* Separate from debug_buffer: callers may pass debug_buffer as msg. */
+  char line[160];
 
   debug_format_uptime(&hours, &minutes, &seconds);
-  int len = snprintf(debug_buffer, sizeof(debug_buffer),
+  int len = snprintf(line, sizeof(line),
                      "LOG:[%02lu:%02lu:%02lu] %s\r\n",
                      (unsigned long)hours, (unsigned long)minutes,
                      (unsigned long)seconds, msg);
-  if (len > 0 && len < (int)sizeof(debug_buffer)) {
-    debug_send(debug_buffer, (uint16_t)len);
+  if (len > 0 && len < (int)sizeof(line)) {
+    debug_send(line, (uint16_t)len);
   }
 }
 
@@ -213,7 +215,7 @@ void Debug_LogSystemReady(uint8_t sensor_error_code) {
 void Debug_LogSensorError(uint8_t error_flag, const char *name) {
   if (name == NULL) return;
   int len = snprintf(debug_buffer, sizeof(debug_buffer),
-                     "INIT:SENSOR_FAIL %s (0x%02X)", name, error_flag);
+                     "INIT:SENSOR_FAIL %s 0x%02X", name, error_flag);
   if (len > 0 && len < (int)sizeof(debug_buffer)) {
     debug_buffer[len] = '\0';
     Debug_Log(debug_buffer);
