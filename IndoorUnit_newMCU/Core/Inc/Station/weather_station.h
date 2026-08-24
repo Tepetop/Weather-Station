@@ -28,7 +28,7 @@
 /** @brief Maximum number of outdoor nodes supported */
 #define WS_MAX_NODES 4U
 
-#define SCREEN_SAVER_TIMEOUT_MS  15000U /* 15 seconds */
+#define SCREEN_SAVER_TIMEOUT_MS  30000U /* 30 seconds */
 
 /* ============================================================================
  * PUBLIC ENUMERATIONS
