@@ -11,6 +11,7 @@
 #include "power_mgr.h"
 
 #include "debug_log.h"
+#include "wwdg.h"
 
 /**
  * @brief True when NRF IRQ already requests a wake (pin low or EXTI pending)
@@ -39,6 +40,7 @@ static uint8_t PowerMgr_IrqWakePending(void)
  */
 void PowerMgr_EnterIdleStop(void)
 {
+  WWDG_Refresh();
   HAL_SuspendTick();
   __disable_irq();
 
@@ -53,6 +55,8 @@ void PowerMgr_EnterIdleStop(void)
   PowerMgr_EnterSTOPMode(PWR_LOWPOWERREGULATOR_ON, PWR_STOPENTRY_WFI);
 
   SystemClock_Config();
+  /* WWDG is clocked from PCLK1 and is frozen while STOP disables APB1. */
+  WWDG_Refresh();
   __enable_irq();
   HAL_ResumeTick();
 

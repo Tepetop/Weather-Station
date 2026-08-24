@@ -14,14 +14,32 @@
             "name": "Debug",
             "inherits": "default",
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug"
+                "CMAKE_BUILD_TYPE": "Debug",
+                "OUTDOOR_NODE_ID": "1"
+            }
+        },
+        {
+            "name": "Debug-node0",
+            "inherits": "default",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "OUTDOOR_NODE_ID": "0"
             }
         },
         {
             "name": "Release",
             "inherits": "default",
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Release"
+                "CMAKE_BUILD_TYPE": "Release",
+                "OUTDOOR_NODE_ID": "1"
+            }
+        },
+        {
+            "name": "Release-node0",
+            "inherits": "default",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "OUTDOOR_NODE_ID": "0"
             }
         }
     ],
@@ -31,8 +49,16 @@
             "configurePreset": "Debug"
         },
         {
+            "name": "Debug-node0",
+            "configurePreset": "Debug-node0"
+        },
+        {
             "name": "Release",
             "configurePreset": "Release"
+        },
+        {
+            "name": "Release-node0",
+            "configurePreset": "Release-node0"
         }
     ]
 }

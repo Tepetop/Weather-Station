@@ -22,6 +22,7 @@
 #include "i2c.h"
 #include "spi.h"
 #include "usart.h"
+#include "wwdg.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -88,6 +89,10 @@ int main(void)
 
   /* USER CODE BEGIN Init */
 
+#if defined(DEBUG)
+  __HAL_DBGMCU_FREEZE_WWDG();
+#endif
+
   /* USER CODE END Init */
 
   /* Configure the system clock */
@@ -103,6 +108,7 @@ int main(void)
   MX_I2C2_Init();
   MX_USART1_UART_Init();
   MX_SPI1_Init();
+  MX_WWDG_Init();
   /* USER CODE BEGIN 2 */
 
   Debug_Init();
@@ -122,11 +128,12 @@ int main(void)
     /* USER CODE BEGIN 3 */
 
     OutdoorStation_Process();
+    WWDG_Refresh();
 
-    // if (OutdoorStation_CanSleep() != 0U)
-    // {
-    //   PowerMgr_EnterIdleStop();
-    // }
+    if (OutdoorStation_CanSleep() != 0U)
+    {
+      PowerMgr_EnterIdleStop();
+    }
 
 #ifdef DEBUG_LOG_HEARTBEAT
     Debug_Heartbeat();

@@ -34,6 +34,14 @@ enable_language(C ASM)
 # Create an executable object type
 add_executable(${CMAKE_PROJECT_NAME})
 
+set(OUTDOOR_NODE_ID "1" CACHE STRING "Outdoor station node ID (0=SI7021/BMP280/TSL2561, 1=BME280)")
+set_property(CACHE OUTDOOR_NODE_ID PROPERTY STRINGS 0 1)
+if(NOT OUTDOOR_NODE_ID MATCHES "^[01]$")
+    message(FATAL_ERROR "OUTDOOR_NODE_ID must be 0 or 1")
+endif()
+target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE NODE_ID=${OUTDOOR_NODE_ID}U)
+message(STATUS "Outdoor node ID: ${OUTDOOR_NODE_ID}")
+
 # Add STM32CubeMX generated sources
 add_subdirectory(cmake/stm32cubemx)
 

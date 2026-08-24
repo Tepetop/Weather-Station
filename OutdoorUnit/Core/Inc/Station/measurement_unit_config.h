@@ -10,6 +10,17 @@
 #define MEASUREMENT_UNIT_CONFIG_H
 
 /* ============================================================================
+ * Node Configuration
+ * ============================================================================ */
+#ifndef NODE_ID
+#error "NODE_ID must be supplied by the build (0 or 1)"
+#endif
+
+#if (NODE_ID > 1U)
+#error "NODE_ID must be 0 or 1"
+#endif
+
+/* ============================================================================
  * Includes
  * ============================================================================ */
 #include "measurement.h"
@@ -26,14 +37,6 @@
 #define USE_UART_LOGGING      1     /**< Enable UART debug logging */
 #define CHECK_I2C_DEVICES     0     /**< Scan I2C bus on startup (debug) */
 #define USE_TIMER_PROFILING   1     /**< Enable timing measurements for profiling */
-
-/* ============================================================================
- * Node Configuration
- * ============================================================================ */
-/* Undef first: stale cmake -DNODE_ID=1U must not override this header. */
-#undef NODE_ID
-/** @brief Node identity — set per board before building (0 or 1 for WS_NODE_COUNT=2). */
-#define NODE_ID               1U
 
 /* ============================================================================
  * NRF24L01 Configuration

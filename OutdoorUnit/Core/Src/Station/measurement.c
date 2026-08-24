@@ -42,6 +42,21 @@ static I2C_HandleTypeDef *measurement_hi2c;
 /** @brief Tick counter for wakeup timing */
 static uint32_t measurementWakeupTick;
 
+#ifdef BMP280_H
+/** @brief Non-blocking BMP280 forced-conversion state */
+static uint8_t bmp280MeasurementPending;
+static uint32_t bmp280MeasurementStartTick;
+#define BMP280_FORCED_MEASUREMENT_MS 50U
+#endif
+
+#ifdef BME280_H
+/** @brief Non-blocking BME280 forced-conversion state */
+static uint8_t bme280MeasurementPending;
+static uint32_t bme280MeasurementStartTick;
+static uint32_t bme280MeasurementTimeoutMs;
+#define BME280_STATUS_POLL_DELAY_MS 2U
+#endif
+
 /* ============================================================================
  * Sensor Initialization Flags
  * ============================================================================ */
@@ -99,11 +114,11 @@ static void Measurement_ReadSi7021(Measurement_Context_t *ctx);
 #endif
 #ifdef BMP280_H
 static HAL_StatusTypeDef Measurement_InitBMP280(Measurement_Context_t *ctx);
-static void Measurement_ReadBMP280(Measurement_Context_t *ctx);
+static uint8_t Measurement_ReadBMP280(Measurement_Context_t *ctx);
 #endif
 #ifdef BME280_H
 static HAL_StatusTypeDef Measurement_InitBME280(Measurement_Context_t *ctx);
-static void Measurement_ReadBME280(Measurement_Context_t *ctx);
+static uint8_t Measurement_ReadBME280(Measurement_Context_t *ctx);
 #endif
 #ifdef TSL2561_H
 static uint32_t Measurement_GetTSL2561IntegrationDelayMs(void);
@@ -163,6 +178,15 @@ HAL_StatusTypeDef Measurement_Init(Measurement_Context_t *ctx, I2C_HandleTypeDef
     ctx->initRetryCount = 0;
     ctx->sensorsInitialized = 0;
     measurementWakeupTick = 0U;
+#ifdef BMP280_H
+    bmp280MeasurementPending = 0U;
+    bmp280MeasurementStartTick = 0U;
+#endif
+#ifdef BME280_H
+    bme280MeasurementPending = 0U;
+    bme280MeasurementStartTick = 0U;
+    bme280MeasurementTimeoutMs = 0U;
+#endif
     memset(&ctx->data, 0, sizeof(Measurement_Data_t));
     return HAL_OK;
 }
@@ -375,28 +399,38 @@ static void Measurement_ReadSi7021(Measurement_Context_t *ctx) {
 
 #ifdef BMP280_H
 /**
- * @brief   Read BMP280 temperature and pressure sensor
+ * @brief   Advance a non-blocking BMP280 forced measurement
  * @param   ctx  Pointer to measurement context structure
- * @retval  None
+ * @retval  1U Measurement finished or failed
+ * @retval  0U Conversion still in progress
  */
-static void Measurement_ReadBMP280(Measurement_Context_t *ctx) {
+static uint8_t Measurement_ReadBMP280(Measurement_Context_t *ctx) {
     /* Skip if sensor not initialized */
     if (!(ctx->sensorsInitialized & SENSOR_BMP280_INIT)) {
         ctx->data.sensorStatus |= ERROR_BMP280;
         ctx->sensorErrorCode |= ERROR_BMP280;
-        return;
+        return 1U;
     }
-    
-    /* Trigger a forced measurement (sensor wakes up, measures, and goes back to sleep) */
-    if (BMP280_SetCtrlMeas(&hbmp280, BMP280_OVERSAMPLING_X16, BMP280_MODE_FORCED) != HAL_OK) {
-        ctx->sensorErrorCode |= ERROR_BMP280;
-        ctx->sensorsInitialized &= ~SENSOR_BMP280_INIT;
-        return;
+
+    if (bmp280MeasurementPending == 0U) {
+        /* Forced mode returns the sensor to sleep after one conversion. */
+        if (BMP280_SetCtrlMeas(&hbmp280, BMP280_OVERSAMPLING_X16, BMP280_MODE_FORCED) != HAL_OK) {
+            ctx->data.sensorStatus |= ERROR_BMP280;
+            ctx->sensorErrorCode |= ERROR_BMP280;
+            ctx->sensorsInitialized &= ~SENSOR_BMP280_INIT;
+            return 1U;
+        }
+
+        bmp280MeasurementStartTick = HAL_GetTick();
+        bmp280MeasurementPending = 1U;
+        return 0U;
     }
-    
-    /* Small delay for measurement to complete (depends on oversampling settings) */
-    HAL_Delay(50);
-    
+
+    if ((HAL_GetTick() - bmp280MeasurementStartTick) < BMP280_FORCED_MEASUREMENT_MS) {
+        return 0U;
+    }
+
+    bmp280MeasurementPending = 0U;
     if (BMP280_GetTemperatureAndPressure(&hbmp280) == HAL_OK) {
         ctx->data.bmp280_temp = hbmp280.data.temperature;
         ctx->data.bmp280_press = hbmp280.data.pressure;
@@ -406,6 +440,7 @@ static void Measurement_ReadBMP280(Measurement_Context_t *ctx) {
         /* Mark sensor as needing reinitialization */
         ctx->sensorsInitialized &= ~SENSOR_BMP280_INIT;
     }
+    return 1U;
 }
 #endif
 
@@ -436,36 +471,62 @@ static void Measurement_ReadTSL2561(Measurement_Context_t *ctx) {
 
 #ifdef BME280_H
 /**
- * @brief   Read BME280 temperature, pressure and humidity sensor
+ * @brief   Advance a non-blocking BME280 forced measurement
  * @param   ctx  Pointer to measurement context structure
- * @retval  None
+ * @retval  1U Measurement finished or failed
+ * @retval  0U Conversion still in progress
  */
-static void Measurement_ReadBME280(Measurement_Context_t *ctx) {
-    uint32_t timeout_ms;
-
+static uint8_t Measurement_ReadBME280(Measurement_Context_t *ctx) {
     if (!(ctx->sensorsInitialized & SENSOR_BME280_INIT)) {
         ctx->data.sensorStatus |= ERROR_BME280;
         ctx->sensorErrorCode |= ERROR_BME280;
-        return;
+        return 1U;
     }
 
-    BME280_SetCtrlHum(&hbme280, BME280_OVERSAMPLING_X16);
-    if (BME280_SetCtrlMeasSimple(&hbme280, BME280_OVERSAMPLING_X16, BME280_MODE_FORCED) != HAL_OK ||
-        BME280_ApplySettings(&hbme280) != HAL_OK) {
+    if (bme280MeasurementPending == 0U) {
+        BME280_SetCtrlHum(&hbme280, BME280_OVERSAMPLING_X16);
+        if (BME280_SetCtrlMeasSimple(&hbme280, BME280_OVERSAMPLING_X16, BME280_MODE_FORCED) != HAL_OK ||
+            BME280_ApplySettings(&hbme280) != HAL_OK) {
+            ctx->data.sensorStatus |= ERROR_BME280;
+            ctx->sensorErrorCode |= ERROR_BME280;
+            ctx->sensorsInitialized &= ~SENSOR_BME280_INIT;
+            return 1U;
+        }
+
+        bme280MeasurementStartTick = HAL_GetTick();
+        bme280MeasurementTimeoutMs = BME280_GetMeasurementDurationMs(&hbme280, 1U) + 5U;
+        bme280MeasurementPending = 1U;
+        return 0U;
+    }
+
+    uint32_t elapsed_ms = HAL_GetTick() - bme280MeasurementStartTick;
+    if (elapsed_ms < BME280_STATUS_POLL_DELAY_MS) {
+        return 0U;
+    }
+
+    uint8_t measuring = 0U;
+    uint8_t im_update = 0U;
+    if (BME280_GetStatus(&hbme280, &measuring, &im_update) != HAL_OK) {
+        bme280MeasurementPending = 0U;
         ctx->data.sensorStatus |= ERROR_BME280;
         ctx->sensorErrorCode |= ERROR_BME280;
         ctx->sensorsInitialized &= ~SENSOR_BME280_INIT;
-        return;
+        return 1U;
     }
 
-    timeout_ms = BME280_GetMeasurementDurationMs(&hbme280, 1U) + 5U;
-    if (BME280_WaitForMeasurement(&hbme280, timeout_ms) != HAL_OK) {
+    if (measuring != 0U) {
+        if (elapsed_ms <= bme280MeasurementTimeoutMs) {
+            return 0U;
+        }
+
+        bme280MeasurementPending = 0U;
         ctx->data.sensorStatus |= ERROR_BME280;
         ctx->sensorErrorCode |= ERROR_BME280;
         ctx->sensorsInitialized &= ~SENSOR_BME280_INIT;
-        return;
+        return 1U;
     }
 
+    bme280MeasurementPending = 0U;
     if (BME280_GetTemperaturePressureHumidity(&hbme280) == HAL_OK) {
         ctx->data.bme280_temp = hbme280.data.temperature;
         ctx->data.bme280_press = hbme280.data.pressure;
@@ -475,6 +536,7 @@ static void Measurement_ReadBME280(Measurement_Context_t *ctx) {
         ctx->sensorErrorCode |= ERROR_BME280;
         ctx->sensorsInitialized &= ~SENSOR_BME280_INIT;
     }
+    return 1U;
 }
 #endif
 
@@ -484,20 +546,24 @@ static void Measurement_ReadBME280(Measurement_Context_t *ctx) {
  * @retval  None
  */
 static void Measurement_ReadAllSensors(Measurement_Context_t *ctx) {
+#ifdef BMP280_H
+    if (Measurement_ReadBMP280(ctx) == 0U) {
+        return;
+    }
+#endif
+
+#ifdef BME280_H
+    if (Measurement_ReadBME280(ctx) == 0U) {
+        return;
+    }
+#endif
+
 #ifdef SI7021_H
     Measurement_ReadSi7021(ctx);
 #endif
 
-#ifdef BMP280_H
-    Measurement_ReadBMP280(ctx);
-#endif
-
 #ifdef TSL2561_H
     Measurement_ReadTSL2561(ctx);
-#endif
-
-#ifdef BME280_H
-    Measurement_ReadBME280(ctx);
 #endif
 
     /* All sensors read, measurement cycle complete */

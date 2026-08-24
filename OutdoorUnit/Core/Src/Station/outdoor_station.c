@@ -17,6 +17,7 @@
 #include "i2c.h"
 #include "spi.h"
 #include "usart.h"
+#include "wwdg.h"
 #include "ws_protocol.h"
 #include "debug_log.h"
 
@@ -99,6 +100,7 @@ HAL_StatusTypeDef OutdoorStation_RunMeasurementCycle(Measurement_Data_t *data,
   while (measCtx.state != MEAS_SLEEP && measCtx.state != MEAS_ERROR)
   {
     Measurement_Process(&measCtx);
+    WWDG_Refresh();
 
     if ((HAL_GetTick() - start_tick) > timeout_ms)
     {
@@ -168,6 +170,7 @@ HAL_StatusTypeDef OutdoorStation_Init(void)
     while (measCtx.state != MEAS_SLEEP && measCtx.state != MEAS_ERROR && (HAL_GetTick() - initStart) < 3000U)
     {
       Measurement_Process(&measCtx);
+      WWDG_Refresh();
     }
   }
 /*  Check if sensors initialized successfully */
@@ -582,7 +585,7 @@ static HAL_StatusTypeDef OutdoorStation_InitCommunication(void)
     Debug_LogNrfInitRetry(attempt, NRF_INIT_MAX_RETRIES);
     if (attempt < NRF_INIT_MAX_RETRIES)
     {
-      HAL_Delay(NRF_INIT_RETRY_DELAY_MS);
+      WWDG_Delay(NRF_INIT_RETRY_DELAY_MS);
     }
   }
 
