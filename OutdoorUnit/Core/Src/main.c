@@ -123,10 +123,10 @@ int main(void)
 
     OutdoorStation_Process();
 
-    if (OutdoorStation_CanSleep() != 0U)
-    {
-      PowerMgr_EnterIdleStop();
-    }
+    // if (OutdoorStation_CanSleep() != 0U)
+    // {
+    //   PowerMgr_EnterIdleStop();
+    // }
 
 #ifdef DEBUG_LOG_HEARTBEAT
     Debug_Heartbeat();

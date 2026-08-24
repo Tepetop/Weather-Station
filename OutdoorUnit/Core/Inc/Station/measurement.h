@@ -13,7 +13,7 @@
 #include "ws_protocol.h"
 #include "measurement_unit_config.h"
 
-#if NODE_ID == 1
+#if NODE_ID == 0
     #include "si7021.h"
     #include "TSL2561.h"
     #include "bmp280.h"
