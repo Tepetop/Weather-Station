@@ -75,7 +75,7 @@ static const uint8_t NRF_BROADCAST_ADDR[5] = {0xB0U, 0xB0U, 0xB0U, 0xB0U, 0xB0U}
  * @note  Must match sensors included in measurement.h (BMP280_H vs BME280_H).
  *        Max WS_MAX_READINGS (5) entries per frame.
  */
-#if defined(BMP280_H)
+#if NODE_ID == 0
 static const uint8_t ENABLED_CHANNELS[] = {
     WS_CH_SI7021_TEMP,
     WS_CH_SI7021_HUM,
@@ -83,19 +83,16 @@ static const uint8_t ENABLED_CHANNELS[] = {
     WS_CH_BMP280_PRESS,
     WS_CH_TSL2561_LUX,
 };
-#elif defined(BME280_H)
+#elif NODE_ID == 1
 static const uint8_t ENABLED_CHANNELS[] = {
     WS_CH_BME280_TEMP,
     WS_CH_BME280_PRESS,
     WS_CH_BME280_HUM,
 };
 #else
-static const uint8_t ENABLED_CHANNELS[] = {
-    WS_CH_SI7021_TEMP,
-    WS_CH_SI7021_HUM,
-    WS_CH_TSL2561_LUX,
-};
+#error "Unsupported NODE_ID for ENABLED_CHANNELS"
 #endif
+
 /** @brief Number of channels listed in ENABLED_CHANNELS */
 #define ENABLED_CHANNEL_COUNT ((uint8_t)(sizeof(ENABLED_CHANNELS) / sizeof(ENABLED_CHANNELS[0])))
 
