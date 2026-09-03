@@ -5,6 +5,7 @@ UART_LOG_PREFIXES = ("LOG:", "INFO:", "DBG:", "TRACE:", "SYS:")
 UART_CONTROL_PREFIXES = ("ACK:", "ERR:")
 
 CMD_MEASURE = "CMD:MEASURE"
+CMD_RESET = "CMD:RESET"
 CMD_PING = "CMD:PING"
 
 CHANNEL_FIELDS = {
@@ -74,6 +75,10 @@ def build_measure_cmd(node=None):
     if node is None:
         return CMD_MEASURE
     return CMD_MEASURE + ":" + str(int(node))
+
+
+def build_reset_cmd(node):
+    return CMD_RESET + ":" + str(int(node))
 
 
 def _extract_measurement_frame(line):
@@ -292,6 +297,8 @@ def self_check():
 
     assert build_measure_cmd() == "CMD:MEASURE"
     assert build_measure_cmd(2) == "CMD:MEASURE:2"
+    assert build_reset_cmd(0) == "CMD:RESET:0"
     assert is_uart_control_line("ACK:PING")
     assert is_uart_control_line("ERR:BUSY")
+    assert is_uart_control_line("ACK:RESET:QUEUED")
     return True

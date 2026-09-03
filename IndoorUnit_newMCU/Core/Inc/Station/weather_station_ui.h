@@ -138,6 +138,11 @@ void WS_UI_ChartViewTask(void);
 void WS_UI_TakeMeasurement(void);
 
 /**
+ * @brief Queues a software reset of the currently selected outdoor station.
+ */
+void WS_UI_ResetStation(void);
+
+/**
  * @brief Enters RTC setting view and prepares editable RTC copy.
  */
 void WS_UI_SetRTC(void);

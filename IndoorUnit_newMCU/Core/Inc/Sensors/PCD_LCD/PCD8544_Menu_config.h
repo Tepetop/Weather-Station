@@ -33,6 +33,7 @@ Menu_t Ustawienia;
 	Menu_t StacjePomiarowe;
 		Menu_t statusPomiarow;
 		Menu_t wykonajPomiar;
+		Menu_t resetStacji;
 		Menu_t powrotPomiar;
 	Menu_t StacjaCentralna;
 		Menu_t statusCentralna;
@@ -60,8 +61,9 @@ Menu_t Ustawienia = {"Ustawienia", 				NULL,  			  	&StronaDomyslna, 	&StacjePom
 
 	Menu_t StacjePomiarowe = {"Stacje pom.",	&StacjaCentralna,   NULL, 				&wykonajPomiar, 	&Ustawienia, 		NULL};
 		Menu_t wykonajPomiar = {"Wykonaj pom.",	&statusPomiarow,  	NULL,  	NULL, 				&StacjePomiarowe, 	WS_UI_TakeMeasurement};
-		Menu_t statusPomiarow = {"Status", 		&powrotPomiar,     &wykonajPomiar, 				NULL, 				&StacjePomiarowe, 	WS_UI_StationsStatus};
-		Menu_t powrotPomiar = {"Powrot", 		NULL, 			  	&statusPomiarow, 	NULL, 				&StacjePomiarowe, 	Menu_EscapeWraper};
+		Menu_t statusPomiarow = {"Status", 		&resetStacji,     &wykonajPomiar, 				NULL, 				&StacjePomiarowe, 	WS_UI_StationsStatus};
+		Menu_t resetStacji = {"Reset stacji",	&powrotPomiar,     &statusPomiarow, 				NULL, 				&StacjePomiarowe, 	WS_UI_ResetStation};
+		Menu_t powrotPomiar = {"Powrot", 		NULL, 			  	&resetStacji, 	NULL, 				&StacjePomiarowe, 	Menu_EscapeWraper};
 
 	Menu_t StacjaCentralna = {"Stacja centr",	&PowrotUstawienia, &StacjePomiarowe,  	&statusCentralna, 	&Ustawienia, 		NULL};
 		Menu_t statusCentralna = {"Status",   	&ustawieniaRTC,   NULL,  				NULL, 				&StacjaCentralna, 	WS_UI_CentralStatus};

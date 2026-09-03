@@ -222,7 +222,8 @@ uint8_t OutdoorStation_CanSleep(void)
   }
 
   if ((outLink.irq_flag != 0U) || (outLink.cmd_received != 0U) ||
-      (outLink.tx_in_progress != 0U) || (outLink.tx_done != 0U))
+      (outLink.reset_requested != 0U) || (outLink.tx_in_progress != 0U) ||
+      (outLink.tx_done != 0U))
   {
     return 0U;
   }
@@ -262,6 +263,14 @@ void OutdoorStation_Process(void)
   {
     outLink.irq_flag = 0;
     OutdoorStation_HandleIRQ();
+  }
+
+  if (outLink.reset_requested)
+  {
+#if USE_LED_INDICATOR
+    Outdoor_LedOff();
+#endif
+    NVIC_SystemReset();
   }
 
   switch (outLink.state)
@@ -666,6 +675,29 @@ static void OutdoorStation_HandleIRQ(void)
     if (pipe != NRF_PIPE_CMD)
     {
       Debug_LogValue("NRF:RX_DROP_PIPE=", (int32_t)pipe);
+      continue;
+    }
+
+    uint8_t cmd_type = WS_Cmd_GetType(rx_data, NRF_CMD_SIZE);
+    if (cmd_type == WS_CMD_RESET)
+    {
+      uint8_t target_mask = 0U;
+      if (!WS_Cmd_DecodeReset(rx_data, NRF_CMD_SIZE, &target_mask))
+      {
+        Debug_Log("NRF:RX_DROP_DECODE");
+      }
+      else
+      {
+        uint8_t node_bit = (uint8_t)(1U << NODE_ID);
+        if ((target_mask != WS_CMD_TARGET_ALL) && ((target_mask & node_bit) == 0U))
+        {
+          Debug_Log("NRF:RX_DROP_MASK");
+        }
+        else
+        {
+          outLink.reset_requested = 1U;
+        }
+      }
       continue;
     }
 

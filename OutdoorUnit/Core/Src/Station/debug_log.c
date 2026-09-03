@@ -223,7 +223,7 @@ void Debug_LogSensorError(uint8_t error_flag, const char *name) {
 }
 
 void Debug_LogI2cDevice(uint8_t addr) {
-  Debug_LogHex("INIT:I2C_DEVICE=0x", addr);
+  Debug_LogHex("INIT:I2C_DEVICE=", addr);
 }
 #else
 void Debug_LogSystemReady(uint8_t sensor_error_code) { (void)sensor_error_code; }

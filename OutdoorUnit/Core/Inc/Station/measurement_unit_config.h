@@ -117,6 +117,7 @@ typedef enum {
 typedef struct {
   volatile uint8_t irq_flag;       /**< Set by EXTI callback when NRF IRQ fires */
   volatile uint8_t cmd_received;   /**< Set when CMD_MEASURE payload received */
+  volatile uint8_t reset_requested;/**< Set when targeted WS_CMD_RESET received */
   volatile uint8_t tx_done;        /**< TX completed (success or MAX_RT) */
   volatile uint8_t tx_ok;          /**< TX acknowledged by receiver */
   uint8_t tx_in_progress;          /**< TX operation active */

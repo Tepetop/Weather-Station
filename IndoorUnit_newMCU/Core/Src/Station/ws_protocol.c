@@ -200,6 +200,17 @@ bool WS_Protocol_SelfCheck(void) {
     return false;
   }
 
+  if (!WS_Cmd_EncodeResetTo(0x02U, cmd, sizeof(cmd))) {
+    return false;
+  }
+  {
+    uint8_t mask = 0U;
+    if (!WS_Cmd_DecodeReset(cmd, sizeof(cmd), &mask) ||
+        (mask != 0x02U) || (WS_Cmd_GetType(cmd, sizeof(cmd)) != WS_CMD_RESET)) {
+      return false;
+    }
+  }
+
   return true;
 }
 
@@ -315,4 +326,55 @@ uint8_t WS_Cycle_ExpectedMask(uint8_t node_count) {
  */
 bool WS_Cycle_IsComplete(uint8_t expected_mask, uint8_t received_mask) {
   return ((received_mask & expected_mask) == expected_mask);
+}
+
+/**
+ * @brief   Encodes a reset command with target node bitmask
+ * @param   target_mask  Bit N set selects NODE_ID N; WS_CMD_TARGET_ALL = all nodes
+ * @param   buf          Destination buffer (must be at least WS_CMD_SIZE bytes)
+ * @param   buf_size     Capacity of @p buf
+ * @retval  true         Command encoded
+ * @retval  false        Invalid buffer or insufficient size
+ */
+bool WS_Cmd_EncodeResetTo(uint8_t target_mask, uint8_t *buf, uint8_t buf_size) {
+  if ((buf == NULL) || (buf_size < WS_CMD_SIZE)) {
+    return false;
+  }
+
+  memset(buf, 0, WS_CMD_SIZE);
+  buf[0] = WS_CMD_RESET;
+  buf[WS_CMD_TARGET_MASK_OFFSET] = target_mask;
+  return true;
+}
+
+/**
+ * @brief   Decodes a reset command payload
+ * @param   buf              Source command buffer
+ * @param   len              Buffer length in bytes
+ * @param   out_target_mask  Receives target bitmask (may be NULL)
+ * @retval  true             Valid WS_CMD_RESET frame
+ * @retval  false            NULL buffer, too short, or wrong command byte
+ */
+bool WS_Cmd_DecodeReset(const uint8_t *buf, uint8_t len, uint8_t *out_target_mask) {
+  if ((buf == NULL) || (len <= WS_CMD_TARGET_MASK_OFFSET) || (buf[0] != WS_CMD_RESET)) {
+    return false;
+  }
+
+  if (out_target_mask != NULL) {
+    *out_target_mask = buf[WS_CMD_TARGET_MASK_OFFSET];
+  }
+  return true;
+}
+
+/**
+ * @brief   Returns the command type byte from an nRF24 command payload
+ * @param   buf  Source command buffer
+ * @param   len  Buffer length in bytes
+ * @retval  uint8_t  buf[0] on success, 0 when buffer is invalid
+ */
+uint8_t WS_Cmd_GetType(const uint8_t *buf, uint8_t len) {
+  if ((buf == NULL) || (len == 0U)) {
+    return 0U;
+  }
+  return buf[0];
 }

@@ -916,6 +916,10 @@ bool Measurement_BuildReadings(const Measurement_Context_t *ctx, WS_Readings_t *
     memset(out, 0, sizeof(*out));
     out->sensor_status = ctx->data.sensorStatus;
 
+    if (HAL_GPIO_ReadPin(BAT_LVL_GPIO_Port, BAT_LVL_Pin) == GPIO_PIN_RESET) {
+        out->sensor_status |= (uint8_t)WS_STATUS_BATTERY_LOW;
+    }
+
     for (uint8_t i = 0U; i < ENABLED_CHANNEL_COUNT; i++) {
         uint8_t channel_id = ENABLED_CHANNELS[i];
         uint8_t err_mask = WS_ChannelSensorError(channel_id);

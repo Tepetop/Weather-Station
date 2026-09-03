@@ -5,8 +5,9 @@
  * nRF24 binary frame (max 32 B):
  *   [version][sensor_status][count][channel_id+float] * count
  *
- * nRF24 measure command (8 B):
- *   [WS_CMD_MEASURE][cycle_id][target_mask][padding]
+ * nRF24 command (8 B):
+ *   [WS_CMD_MEASURE|WS_CMD_RESET][cycle_id][target_mask][padding]
+ * sensor_status: bits 0–3 = sensor errors, bit 4 = battery low.
  *
  * UART line to Pico (example, BMP280 station):
  *   DATA:2026-05-09T11:06:01,S0,01:23.45,02:65.20,03:18.10,04:1013.25,05:120.0,OK\n
@@ -42,6 +43,8 @@
 
 /** @brief Measure command byte (nRF24 command payload) */
 #define WS_CMD_MEASURE           0x01U
+/** @brief Reset command byte (nRF24 command payload, MCU software reset) */
+#define WS_CMD_RESET             0x02U
 /** @brief Fixed command payload size used by Indoor/Outdoor radios */
 #define WS_CMD_SIZE              8U
 /** @brief Byte offset of cycle_id inside the measure command payload */
@@ -78,6 +81,7 @@ typedef enum {
   WS_SENSOR_ERR_BMP280   = (1U << 1),   /**< BMP280 error */
   WS_SENSOR_ERR_TSL2561  = (1U << 2),   /**< TSL2561 error */
   WS_SENSOR_ERR_BME280   = (1U << 3),   /**< BME280 error */
+  WS_STATUS_BATTERY_LOW  = (1U << 4),   /**< Battery low (GPIO BAT_LVL pulled to GND) */
 } WS_SensorError_t;
 
 /** @brief Alias for healthy sensor status (no error bits set) */
@@ -225,5 +229,34 @@ uint8_t WS_Cycle_ExpectedMask(uint8_t node_count);
  * @retval  false          At least one expected node has not responded
  */
 bool WS_Cycle_IsComplete(uint8_t expected_mask, uint8_t received_mask);
+
+/**
+ * @brief   Encodes a reset command with target node bitmask
+ * @param   target_mask  Bit N set selects NODE_ID N; WS_CMD_TARGET_ALL = all nodes
+ * @param   buf          Destination buffer (must be at least WS_CMD_SIZE bytes)
+ * @param   buf_size     Capacity of @p buf
+ * @retval  true         Command encoded
+ * @retval  false        Invalid buffer or insufficient size
+ * @details Wire layout: [WS_CMD_RESET][0][target_mask][padding]
+ */
+bool WS_Cmd_EncodeResetTo(uint8_t target_mask, uint8_t *buf, uint8_t buf_size);
+
+/**
+ * @brief   Decodes a reset command payload
+ * @param   buf              Source command buffer
+ * @param   len              Buffer length in bytes
+ * @param   out_target_mask  Receives target bitmask (may be NULL)
+ * @retval  true             Valid WS_CMD_RESET frame
+ * @retval  false            NULL buffer, too short, or wrong command byte
+ */
+bool WS_Cmd_DecodeReset(const uint8_t *buf, uint8_t len, uint8_t *out_target_mask);
+
+/**
+ * @brief   Returns the command type byte from an nRF24 command payload
+ * @param   buf  Source command buffer
+ * @param   len  Buffer length in bytes
+ * @retval  uint8_t  buf[0] on success, 0 when buffer is invalid
+ */
+uint8_t WS_Cmd_GetType(const uint8_t *buf, uint8_t len);
 
 #endif /* WS_PROTOCOL_H */

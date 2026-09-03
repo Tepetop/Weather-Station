@@ -269,6 +269,10 @@ static void ws_render_stations_status(void) {
         strncat(err_line, "BME", sizeof(err_line) - strlen(err_line) - 1U);
       }
 
+      if ((sensor_err & WS_STATUS_BATTERY_LOW) != 0U) {
+        strncat(err_line, "BAT", sizeof(err_line) - strlen(err_line) - 1U);
+      }
+
       PCD8544_SetCursor(WS_UI.lcd, err_col, row);
       PCD8544_WriteString(WS_UI.lcd, err_line);
     }
@@ -680,7 +684,14 @@ void WS_UI_MeasurementDisplay(void) {
 
   /*  Draw number of current outdoor station */
 PCD8544_SetCursor(WS_UI.lcd, 0, 0);
-snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "Stacja [%u/%u]", WS_UI.selected_node_index + 1U, node_count);
+if ((hasMeasurement != 0U) &&
+    ((measurement->sensor_status & (uint8_t)WS_STATUS_BATTERY_LOW) != 0U)) {
+  snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "S%u/%u BAT!",
+           WS_UI.selected_node_index + 1U, node_count);
+} else {
+  snprintf(WS_UI.text_buffer, WS_UI.text_buffer_size, "Stacja [%u/%u]",
+           WS_UI.selected_node_index + 1U, node_count);
+}
 PCD8544_WriteString(WS_UI.lcd, WS_UI.text_buffer);
 
   /*  Draw current time */
@@ -957,6 +968,23 @@ void WS_UI_TakeMeasurement(void) {
     return;
   }
   WS_RequestMeasurementCycle(WS_UI.ws_ctx);
+}
+
+/**
+ * @brief Queues a software reset of the currently selected outdoor station.
+ */
+void WS_UI_ResetStation(void) {
+  uint8_t node_idx;
+
+  if (WS_UI.ws_ctx == NULL) {
+    return;
+  }
+
+  node_idx = WS_UI.selected_node_index;
+  if (node_idx >= WS_UI.ws_ctx->node_count) {
+    node_idx = WS_UI.ws_ctx->active_node;
+  }
+  WS_RequestResetForNode(WS_UI.ws_ctx, node_idx);
 }
 
 /**

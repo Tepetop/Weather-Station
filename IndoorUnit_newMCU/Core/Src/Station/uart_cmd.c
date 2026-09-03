@@ -1,6 +1,6 @@
 /**
  * @file uart_cmd.c
- * @brief Line-based UART commands: CMD:MEASURE, CMD:MEASURE:N, CMD:PING
+ * @brief Line-based UART commands: CMD:MEASURE, CMD:MEASURE:N, CMD:RESET:N, CMD:PING
  *
  * Fully interrupt-driven: bytes are received via USART1 RX interrupt and a
  * completed line is parsed and executed directly in the ISR. Queuing a
@@ -129,6 +129,31 @@ static void uart_cmd_handle_line(const char *line) {
       return;
     }
     uart_cmd_request_measure((uint8_t)node);
+    return;
+  }
+
+  if (strncmp(line, "CMD:RESET:", 10) == 0) {
+    const char *p = line + 10;
+    unsigned int node = 0U;
+
+    if ((uart_cmd_ws == NULL) || (*p == '\0')) {
+      uart_cmd_reply("ERR:UNKNOWN");
+      return;
+    }
+    while (*p != '\0') {
+      if ((*p < '0') || (*p > '9') || (node > WS_MAX_NODES)) {
+        uart_cmd_reply("ERR:UNKNOWN");
+        return;
+      }
+      node = (node * 10U) + (unsigned int)(*p - '0');
+      p++;
+    }
+    if (node >= uart_cmd_ws->node_count) {
+      uart_cmd_reply("ERR:UNKNOWN");
+      return;
+    }
+    WS_RequestResetForNode(uart_cmd_ws, (uint8_t)node);
+    uart_cmd_reply("ACK:RESET:QUEUED");
     return;
   }
 

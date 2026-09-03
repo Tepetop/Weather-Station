@@ -146,6 +146,8 @@ typedef struct {
   uint8_t cycle_pending;               /**< 1 when a parallel cycle is queued */
   uint8_t parallel_cycle;              /**< 1 while a parallel broadcast cycle is active */
   uint8_t cycle_tx_done;               /**< 1 when broadcast command TX_DS was observed */
+  uint8_t reset_pending;               /**< 1 when a node reset command is queued */
+  uint8_t reset_target_mask;           /**< Bitmask of nodes to reset (bit N = NODE_ID N) */
   uint32_t cycle_tx_start_tick;        /**< Tick when broadcast TX started */
   uint32_t cycle_rx_start_tick;        /**< Tick when waiting for parallel replies started */
   WS_AppState_t app_state;             /**< Current application state */
@@ -223,6 +225,13 @@ void WS_RequestMeasurementForActiveNode(WS_Manager_t *ctx);
  *          are collected concurrently on MultiCeiver RX pipes 1..N.
  */
 void WS_RequestMeasurementCycle(WS_Manager_t *ctx);
+
+/**
+ * @brief Queues a software-reset command for one outdoor node
+ * @param[in,out] ctx Manager context
+ * @param[in] node_idx Outdoor node index (0 .. node_count-1)
+ */
+void WS_RequestResetForNode(WS_Manager_t *ctx, uint8_t node_idx);
 
 /**
  * @brief Clears the measurement pending flag for the active node

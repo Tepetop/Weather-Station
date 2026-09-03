@@ -182,21 +182,27 @@ static void ws_format_sensor_status(char *dst, size_t dst_size, uint8_t sensor_s
 
   if (known_status == (uint8_t)WS_SENSOR_OK) {
     snprintf(dst, dst_size, "OK");
-    return;
+  } else {
+    snprintf(dst, dst_size, "ERR");
+    if ((known_status & (uint8_t)WS_SENSOR_ERR_SI7021) != 0U) {
+      ws_append_sensor_status(dst, dst_size, "SI7021");
+    }
+    if ((known_status & (uint8_t)WS_SENSOR_ERR_BMP280) != 0U) {
+      ws_append_sensor_status(dst, dst_size, "BMP280");
+    }
+    if ((known_status & (uint8_t)WS_SENSOR_ERR_TSL2561) != 0U) {
+      ws_append_sensor_status(dst, dst_size, "TSL2561");
+    }
+    if ((known_status & (uint8_t)WS_SENSOR_ERR_BME280) != 0U) {
+      ws_append_sensor_status(dst, dst_size, "BME280");
+    }
   }
 
-  snprintf(dst, dst_size, "ERR");
-  if ((known_status & (uint8_t)WS_SENSOR_ERR_SI7021) != 0U) {
-    ws_append_sensor_status(dst, dst_size, "SI7021");
-  }
-  if ((known_status & (uint8_t)WS_SENSOR_ERR_BMP280) != 0U) {
-    ws_append_sensor_status(dst, dst_size, "BMP280");
-  }
-  if ((known_status & (uint8_t)WS_SENSOR_ERR_TSL2561) != 0U) {
-    ws_append_sensor_status(dst, dst_size, "TSL2561");
-  }
-  if ((known_status & (uint8_t)WS_SENSOR_ERR_BME280) != 0U) {
-    ws_append_sensor_status(dst, dst_size, "BME280");
+  if ((sensor_status & (uint8_t)WS_STATUS_BATTERY_LOW) != 0U) {
+    size_t used = strlen(dst);
+    if (used < dst_size) {
+      snprintf(dst + used, dst_size - used, "|BAT:LOW");
+    }
   }
 }
 
@@ -333,6 +339,50 @@ static void ws_send_measure_command(WS_Manager_t *ctx, const WS_RuntimeConfig_t 
   NRF24_SetMode(cfg->nrf, NRF24_MODE_TX);
 
   Debug_LogNrfTxStart(ctx->active_node);
+}
+
+/**
+ * @brief Sends a reset command (broadcast NoAck, targeted by node bitmask)
+ */
+static void ws_send_reset_command(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg) {
+  uint8_t cmd[WS_CMD_SIZE] = {0};
+  uint32_t start_tick;
+  uint8_t status;
+
+  if ((ctx == NULL) || (cfg == NULL) || (cfg->nrf == NULL) || (cfg->broadcast_addr == NULL)) {
+    if (ctx != NULL) {
+      ctx->reset_pending = 0U;
+    }
+    return;
+  }
+
+  if (!WS_Cmd_EncodeResetTo(ctx->reset_target_mask, cmd, cfg->cmd_size)) {
+    ctx->reset_pending = 0U;
+    return;
+  }
+
+  ctx->reset_pending = 0U;
+
+  NRF24_SetMode(cfg->nrf, NRF24_MODE_STANDBY);
+  NRF24_SetTXAddress(cfg->nrf, cfg->broadcast_addr, 5U);
+  NRF24_FlushTX(cfg->nrf);
+  NRF24_ClearIRQ(cfg->nrf, NRF24_STATUS_IRQ_MASK);
+  (void)NRF24_EnableDynAck(cfg->nrf, 1U);
+  NRF24_WritePayloadNoAck(cfg->nrf, cmd, cfg->cmd_size);
+  NRF24_SetMode(cfg->nrf, NRF24_MODE_TX);
+
+  start_tick = HAL_GetTick();
+  do {
+    status = NRF24_GetStatus(cfg->nrf);
+    if ((status & (NRF24_STATUS_TX_DS | NRF24_STATUS_MAX_RT)) != 0U) {
+      break;
+    }
+  } while ((HAL_GetTick() - start_tick) < cfg->tx_irq_timeout_ms);
+
+  NRF24_ClearIRQ(cfg->nrf, NRF24_STATUS_IRQ_MASK);
+  NRF24_FlushTX(cfg->nrf);
+  ws_start_receive(ctx, cfg);
+  Debug_LogHex("NRF:RESET_TX mask=", ctx->reset_target_mask);
 }
 
 /**
@@ -779,6 +829,18 @@ void WS_RequestMeasurementCycle(WS_Manager_t *ctx) {
   }
 }
 
+void WS_RequestResetForNode(WS_Manager_t *ctx, uint8_t node_idx) {
+  if ((ctx == NULL) || (node_idx >= ctx->node_count)) {
+    return;
+  }
+
+  ctx->reset_target_mask = (uint8_t)(1U << node_idx);
+  ctx->reset_pending = 1U;
+  if ((ctx->app_state == WS_APP_IDLE) || (ctx->app_state == WS_APP_DATA_READY)) {
+    ctx->app_state = WS_APP_IDLE;
+  }
+}
+
 /**
  * @brief Clears the measurement pending flag for the active node
  * @param[in,out] ctx Manager context
@@ -1157,7 +1219,8 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
         (ctx->app_state == WS_APP_WAIT_TX_IRQ) ||
         (ctx->app_state == WS_APP_WAIT_RX_DATA) ||
         (ctx->cycle_pending != 0U) ||
-        (ctx->parallel_cycle != 0U)) {
+        (ctx->parallel_cycle != 0U) ||
+        (ctx->reset_pending != 0U)) {
       need_radio = 1U;
     } else {
       for (uint8_t i = 0U; i < ctx->node_count; i++) {
@@ -1347,6 +1410,11 @@ void WS_ProcessEventHandler(WS_Manager_t *ctx, const WS_RuntimeConfig_t *cfg, ui
     return;
   }
 
+  if ((ctx->reset_pending != 0U) && (ctx->app_state == WS_APP_IDLE)) {
+    ws_send_reset_command(ctx, cfg);
+    return;
+  }
+
   if ((node->measurement_pending != 0U) &&
       (ctx->app_state == WS_APP_IDLE) &&
       (node->state == WS_NODE_IDLE) &&
@@ -1387,7 +1455,8 @@ uint8_t WS_CanSleep(const WS_Manager_t *ctx)
     return 0U;
   }
 
-  if ((ctx->cycle_pending != 0U) || (ctx->parallel_cycle != 0U))
+  if ((ctx->cycle_pending != 0U) || (ctx->parallel_cycle != 0U) ||
+      (ctx->reset_pending != 0U))
   {
     return 0U;
   }
