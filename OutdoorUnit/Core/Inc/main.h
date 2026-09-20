@@ -60,6 +60,8 @@ void Error_Handler_WithName(const char *function_name);
 /* Private defines -----------------------------------------------------------*/
 #define USER_LED_Pin GPIO_PIN_13
 #define USER_LED_GPIO_Port GPIOC
+#define BAT_LVL_Pin GPIO_PIN_1
+#define BAT_LVL_GPIO_Port GPIOA
 #define NRF_CS_Pin GPIO_PIN_2
 #define NRF_CS_GPIO_Port GPIOA
 #define NRF_CE_Pin GPIO_PIN_3
@@ -69,8 +71,6 @@ void Error_Handler_WithName(const char *function_name);
 #define NRF_IRQ_EXTI_IRQn EXTI4_IRQn
 
 /* USER CODE BEGIN Private defines */
-#define BAT_LVL_Pin GPIO_PIN_0
-#define BAT_LVL_GPIO_Port GPIOA
 /* USER CODE END Private defines */
 
 #ifdef __cplusplus
