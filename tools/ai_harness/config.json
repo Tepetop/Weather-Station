@@ -1,0 +1,17 @@
+{
+  "targets": [
+    {"directory": "IndoorUnit_newMCU", "preset": "Debug"},
+    {"directory": "OutdoorUnit", "preset": "Debug"},
+    {"directory": "OutdoorUnit", "preset": "Debug-node0"}
+  ],
+  "writable_roots": [
+    "IndoorUnit_newMCU/Core/Inc",
+    "IndoorUnit_newMCU/Core/Src",
+    "OutdoorUnit/Core/Inc",
+    "OutdoorUnit/Core/Src"
+  ],
+  "max_steps": 30,
+  "max_input_tokens": 150000,
+  "max_output_tokens": 8000,
+  "command_timeout_seconds": 180
+}
