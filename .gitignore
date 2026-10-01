@@ -88,3 +88,9 @@ __pycache__/
 # Logi
 logs/
 *.log
+
+# Local AI harness state and API credentials
+/.ai-harness/
+/.venv/
+.env
+.env.*
